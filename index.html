@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en-ZA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Credit Check Authorisation — Pro Mortgage SA</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .shell { display: grid; grid-template-columns: 1fr; min-height: 100vh; }
+
+  /* --- brand rail --- */
+  .rail {
+    background: var(--rail-bg);
+    color: var(--rail-ink);
+    padding: var(--s6) var(--s5);
+    border-top: 4px solid var(--gold);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s6);
+  }
+  .rail .form-id {
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.14em;
+    color: var(--rail-muted);
+    text-transform: uppercase;
+    margin: var(--s3) 0 0;
+  }
+  .rail nav { display: none; }
+  .steps { margin: 0; padding: 0; list-style: none; }
+  .steps li { border-bottom: 1px solid #2a2a26; }
+  .steps a {
+    display: flex;
+    gap: var(--s3);
+    align-items: baseline;
+    padding: var(--s3) 0;
+    text-decoration: none;
+    color: var(--rail-muted);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    transition: color var(--t-fast) var(--ease);
+  }
+  .steps a:hover { color: var(--rail-ink); }
+  .steps .n {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--rail-muted);
+    min-width: 2ch;
+    transition: color var(--t-fast) var(--ease);
+  }
+  .steps li.current a, .steps li.current .n { color: var(--gold); }
+  .rail-foot { margin-top: auto; font-size: var(--fs-micro); color: var(--rail-muted); line-height: 1.6; }
+  .rail-foot p { margin-bottom: var(--s2); }
+
+  /* --- document column --- */
+  main { padding: var(--s6) var(--s4) var(--s8); }
+  .doc { max-width: 640px; margin: 0 auto; }
+  .doc-head { border-bottom: 2px solid var(--border-strong); padding-bottom: var(--s5); margin-bottom: var(--s6); }
+  .doc-head .lede { color: var(--ink-muted); max-width: 54ch; margin-top: var(--s3); }
+  .doc-meta { font-size: var(--fs-micro); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); margin: 0; }
+
+  fieldset { border: 0; padding: 0; margin: 0 0 var(--s6); }
+  legend {
+    font-size: var(--fs-legend);
+    font-weight: 700;
+    padding: 0 0 var(--s2);
+    margin-bottom: var(--s4);
+    border-bottom: 1px solid var(--border-hairline);
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: var(--s3);
+  }
+  legend .secnum { color: var(--gold-deep); font-weight: 800; }
+  .grid-2 { display: grid; grid-template-columns: 1fr; gap: 0 var(--s4); }
+  @media (min-width: 560px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+
+  .clause-box {
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--r-s);
+    background: var(--surface-sunken);
+    padding: var(--s4) var(--s5);
+    max-height: 16rem;
+    overflow-y: auto;
+    font-size: var(--fs-small);
+    line-height: 1.65;
+  }
+  .clause-box ol { margin: 0; padding-left: 1.2em; }
+  .clause-box li { margin-bottom: var(--s2); }
+  .consent-check {
+    display: flex;
+    gap: var(--s3);
+    align-items: flex-start;
+    margin-top: var(--s4);
+    padding: var(--s3);
+    border: 1.5px solid var(--border-input);
+    border-radius: var(--r-s);
+  }
+  .consent-check input { margin-top: 2px; flex: none; }
+  .consent-check span { font-weight: 600; }
+
+  .form-actions { margin-top: var(--s5); display: flex; gap: var(--s3); flex-wrap: wrap; }
+  .err-summary { margin-top: var(--s4); }
+  .err-summary a { color: var(--error); font-weight: 600; }
+  .err-summary ul { margin: var(--s2) 0 0; padding-left: 1.2em; }
+
+  /* --- OTP + done panels --- */
+  .otp-input {
+    font-family: var(--font-mono);
+    font-size: 1.8rem !important;
+    letter-spacing: 0.5em;
+    text-align: center;
+    max-width: 320px;
+  }
+  .ref-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    border: 2px solid var(--border-strong);
+    border-left: 8px solid var(--gold);
+    border-radius: var(--r-s);
+    padding: var(--s3) var(--s5);
+    margin: var(--s4) 0;
+  }
+  .done-mark {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--success-tint);
+    color: var(--success);
+    display: grid;
+    place-items: center;
+    font-size: 1.6rem;
+    margin-bottom: var(--s4);
+  }
+
+  @media (min-width: 960px) {
+    .shell { grid-template-columns: 300px 1fr; }
+    .rail { position: sticky; top: 0; height: 100vh; }
+    .rail nav { display: block; }
+    main { padding: var(--s8) var(--s7); }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to form</a>
+<div class="shell">
+
+  <aside class="rail" aria-label="About this form">
+    <div>
+      <p class="wordmark">PRO<span class="gold">MORTGAGE</span></p>
+      <span class="wordmark-rule" aria-hidden="true"></span>
+      <p class="form-id">Form PM&#8209;CC1 &middot; Credit check authorisation</p>
+    </div>
+    <nav aria-label="Form sections">
+      <ol class="steps" id="stepNav">
+        <li data-sec="sec-personal"><a href="#sec-personal"><span class="n" aria-hidden="true">01</span>Personal particulars</a></li>
+        <li data-sec="sec-address"><a href="#sec-address"><span class="n" aria-hidden="true">02</span>Residential address</a></li>
+        <li data-sec="sec-employment"><a href="#sec-employment"><span class="n" aria-hidden="true">03</span>Employment &amp; household</a></li>
+        <li data-sec="sec-financial"><a href="#sec-financial"><span class="n" aria-hidden="true">04</span>Income &amp; commitments</a></li>
+        <li data-sec="sec-consent"><a href="#sec-consent"><span class="n" aria-hidden="true">05</span>Consent &amp; declaration</a></li>
+      </ol>
+    </nav>
+    <div class="rail-foot">
+      <p>Your information is used only to prepare your home-loan pre-qualification and is processed in terms of POPIA. Nothing is sent to a credit bureau until you confirm consent by SMS code.</p>
+      <p>Pro Mortgage SA &middot; NCR registration [to be inserted]<br>queries: [contact to be inserted]</p>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="doc">
+
+      <div id="formView">
+        <header class="doc-head rise">
+          <p class="doc-meta">Pro Mortgage SA &middot; Form PM&#8209;CC1</p>
+          <h1>Credit check authorisation</h1>
+          <p class="lede">This form authorises Pro Mortgage to request your consumer credit report from TransUnion as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
+        </header>
+
+        <form id="ccForm" novalidate>
+
+          <fieldset id="sec-personal" class="rise">
+            <legend><span class="secnum" aria-hidden="true">1</span>Personal particulars</legend>
+            <div class="grid-2">
+              <div class="field">
+                <label for="firstNames">Full first names <span class="req" aria-hidden="true">*</span></label>
+                <input id="firstNames" name="firstNames" type="text" autocomplete="given-name" required>
+                <span class="err" id="firstNames-err"></span>
+              </div>
+              <div class="field">
+                <label for="surname">Surname <span class="req" aria-hidden="true">*</span></label>
+                <input id="surname" name="surname" type="text" autocomplete="family-name" required>
+                <span class="err" id="surname-err"></span>
+              </div>
+            </div>
+
+            <div class="field">
+              <span id="idTypeLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">Identification type</span>
+              <div class="radio-row" role="radiogroup" aria-labelledby="idTypeLabel">
+                <label><input type="radio" name="idType" value="said" checked> South African ID</label>
+                <label><input type="radio" name="idType" value="passport"> Passport</label>
+              </div>
+            </div>
+
+            <div class="field" id="saidField">
+              <label for="idNumber">SA identity number <span class="req" aria-hidden="true">*</span></label>
+              <input id="idNumber" name="idNumber" type="text" inputmode="numeric" maxlength="13"
+                     class="mono" autocomplete="off" aria-describedby="idNumber-derived" required>
+              <span class="err" id="idNumber-err"></span>
+              <div class="field-derived" id="idNumber-derived" hidden></div>
+            </div>
+
+            <div id="passportFields" hidden>
+              <div class="grid-2">
+                <div class="field">
+                  <label for="passportNumber">Passport number <span class="req" aria-hidden="true">*</span></label>
+                  <input id="passportNumber" name="passportNumber" type="text" class="mono" autocomplete="off">
+                  <span class="err" id="passportNumber-err"></span>
+                </div>
+                <div class="field">
+                  <label for="dateOfBirth">Date of birth <span class="req" aria-hidden="true">*</span></label>
+                  <input id="dateOfBirth" name="dateOfBirth" type="date" autocomplete="bday">
+                  <span class="err" id="dateOfBirth-err"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="email">Email address <span class="req" aria-hidden="true">*</span></label>
+                <input id="email" name="email" type="email" autocomplete="email" required>
+                <span class="err" id="email-err"></span>
+              </div>
+              <div class="field">
+                <label for="cell">Cellphone number <span class="req" aria-hidden="true">*</span>
+                  <span class="hint">Your SMS confirmation code goes to this number.</span></label>
+                <input id="cell" name="cell" type="tel" inputmode="numeric" autocomplete="tel" placeholder="0821234567" required>
+                <span class="err" id="cell-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="homePhone">Home phone <span class="hint">optional</span></label>
+                <input id="homePhone" name="homePhone" type="tel" inputmode="numeric" autocomplete="tel-national">
+              </div>
+              <div class="field">
+                <label for="workPhone">Work phone <span class="hint">optional</span></label>
+                <input id="workPhone" name="workPhone" type="tel" inputmode="numeric">
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-address" class="rise">
+            <legend><span class="secnum" aria-hidden="true">2</span>Residential address</legend>
+            <div class="field">
+              <label for="street">Street address <span class="req" aria-hidden="true">*</span></label>
+              <input id="street" name="street" type="text" autocomplete="address-line1" required>
+              <span class="err" id="street-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="suburb">Suburb <span class="req" aria-hidden="true">*</span></label>
+                <input id="suburb" name="suburb" type="text" autocomplete="address-level3" required>
+                <span class="err" id="suburb-err"></span>
+              </div>
+              <div class="field">
+                <label for="city">City / town <span class="req" aria-hidden="true">*</span></label>
+                <input id="city" name="city" type="text" autocomplete="address-level2" required>
+                <span class="err" id="city-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="province">Province <span class="req" aria-hidden="true">*</span></label>
+                <select id="province" name="province" required>
+                  <option value="">Select&hellip;</option>
+                  <option>Eastern Cape</option><option>Free State</option><option>Gauteng</option>
+                  <option>KwaZulu-Natal</option><option>Limpopo</option><option>Mpumalanga</option>
+                  <option>Northern Cape</option><option>North West</option><option>Western Cape</option>
+                </select>
+                <span class="err" id="province-err"></span>
+              </div>
+              <div class="field">
+                <label for="postalCode">Postal code <span class="req" aria-hidden="true">*</span></label>
+                <input id="postalCode" name="postalCode" type="text" inputmode="numeric" maxlength="4" autocomplete="postal-code" required>
+                <span class="err" id="postalCode-err"></span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-employment" class="rise">
+            <legend><span class="secnum" aria-hidden="true">3</span>Employment &amp; household</legend>
+            <div class="grid-2">
+              <div class="field">
+                <label for="employmentStatus">Employment status <span class="req" aria-hidden="true">*</span></label>
+                <select id="employmentStatus" name="employmentStatus" required>
+                  <option value="">Select&hellip;</option>
+                  <option>Full-time employed</option><option>Contract</option><option>Self-employed</option>
+                  <option>Retired</option><option>Student</option><option>Temporary</option><option>Unemployed</option>
+                </select>
+                <span class="err" id="employmentStatus-err"></span>
+              </div>
+              <div class="field">
+                <label for="maritalStatus">Marital status <span class="req" aria-hidden="true">*</span></label>
+                <select id="maritalStatus" name="maritalStatus" required>
+                  <option value="">Select&hellip;</option>
+                  <option>Single</option><option>Married in community of property</option>
+                  <option>Married out of community</option><option>Divorced</option>
+                  <option>Widowed</option><option>Life partner</option>
+                </select>
+                <span class="err" id="maritalStatus-err"></span>
+              </div>
+            </div>
+            <div class="field">
+              <label for="referral">How did you hear about Pro Mortgage? <span class="hint">optional</span></label>
+              <select id="referral" name="referral">
+                <option value="">Select&hellip;</option>
+                <option>Estate agent referral</option><option>Returning client</option>
+                <option>Friend or family</option><option>Google search</option>
+                <option>Social media</option><option>Other</option>
+              </select>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-financial" class="rise">
+            <legend><span class="secnum" aria-hidden="true">4</span>Income &amp; commitments</legend>
+            <p class="small">Monthly amounts, before rounding. Estimates are fine &mdash; your consultant confirms these with you later.</p>
+            <div class="grid-2">
+              <div class="field">
+                <label for="grossIncome">Gross monthly income <span class="req" aria-hidden="true">*</span></label>
+                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
+                  <input id="grossIncome" name="grossIncome" type="text" inputmode="numeric" required></div>
+                <span class="err" id="grossIncome-err"></span>
+              </div>
+              <div class="field">
+                <label for="totalDeductions">Total salary deductions <span class="hint">optional</span></label>
+                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
+                  <input id="totalDeductions" name="totalDeductions" type="text" inputmode="numeric"></div>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="monthlyExpenses">Total monthly expenses <span class="req" aria-hidden="true">*</span></label>
+                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
+                  <input id="monthlyExpenses" name="monthlyExpenses" type="text" inputmode="numeric" required></div>
+                <span class="err" id="monthlyExpenses-err"></span>
+              </div>
+              <div class="field">
+                <label for="housingPayment">Current rent or bond payment <span class="hint">optional</span></label>
+                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
+                  <input id="housingPayment" name="housingPayment" type="text" inputmode="numeric"></div>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-consent" class="rise">
+            <legend><span class="secnum" aria-hidden="true">5</span>Consent &amp; declaration</legend>
+            <div class="callout callout-demo">
+              <span class="callout-tag">Draft wording</span>
+              This declaration requires legal review before go-live.
+            </div>
+            <div class="clause-box" tabindex="0" role="region" aria-label="Declaration and consent — credit bureau enquiry">
+              <p><strong>Declaration and consent &mdash; credit bureau enquiry</strong></p>
+              <ol>
+                <li>I confirm that the information provided in this form is true, correct and complete.</li>
+                <li>I authorise Pro Mortgage SA (&ldquo;Pro Mortgage&rdquo;) to request my consumer credit report and credit information from registered credit bureaux, including TransUnion, for the purpose of assessing my eligibility for home-loan pre-qualification and origination, being a permissible purpose in terms of the National Credit Act 34 of 2005.</li>
+                <li>I consent to Pro Mortgage processing the personal information in this form for that purpose in terms of the Protection of Personal Information Act 4 of 2013, and to Pro Mortgage sharing it with participating banks and credit providers solely for the purpose of originating a home loan on my behalf.</li>
+                <li>I understand that this enquiry may be recorded on my credit profile as a consumer-consent enquiry.</li>
+                <li>I may withdraw this consent in writing at any time before the enquiry is performed.</li>
+              </ol>
+            </div>
+            <div class="field">
+              <label class="consent-check" for="consent">
+                <input type="checkbox" id="consent" name="consent" required>
+                <span>I have read and accept the declaration above. <span class="req" aria-hidden="true">*</span></span>
+              </label>
+              <span class="err" id="consent-err"></span>
+            </div>
+          </fieldset>
+
+          <div class="form-actions rise">
+            <button class="btn btn-primary" type="submit">Submit and send my SMS code</button>
+          </div>
+          <div class="callout callout-error err-summary" id="errSummary" role="alert" hidden></div>
+        </form>
+      </div>
+
+      <section id="otpPanel" hidden>
+        <header class="doc-head">
+          <p class="doc-meta">Step 2 of 2 &middot; Confirm consent</p>
+          <h1>Enter your SMS code</h1>
+          <p class="lede" id="otpLede">We&rsquo;ve sent a 6-digit code to your cellphone. Entering it confirms your consent &mdash; only then is anything sent to the credit bureau.</p>
+        </header>
+        <div class="callout callout-demo" id="otpDemoBox">
+          <span class="callout-tag">Demo mode</span>
+          No SMS gateway is connected yet. Your code is <strong class="mono" id="otpDemoCode"></strong>. In production this arrives by SMS and is never shown on screen.
+        </div>
+        <div class="field">
+          <label for="otpInput">6-digit code</label>
+          <input id="otpInput" class="otp-input" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+          <span class="err" id="otpInput-err" aria-live="assertive"></span>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="otpVerify" type="button">Confirm consent</button>
+          <button class="btn btn-ghost" id="otpBack" type="button">Back to the form</button>
+        </div>
+      </section>
+
+      <section id="donePanel" hidden>
+        <div class="done-mark" aria-hidden="true">&#10003;</div>
+        <h1>Consent confirmed &mdash; thank you</h1>
+        <p class="lede">Your details are with Pro Mortgage. Your reference number is:</p>
+        <p class="ref-badge" id="doneRef"></p>
+        <p>Your consultant will request your credit report and contact you with the outcome. Please quote your reference number in any queries. You can close this page.</p>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/store.js"></script>
+<script>
+(function () {
+  'use strict';
+  var form = document.getElementById('ccForm');
+  var formView = document.getElementById('formView');
+  var otpPanel = document.getElementById('otpPanel');
+  var donePanel = document.getElementById('donePanel');
+  var currentRef = null;
+
+  /* --- ID type toggle --- */
+  var saidField = document.getElementById('saidField');
+  var passportFields = document.getElementById('passportFields');
+  form.querySelectorAll('input[name="idType"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      var isSaid = form.idType.value === 'said';
+      saidField.hidden = !isSaid;
+      passportFields.hidden = isSaid;
+    });
+  });
+
+  /* --- SA ID live derivation --- */
+  var idInput = document.getElementById('idNumber');
+  var derivedBox = document.getElementById('idNumber-derived');
+  idInput.addEventListener('input', function () {
+    idInput.value = idInput.value.replace(/\D/g, '').slice(0, 13);
+    var d = PMStore.saIdDerive(idInput.value);
+    if (d) {
+      derivedBox.hidden = false;
+      derivedBox.textContent = 'Checks out: born ' + d.dob + ' · ' + d.gender + ' · ' + d.citizen;
+    } else {
+      derivedBox.hidden = true;
+    }
+  });
+
+  /* --- currency formatting on blur --- */
+  function parseAmount(v) { return Number(String(v).replace(/[^\d]/g, '')) || 0; }
+  ['grossIncome', 'totalDeductions', 'monthlyExpenses', 'housingPayment'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('blur', function () {
+      var n = parseAmount(el.value);
+      el.value = n ? n.toLocaleString('en-ZA').replace(/,/g, ' ') : '';
+    });
+  });
+
+  /* --- validation --- */
+  function setErr(id, msg) {
+    var el = document.getElementById(id);
+    var errEl = document.getElementById(id + '-err');
+    var field = el.closest('.field');
+    if (errEl) errEl.textContent = msg || '';
+    if (field) field.classList.toggle('invalid', !!msg);
+    if (msg) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid');
+    return !msg;
+  }
+  function validate() {
+    var problems = [];
+    function check(id, ok, msg) {
+      if (!setErr(id, ok ? '' : msg)) problems.push({ id: id, msg: msg });
+    }
+    var v = function (id) { return document.getElementById(id).value.trim(); };
+
+    check('firstNames', v('firstNames') !== '', 'Enter your full first names.');
+    check('surname', v('surname') !== '', 'Enter your surname.');
+    if (form.idType.value === 'said') {
+      check('idNumber', PMStore.validSaId(v('idNumber')), 'Enter a valid 13-digit South African ID number.');
+    } else {
+      check('passportNumber', v('passportNumber') !== '', 'Enter your passport number.');
+      check('dateOfBirth', v('dateOfBirth') !== '', 'Enter your date of birth.');
+    }
+    check('email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email')), 'Enter a valid email address.');
+    check('cell', /^0[6-8][0-9]{8}$/.test(v('cell').replace(/\s/g, '')), 'Enter a valid SA cellphone number, e.g. 0821234567.');
+    check('street', v('street') !== '', 'Enter your street address.');
+    check('suburb', v('suburb') !== '', 'Enter your suburb.');
+    check('city', v('city') !== '', 'Enter your city or town.');
+    check('province', v('province') !== '', 'Select your province.');
+    check('postalCode', /^\d{4}$/.test(v('postalCode')), 'Enter a 4-digit postal code.');
+    check('employmentStatus', v('employmentStatus') !== '', 'Select your employment status.');
+    check('maritalStatus', v('maritalStatus') !== '', 'Select your marital status.');
+    check('grossIncome', parseAmount(v('grossIncome')) > 0, 'Enter your gross monthly income.');
+    check('monthlyExpenses', parseAmount(v('monthlyExpenses')) > 0, 'Enter your total monthly expenses.');
+    check('consent', document.getElementById('consent').checked, 'Please accept the declaration to continue.');
+    return problems;
+  }
+
+  var errSummary = document.getElementById('errSummary');
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var problems = validate();
+    if (problems.length) {
+      errSummary.hidden = false;
+      errSummary.innerHTML = '<span class="callout-tag">Please fix ' + problems.length +
+        (problems.length === 1 ? ' item' : ' items') + '</span><ul>' +
+        problems.map(function (p) {
+          return '<li><a href="#' + p.id + '">' + p.msg + '</a></li>';
+        }).join('') + '</ul>';
+      document.getElementById(problems[0].id).focus();
+      return;
+    }
+    errSummary.hidden = true;
+
+    var v = function (id) { return document.getElementById(id).value.trim(); };
+    var submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    PMStore.submit({
+      firstNames: v('firstNames'), surname: v('surname'),
+      idType: form.idType.value,
+      idNumber: form.idType.value === 'said' ? v('idNumber') : '',
+      passportNumber: form.idType.value === 'passport' ? v('passportNumber') : '',
+      dateOfBirth: form.idType.value === 'passport' ? v('dateOfBirth') : '',
+      email: v('email'), cell: v('cell').replace(/\s/g, ''),
+      homePhone: v('homePhone'), workPhone: v('workPhone'),
+      street: v('street'), suburb: v('suburb'), city: v('city'),
+      province: v('province'), postalCode: v('postalCode'),
+      employmentStatus: v('employmentStatus'), maritalStatus: v('maritalStatus'),
+      referral: v('referral'),
+      grossIncome: parseAmount(v('grossIncome')),
+      totalDeductions: parseAmount(v('totalDeductions')),
+      monthlyExpenses: parseAmount(v('monthlyExpenses')),
+      housingPayment: parseAmount(v('housingPayment')),
+      consentUA: navigator.userAgent
+    }).then(function (res) {
+      currentRef = res.ref;
+      var cell = v('cell').replace(/\s/g, '');
+      document.getElementById('otpLede').textContent =
+        'We’ve sent a 6-digit code to ' + cell.slice(0, 3) + ' ••• ••' + cell.slice(-2) +
+        '. Entering it confirms your consent — only then is anything sent to the credit bureau.';
+      var demoBox = document.getElementById('otpDemoBox');
+      demoBox.hidden = !res.demo_otp;
+      if (res.demo_otp) document.getElementById('otpDemoCode').textContent = res.demo_otp;
+      formView.hidden = true;
+      otpPanel.hidden = false;
+      window.scrollTo(0, 0);
+      document.getElementById('otpInput').focus();
+    }).catch(function (err) {
+      errSummary.hidden = false;
+      errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+        'We couldn’t reach the server. Please check your connection and try again.';
+      console.error('submit failed:', err);
+    }).finally(function () {
+      submitBtn.disabled = false;
+    });
+  });
+
+  /* --- OTP --- */
+  var OTP_ERRORS = {
+    mismatch: 'That code doesn’t match. Check the SMS and try again.',
+    expired: 'This code has expired. Go back and submit the form again.',
+    too_many_attempts: 'Too many incorrect attempts. Go back and submit the form again.',
+    already_confirmed: 'This consent has already been confirmed.',
+    not_found: 'Something went wrong. Go back and submit the form again.'
+  };
+  document.getElementById('otpBack').addEventListener('click', function () {
+    if (currentRef) PMStore.abandon(currentRef);
+    currentRef = null;
+    document.getElementById('otpInput').value = '';
+    setErr('otpInput', '');
+    otpPanel.hidden = true;
+    formView.hidden = false;
+    window.scrollTo(0, 0);
+  });
+  document.getElementById('otpVerify').addEventListener('click', function () {
+    var val = document.getElementById('otpInput').value.trim();
+    if (!currentRef) return;
+    var btn = document.getElementById('otpVerify');
+    btn.disabled = true;
+    PMStore.confirmConsent(currentRef, val).then(function (res) {
+      if (!res.ok) {
+        setErr('otpInput', OTP_ERRORS[res.error] || OTP_ERRORS.not_found);
+        return;
+      }
+      setErr('otpInput', '');
+      document.getElementById('doneRef').textContent = currentRef;
+      otpPanel.hidden = true;
+      donePanel.hidden = false;
+      window.scrollTo(0, 0);
+    }).catch(function (err) {
+      setErr('otpInput', 'We couldn’t reach the server. Please try again.');
+      console.error('confirm failed:', err);
+    }).finally(function () {
+      btn.disabled = false;
+    });
+  });
+
+  /* --- rail step highlight (progressive enhancement) --- */
+  if ('IntersectionObserver' in window) {
+    var items = document.querySelectorAll('#stepNav li');
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          items.forEach(function (li) {
+            li.classList.toggle('current', li.dataset.sec === en.target.id);
+          });
+        }
+      });
+    }, { rootMargin: '-20% 0px -60% 0px' });
+    document.querySelectorAll('fieldset[id]').forEach(function (f) { io.observe(f); });
+  }
+})();
+</script>
+</body>
+</html>

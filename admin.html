@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en-ZA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Credit Check Register — Pro Mortgage SA</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  body { background: var(--surface-sunken); }
+
+  .topbar {
+    background: var(--rail-bg);
+    color: var(--rail-ink);
+    border-top: 4px solid var(--gold);
+    padding: var(--s4) var(--s5);
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    flex-wrap: wrap;
+  }
+  .topbar h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--rail-muted);
+    letter-spacing: 0.02em;
+  }
+  .topbar .spacer { flex: 1; }
+  .demo-badge {
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.12em;
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    border-radius: 999px;
+    padding: 3px 10px;
+    text-transform: uppercase;
+  }
+  .topbar .btn-ghost { color: var(--rail-ink); border-color: #4a4a44; }
+  .topbar .btn-ghost:hover:not(:disabled) { background: #232320; border-color: var(--rail-muted); }
+
+  main { max-width: 1200px; margin: 0 auto; padding: var(--s6) var(--s4) var(--s8); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--s3);
+    margin: 0 0 var(--s5);
+    padding: 0;
+  }
+  .stats > div {
+    background: var(--surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-m);
+    padding: var(--s4);
+    box-shadow: var(--shadow-1);
+  }
+  .stats dt {
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .stats dd {
+    margin: var(--s1) 0 0;
+    font-family: var(--font-display);
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .stats dd small { font-size: var(--fs-small); font-family: var(--font-body); font-weight: 400; color: var(--ink-muted); }
+
+  .controls { display: flex; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s4); }
+  .controls .field { margin: 0; flex: 1 1 220px; }
+  .controls .field.narrow { flex: 0 1 220px; }
+
+  .register {
+    background: var(--surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-m);
+    box-shadow: var(--shadow-1);
+    overflow-x: auto;
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; }
+  caption {
+    text-align: left;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--fs-legend);
+    padding: var(--s4) var(--s4) var(--s2);
+  }
+  th, td { text-align: left; padding: var(--s3) var(--s4); font-size: var(--fs-small); }
+  thead th {
+    font-size: var(--fs-micro);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    border-bottom: 2px solid var(--border-strong);
+    white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--border-hairline); }
+  tbody tr:hover { background: var(--surface-sunken); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+
+  .empty {
+    padding: var(--s7) var(--s5);
+    text-align: center;
+    color: var(--ink-muted);
+  }
+  .empty .btn { margin-top: var(--s4); }
+
+  /* --- detail dialog --- */
+  dialog {
+    border: 0;
+    border-radius: var(--r-m);
+    box-shadow: var(--shadow-2);
+    padding: 0;
+    width: min(720px, calc(100vw - 2 * var(--s4)));
+    max-height: 85vh;
+  }
+  dialog::backdrop { background: rgba(23, 21, 15, 0.5); }
+  .dlg-head {
+    background: var(--rail-bg);
+    color: var(--rail-ink);
+    border-top: 4px solid var(--gold);
+    padding: var(--s4) var(--s5);
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+  }
+  .dlg-head h2 { font-size: 1.15rem; }
+  .dlg-head .mono { color: var(--gold); font-size: var(--fs-small); }
+  .dlg-head .spacer { flex: 1; }
+  .dlg-close {
+    background: none; border: 1.5px solid #4a4a44; color: var(--rail-ink);
+    border-radius: var(--r-s); min-width: 36px; min-height: 36px;
+    font-size: 1.1rem; cursor: pointer;
+  }
+  .dlg-close:hover { border-color: var(--rail-muted); background: #232320; }
+  .dlg-body { padding: var(--s5); overflow-y: auto; }
+  .dlg-body h3 {
+    font-size: var(--fs-small);
+    font-family: var(--font-body);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    border-bottom: 1px solid var(--border-hairline);
+    padding-bottom: var(--s1);
+    margin: var(--s5) 0 var(--s3);
+  }
+  .dlg-body h3:first-child { margin-top: 0; }
+  .kv { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: var(--s1) var(--s4); margin: 0; }
+  .kv dt { font-size: var(--fs-small); color: var(--ink-muted); }
+  .kv dd { margin: 0; font-size: var(--fs-small); font-weight: 600; }
+  .audit { list-style: none; margin: 0; padding: 0; }
+  .audit li {
+    display: flex; gap: var(--s3);
+    padding: var(--s2) 0;
+    border-bottom: 1px dashed var(--border-hairline);
+    font-size: var(--fs-small);
+  }
+  .audit time { font-family: var(--font-mono); color: var(--ink-muted); white-space: nowrap; }
+  .dlg-actions {
+    display: flex; gap: var(--s3); flex-wrap: wrap;
+    padding: var(--s4) var(--s5);
+    border-top: 1px solid var(--border-hairline);
+    background: var(--surface-sunken);
+  }
+
+  .foot-note { margin-top: var(--s5); }
+
+  /* --- staff login --- */
+  .login-wrap {
+    min-height: calc(100vh - 90px);
+    display: grid;
+    place-items: center;
+    padding: var(--s5);
+  }
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border-hairline);
+    border-top: 4px solid var(--gold);
+    border-radius: var(--r-m);
+    box-shadow: var(--shadow-2);
+    padding: var(--s6);
+    width: min(400px, 100%);
+  }
+  .login-card h2 { margin: var(--s2) 0 var(--s5); }
+  .login-card .btn { width: 100%; margin-top: var(--s2); }
+  .login-card .err { display: block; margin-top: var(--s3); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to register</a>
+
+<header class="topbar">
+  <div>
+    <p class="wordmark">PRO<span class="gold">MORTGAGE</span></p>
+  </div>
+  <h1>Credit check register</h1>
+  <span class="demo-badge" id="modeBadge">Demo &mdash; local data only</span>
+  <div class="spacer"></div>
+  <button class="btn btn-ghost btn-sm" id="seedBtn" type="button">Load sample data</button>
+  <button class="btn btn-ghost btn-sm" id="clearBtn" type="button">Clear all</button>
+  <button class="btn btn-ghost btn-sm" id="signOutBtn" type="button" hidden>Sign out</button>
+</header>
+
+<div class="login-wrap" id="loginView" hidden>
+  <form class="login-card" id="loginForm">
+    <p class="wordmark" style="color:var(--ink)">PRO<span class="gold">MORTGAGE</span></p>
+    <h2>Staff sign-in</h2>
+    <div class="field">
+      <label for="loginEmail">Email</label>
+      <input type="email" id="loginEmail" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" required>
+    </div>
+    <button class="btn btn-primary" type="submit" id="loginBtn">Sign in</button>
+    <span class="err" id="login-err" role="alert"></span>
+  </form>
+</div>
+
+<main id="main">
+  <dl class="stats" id="stats"></dl>
+
+  <div class="controls">
+    <div class="field">
+      <label for="search">Search</label>
+      <input id="search" type="text" placeholder="Name, reference or ID number" autocomplete="off">
+    </div>
+    <div class="field narrow">
+      <label for="statusFilter">Status</label>
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="awaiting_otp">Awaiting SMS code</option>
+        <option value="consent_confirmed">Consent confirmed</option>
+        <option value="report_requested">Report requested</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="register">
+    <table id="regTable">
+      <caption>Submissions</caption>
+      <thead>
+        <tr>
+          <th scope="col">Reference</th>
+          <th scope="col">Client</th>
+          <th scope="col">ID number</th>
+          <th scope="col">Submitted</th>
+          <th scope="col" class="num">Gross income</th>
+          <th scope="col">Status</th>
+          <th scope="col"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="regBody"></tbody>
+    </table>
+    <div class="empty" id="emptyState" hidden>
+      <p><strong>No submissions yet.</strong><br>Send clients the form link, or load sample data to see how the register works.</p>
+      <button class="btn btn-primary" id="seedBtnEmpty" type="button">Load sample data</button>
+    </div>
+  </div>
+
+  <p class="small foot-note">Demo build: records are stored in this browser only and the &ldquo;Request ITC report&rdquo; action is a stub.
+  The production build adds a Supabase database, staff login, SMS delivery and the TransUnion Consumer Profile API call.
+  Client form: <a href="index.html">index.html</a></p>
+</main>
+
+<dialog id="detailDlg" aria-labelledby="dlgTitle">
+  <div class="dlg-head">
+    <h2 id="dlgTitle">Submission</h2>
+    <span class="mono" id="dlgRef"></span>
+    <div class="spacer"></div>
+    <button class="dlg-close" id="dlgClose" type="button" aria-label="Close">&times;</button>
+  </div>
+  <div class="dlg-body" id="dlgBody"></div>
+  <div class="dlg-actions">
+    <button class="btn btn-primary" id="dlgRequest" type="button">Request ITC report</button>
+    <button class="btn btn-danger btn-sm" id="dlgDelete" type="button">Delete record</button>
+  </div>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/store.js"></script>
+<script>
+(function () {
+  'use strict';
+  var currentRef = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function maskId(rec) {
+    if (rec.idType === 'passport') return 'Passport ' + esc(rec.passportNumber);
+    var id = rec.idNumber || '';
+    return id.slice(0, 6) + '•••••' + id.slice(-2);
+  }
+  function rand(n) {
+    return 'R ' + Number(n || 0).toLocaleString('en-ZA').replace(/,/g, ' ');
+  }
+  function fmtDate(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts);
+    return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ', ' + d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+  }
+  function chip(status) {
+    var s = PMStore.STATUS[status] || { label: status, chip: 'chip-requested' };
+    return '<span class="chip ' + s.chip + '">' + esc(s.label) + '</span>';
+  }
+
+  function render() {
+    return PMStore.all().then(renderRows).catch(function (err) {
+      console.error('load failed:', err);
+      document.getElementById('regBody').innerHTML =
+        '<tr><td colspan="7"><em>Could not load submissions: ' + esc(err.message) + '</em></td></tr>';
+    });
+  }
+  function renderRows(all) {
+    var q = document.getElementById('search').value.trim().toLowerCase();
+    var sf = document.getElementById('statusFilter').value;
+    var rows = all.filter(function (r) {
+      if (sf && r.status !== sf) return false;
+      if (!q) return true;
+      return (r.firstNames + ' ' + r.surname + ' ' + r.ref + ' ' + (r.idNumber || '') + ' ' + (r.passportNumber || ''))
+        .toLowerCase().indexOf(q) !== -1;
+    });
+
+    /* stats */
+    var counts = { awaiting_otp: 0, consent_confirmed: 0, report_requested: 0 };
+    all.forEach(function (r) { if (counts[r.status] != null) counts[r.status]++; });
+    document.getElementById('stats').innerHTML =
+      '<div><dt>Total submissions</dt><dd>' + all.length + '</dd></div>' +
+      '<div><dt>Awaiting SMS code</dt><dd>' + counts.awaiting_otp + '</dd></div>' +
+      '<div><dt>Consent confirmed</dt><dd>' + counts.consent_confirmed + '</dd></div>' +
+      '<div><dt>Reports requested</dt><dd>' + counts.report_requested + ' <small>via TransUnion</small></dd></div>';
+
+    /* table */
+    var body = document.getElementById('regBody');
+    document.getElementById('emptyState').hidden = all.length !== 0;
+    body.innerHTML = rows.map(function (r) {
+      return '<tr>' +
+        '<td class="mono">' + esc(r.ref) + '</td>' +
+        '<td><strong>' + esc(r.firstNames + ' ' + r.surname) + '</strong></td>' +
+        '<td class="mono">' + maskId(r) + '</td>' +
+        '<td>' + fmtDate(r.createdAt) + '</td>' +
+        '<td class="num">' + rand(r.grossIncome) + '</td>' +
+        '<td>' + chip(r.status) + '</td>' +
+        '<td><button class="btn btn-ghost btn-sm" data-view="' + esc(r.ref) + '" type="button">View</button></td>' +
+        '</tr>';
+    }).join('');
+    if (all.length && !rows.length) {
+      body.innerHTML = '<tr><td colspan="7"><em>No submissions match the current search or filter.</em></td></tr>';
+    }
+  }
+
+  /* --- detail dialog --- */
+  var dlg = document.getElementById('detailDlg');
+  function openDetail(ref) {
+    return PMStore.get(ref).then(function (r) {
+      if (!r) return;
+      renderDetail(r, ref);
+    }).catch(function (err) { console.error('detail failed:', err); });
+  }
+  function renderDetail(r, ref) {
+    currentRef = ref;
+    document.getElementById('dlgTitle').textContent = r.firstNames + ' ' + r.surname;
+    document.getElementById('dlgRef').textContent = r.ref;
+
+    var idBlock = r.idType === 'passport'
+      ? '<dt>Passport</dt><dd class="mono">' + esc(r.passportNumber) + '</dd><dt>Date of birth</dt><dd>' + esc(r.dateOfBirth) + '</dd>'
+      : '<dt>SA ID number</dt><dd class="mono">' + esc(r.idNumber) + '</dd>';
+    var derived = r.idType !== 'passport' ? PMStore.saIdDerive(r.idNumber) : null;
+    if (derived) {
+      idBlock += '<dt>Derived</dt><dd>Born ' + derived.dob + ' · ' + derived.gender + ' · ' + derived.citizen + '</dd>';
+    }
+
+    document.getElementById('dlgBody').innerHTML =
+      '<h3>Status</h3><p>' + chip(r.status) + '</p>' +
+      '<h3>Personal</h3><dl class="kv">' + idBlock +
+      '<dt>Email</dt><dd>' + esc(r.email) + '</dd>' +
+      '<dt>Cell</dt><dd class="mono">' + esc(r.cell) + '</dd>' +
+      (r.homePhone ? '<dt>Home phone</dt><dd class="mono">' + esc(r.homePhone) + '</dd>' : '') +
+      (r.workPhone ? '<dt>Work phone</dt><dd class="mono">' + esc(r.workPhone) + '</dd>' : '') +
+      '</dl>' +
+      '<h3>Address</h3><dl class="kv">' +
+      '<dt>Street</dt><dd>' + esc(r.street) + '</dd>' +
+      '<dt>Suburb</dt><dd>' + esc(r.suburb) + '</dd>' +
+      '<dt>City</dt><dd>' + esc(r.city) + '</dd>' +
+      '<dt>Province</dt><dd>' + esc(r.province) + '</dd>' +
+      '<dt>Postal code</dt><dd class="mono">' + esc(r.postalCode) + '</dd>' +
+      '</dl>' +
+      '<h3>Employment &amp; household</h3><dl class="kv">' +
+      '<dt>Employment</dt><dd>' + esc(r.employmentStatus) + '</dd>' +
+      '<dt>Marital status</dt><dd>' + esc(r.maritalStatus) + '</dd>' +
+      (r.referral ? '<dt>Referral</dt><dd>' + esc(r.referral) + '</dd>' : '') +
+      '</dl>' +
+      '<h3>Income &amp; commitments (monthly)</h3><dl class="kv">' +
+      '<dt>Gross income</dt><dd>' + rand(r.grossIncome) + '</dd>' +
+      '<dt>Deductions</dt><dd>' + rand(r.totalDeductions) + '</dd>' +
+      '<dt>Expenses</dt><dd>' + rand(r.monthlyExpenses) + '</dd>' +
+      '<dt>Rent / bond</dt><dd>' + rand(r.housingPayment) + '</dd>' +
+      '</dl>' +
+      '<h3>Consent audit trail</h3><ul class="audit">' +
+      (r.audit || []).map(function (a) {
+        return '<li><time>' + fmtDate(a.at) + '</time><span>' + esc(a.event) + '</span></li>';
+      }).join('') + '</ul>' +
+      (r.consentUA ? '<p class="small" style="margin-top:var(--s3)">Consent device: ' + esc(r.consentUA) + '</p>' : '');
+
+    var reqBtn = document.getElementById('dlgRequest');
+    reqBtn.disabled = r.status !== 'consent_confirmed';
+    reqBtn.textContent = r.status === 'report_requested'
+      ? 'Report already requested'
+      : (r.status === 'awaiting_otp' ? 'Awaiting client consent' : 'Request ITC report');
+
+    dlg.showModal();
+  }
+
+  document.getElementById('regBody').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-view]');
+    if (btn) openDetail(btn.dataset.view);
+  });
+  document.getElementById('dlgClose').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+
+  document.getElementById('dlgRequest').addEventListener('click', function () {
+    if (!currentRef) return;
+    /* TRANSUNION PHASE TODO: the Consumer Profile API call replaces this stub
+       (see PMStore.requestReport in assets/store.js) */
+    var btn = document.getElementById('dlgRequest');
+    btn.disabled = true;
+    PMStore.requestReport(currentRef).then(function () {
+      render();
+      return openDetail(currentRef);
+    }).catch(function (err) {
+      btn.disabled = false;
+      alert('Could not update the record: ' + err.message);
+    });
+  });
+  document.getElementById('dlgDelete').addEventListener('click', function () {
+    if (!currentRef) return;
+    if (confirm('Delete this record permanently? This cannot be undone.')) {
+      PMStore.remove(currentRef).then(function () {
+        currentRef = null;
+        dlg.close();
+        render();
+      }).catch(function (err) { alert('Could not delete: ' + err.message); });
+    }
+  });
+
+  /* --- controls --- */
+  function seed() { PMStore.seedDemo().then(render); }
+  document.getElementById('seedBtn').addEventListener('click', seed);
+  document.getElementById('seedBtnEmpty').addEventListener('click', seed);
+  document.getElementById('clearBtn').addEventListener('click', function () {
+    if (confirm('Remove ALL records from this browser?')) { PMStore.clearAll().then(render); }
+  });
+  document.getElementById('search').addEventListener('input', render);
+  document.getElementById('statusFilter').addEventListener('change', render);
+
+  /* --- boot: login gate in live mode, straight in otherwise --- */
+  var mainEl = document.getElementById('main');
+  var loginView = document.getElementById('loginView');
+
+  function enter() {
+    loginView.hidden = true;
+    mainEl.hidden = false;
+    document.getElementById('signOutBtn').hidden = PMStore.mode !== 'live';
+    render();
+    PMStore.onChange(render);
+  }
+  function showLogin() {
+    mainEl.hidden = true;
+    loginView.hidden = false;
+    document.getElementById('loginEmail').focus();
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = document.getElementById('loginBtn');
+    var errEl = document.getElementById('login-err');
+    btn.disabled = true;
+    errEl.textContent = '';
+    PMStore.signIn(
+      document.getElementById('loginEmail').value.trim(),
+      document.getElementById('loginPassword').value
+    ).then(enter).catch(function (err) {
+      errEl.textContent = /invalid/i.test(err.message)
+        ? 'Email or password incorrect.'
+        : 'Sign-in failed: ' + err.message;
+    }).finally(function () { btn.disabled = false; });
+  });
+  document.getElementById('signOutBtn').addEventListener('click', function () {
+    PMStore.signOut().then(function () { location.reload(); });
+  });
+
+  if (PMStore.mode === 'live') {
+    document.getElementById('modeBadge').textContent = 'Live — Supabase';
+    document.getElementById('seedBtn').hidden = true;
+    document.getElementById('clearBtn').hidden = true;
+    var emptyBtn = document.getElementById('seedBtnEmpty');
+    if (emptyBtn) emptyBtn.hidden = true;
+    PMStore.getSession().then(function (s) { s ? enter() : showLogin(); });
+  } else if (PMStore.mode === 'error') {
+    document.getElementById('modeBadge').textContent = 'Backend error';
+    mainEl.innerHTML = '<div class="callout callout-error"><span class="callout-tag">Backend not reachable</span>' +
+      'config.js points at Supabase but the client library failed to load. Check your connection and reload.</div>';
+  } else {
+    enter();
+  }
+})();
+</script>
+</body>
+</html>
