@@ -219,7 +219,9 @@ a { color: inherit; }
   color: var(--ink-muted);
   pointer-events: none;
 }
-.currency-wrap input { padding-left: calc(var(--s3) + 1.4ch); }
+/* class+attribute selector needed: the base .field input[type="text"] padding
+   rule outranks a lone .currency-wrap input and re-zeroes the offset */
+.field .currency-wrap input[type="text"] { padding-left: calc(var(--s3) + 2.4ch); }
 
 .radio-row { display: flex; gap: var(--s5); flex-wrap: wrap; }
 .radio-row label {
