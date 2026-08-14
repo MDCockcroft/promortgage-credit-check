@@ -11,4 +11,4 @@ Backend: Supabase (anon browsers can only call the submit/confirm RPCs; staff
 read the table after login). The anon key in `assets/config.js` is public by
 design — row-level security protects the data.
 
-Pending phases: SMS gateway for the OTP, TransUnion Consumer Profile API.
+Pending phases: SMS gateway for the OTP, Experian credit report API.

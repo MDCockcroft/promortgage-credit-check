@@ -267,7 +267,7 @@
   </div>
 
   <p class="small foot-note">Demo build: records are stored in this browser only and the &ldquo;Request ITC report&rdquo; action is a stub.
-  The production build adds a Supabase database, staff login, SMS delivery and the TransUnion Consumer Profile API call.
+  The production build adds a Supabase database, staff login, SMS delivery and the Experian credit report API call.
   Client form: <a href="index.html">index.html</a></p>
 </main>
 
@@ -341,7 +341,7 @@
       '<div><dt>Total submissions</dt><dd>' + all.length + '</dd></div>' +
       '<div><dt>Awaiting SMS code</dt><dd>' + counts.awaiting_otp + '</dd></div>' +
       '<div><dt>Consent confirmed</dt><dd>' + counts.consent_confirmed + '</dd></div>' +
-      '<div><dt>Reports requested</dt><dd>' + counts.report_requested + ' <small>via TransUnion</small></dd></div>';
+      '<div><dt>Reports requested</dt><dd>' + counts.report_requested + ' <small>via Experian</small></dd></div>';
 
     /* table */
     var body = document.getElementById('regBody');
@@ -433,7 +433,7 @@
 
   document.getElementById('dlgRequest').addEventListener('click', function () {
     if (!currentRef) return;
-    /* TRANSUNION PHASE TODO: the Consumer Profile API call replaces this stub
+    /* EXPERIAN PHASE TODO: the Experian credit report API call replaces this stub
        (see PMStore.requestReport in assets/store.js) */
     var btn = document.getElementById('dlgRequest');
     btn.disabled = true;

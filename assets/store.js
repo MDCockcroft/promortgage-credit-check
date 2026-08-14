@@ -4,7 +4,7 @@
             submit/confirm RPCs; staff read the table after Supabase Auth login.
      DEMO — localStorage in this browser, no login (config.js blank).
    Remaining production TODOs live in supabase-setup.sql (SMS gateway)
-   and admin.html (TransUnion API call). */
+   and admin.html (Experian API call). */
 (function () {
   'use strict';
 
@@ -207,9 +207,9 @@
       return Promise.resolve(readAll().find(function (r) { return r.ref === ref; }) || null);
     },
     requestReport: function (ref) {
-      /* PRODUCTION TODO (TransUnion phase): call the Consumer Profile API
+      /* PRODUCTION TODO (Experian phase): call the Experian credit report API
          here and attach the returned report to the record. */
-      var event = 'ITC report requested (TransUnion integration pending)';
+      var event = 'ITC report requested (Experian integration pending)';
       if (mode === 'live') {
         return this.get(ref).then(function (r) {
           if (!r) throw new Error('Record not found');
@@ -303,7 +303,7 @@
         }
         if (status === 'report_requested') {
           rec.status = 'report_requested';
-          rec.audit.push({ at: now - age + 9 * 60000, event: 'ITC report requested (TransUnion integration pending)' });
+          rec.audit.push({ at: now - age + 9 * 60000, event: 'ITC report requested (Experian integration pending)' });
         }
         list.push(rec);
       });
