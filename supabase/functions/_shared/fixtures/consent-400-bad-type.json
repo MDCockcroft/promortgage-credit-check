@@ -1,0 +1,1 @@
+{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation errors occurred.","status":400,"errors":{"Consents[0].Context":["Context definition is invalid"],"Consents[0].ConsentTypeId":["Consent Type is unknown"]},"traceId":"00-0f62b6803ad9233050fc33919e39131a-ebda7abc465ba0fa-00"}

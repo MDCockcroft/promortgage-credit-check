@@ -1,0 +1,1 @@
+{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation errors occurred.","status":400,"errors":{"Consents":["Please specify atleast 1 consent"],"PersonId":["Please specify a Person Id"]},"traceId":"00-1c0e6263801ffb4e052111e99a4aac12-542e85feaf8c9640-00"}
