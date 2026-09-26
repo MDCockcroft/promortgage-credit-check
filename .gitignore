@@ -1,1 +1,8 @@
 .DS_Store
+.env
+.env.*
+!.env.*.example
+supabase/.env*
+!supabase/.env*.example
+supabase/.temp/
+graphify-out/
