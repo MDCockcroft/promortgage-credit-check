@@ -99,6 +99,7 @@
     border-radius: var(--r-s);
   }
   .consent-check input { margin-top: 2px; flex: none; }
+  .field label.consent-check { display: flex; } /* .field label (display:block) otherwise outranks .consent-check */
   .consent-check span { font-weight: 600; }
 
   .form-actions { margin-top: var(--s5); display: flex; gap: var(--s3); flex-wrap: wrap; }
@@ -136,6 +137,108 @@
     margin-bottom: var(--s4);
   }
 
+  /* --- consent wording: Pro Mortgages SA notice + MortgageMAX consent types --- */
+  .notice-box { max-height: none; background: var(--surface); margin-top: var(--s4); }
+  .notice-box h2, .consent-type h2 {
+    font-size: var(--fs-body);
+    font-weight: 700;
+    margin: 0 0 var(--s3);
+  }
+  .notice-box ul { margin: 0; padding-left: 1.2em; }
+  .notice-box li { margin-bottom: var(--s2); }
+  .ph {
+    background: var(--gold-tint);
+    color: var(--gold-deep);
+    font-weight: 700;
+    padding: 0 4px;
+    border-radius: 4px;
+  }
+  .consent-intro { margin: var(--s4) 0 var(--s3); }
+  .consent-status { font-size: var(--fs-small); color: var(--ink-muted); margin: var(--s3) 0; }
+  .consent-status:empty { margin: 0; }
+  .consent-type { margin-bottom: var(--s4); }
+  .consent-type .decl p { margin-bottom: var(--s3); }
+  .consent-type .decl p:last-child { margin-bottom: 0; }
+  .consent-type .decl ul, .consent-type .decl ol { margin: 0 0 var(--s3); padding-left: 1.2em; }
+  .consent-type .decl li { margin-bottom: var(--s2); }
+  .consent-type .decl h4, .consent-type .decl h5 { font-size: var(--fs-small); margin: var(--s3) 0 var(--s2); }
+  .consent-type .decl.plain p { white-space: pre-line; }
+  .consent-foot {
+    margin: var(--s2) 0 0;
+    font-size: var(--fs-micro);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .clause-box:focus-visible, .idv-q:focus-visible {
+    outline: 2px solid var(--border-strong);
+    outline-offset: 2px;
+  }
+  h1[tabindex="-1"]:focus { outline: none; }
+
+  /* --- processing panel --- */
+  .work-status { display: flex; align-items: center; gap: var(--s3); font-weight: 600; margin-bottom: var(--s4); }
+  .work-status p { margin: 0; }
+  .spinner {
+    flex: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 3px solid var(--border-hairline);
+    border-top-color: var(--gold-deep);
+    animation: pm-spin 0.9s linear infinite;
+  }
+  @keyframes pm-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+  /* --- identity questions --- */
+  .idv-timer {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--s2);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    border: 1.5px solid var(--border-strong);
+    border-left: 6px solid var(--gold);
+    border-radius: var(--r-s);
+    padding: var(--s2) var(--s4);
+    margin: 0 0 var(--s5);
+  }
+  .idv-timer .clock { font-family: var(--font-mono); font-size: 1.25rem; font-weight: 700; }
+  .idv-timer.low { border-color: var(--error); color: var(--error); background: var(--error-tint); }
+  fieldset.idv-q { margin: 0 0 var(--s5); border-radius: var(--r-s); }
+  .idv-q legend {
+    display: block;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    border-bottom: 0;
+    padding: 0;
+    margin-bottom: var(--s3);
+  }
+  .idv-opts { display: grid; gap: var(--s2); }
+  .idv-opts label {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    min-height: 48px;
+    padding: var(--s2) var(--s3);
+    border: 1.5px solid var(--border-input);
+    border-radius: var(--r-s);
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color var(--t-fast) var(--ease);
+  }
+  .idv-opts label:hover { border-color: var(--border-strong); }
+  .idv-opts label:has(input:checked) { border-color: var(--border-strong); background: var(--gold-tint); }
+  .idv-opts input[type="radio"] { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--ink); }
+  .idv-opts input:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; }
+  .idv-opts input:disabled + span { color: var(--ink-muted); }
+  .idv-q.invalid .idv-opts label { border-color: var(--error); }
+  .idv-q .err { display: block; color: var(--error); font-size: var(--fs-small); font-weight: 600; margin: var(--s2) 0 0; }
+  .idv-q .err:empty { margin: 0; }
+  .retry-box p { margin-bottom: var(--s3); }
+  #idvRetryMsg:focus { outline: none; }
+  .demo-banner { margin-bottom: var(--s5); }
+
   @media (min-width: 960px) {
     .shell { grid-template-columns: 300px 1fr; }
     .rail { position: sticky; top: 0; height: 100vh; }
@@ -172,11 +275,16 @@
   <main id="main">
     <div class="doc">
 
+      <div class="callout callout-demo demo-banner" id="demoBanner" hidden>
+        <span class="callout-tag">Demo mode</span>
+        Nothing you enter leaves this browser &mdash; it is not sent to Pro Mortgages SA. Do not enter real details.
+      </div>
+
       <div id="formView">
         <header class="doc-head rise">
           <p class="doc-meta">Pro Mortgage SA &middot; Form PM&#8209;CC1</p>
-          <h1>Credit check authorisation</h1>
-          <p class="lede">This form authorises Pro Mortgage to request your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
+          <h1 id="formHead" tabindex="-1">Credit check authorisation</h1>
+          <p class="lede">This form authorises Pro Mortgages SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
         </header>
 
         <form id="ccForm" novalidate>
@@ -200,8 +308,9 @@
               <span id="idTypeLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">Identification type</span>
               <div class="radio-row" role="radiogroup" aria-labelledby="idTypeLabel">
                 <label><input type="radio" name="idType" value="said" checked> South African ID</label>
-                <label><input type="radio" name="idType" value="passport"> Passport</label>
+                <label id="passportOpt"><input type="radio" name="idType" value="passport"> Passport</label>
               </div>
+              <span class="hint" id="passportHint" hidden>Passport holders: please contact your consultant directly.</span>
             </div>
 
             <div class="field" id="saidField">
@@ -359,37 +468,50 @@
             <legend><span class="secnum" aria-hidden="true">5</span>Consent &amp; declaration</legend>
             <div class="callout callout-demo">
               <span class="callout-tag">Draft wording</span>
-              This declaration requires legal review before go-live.
+              This declaration requires legal review before go-live. Items highlighted in [brackets] are placeholders Pro Mortgages SA must complete.
             </div>
-            <div class="clause-box" tabindex="0" role="region" aria-label="Declaration and consent — credit bureau enquiry">
-              <p><strong>Declaration and consent &mdash; credit bureau enquiry</strong></p>
-              <ol>
-                <li>I confirm that the information provided in this form is true, correct and complete.</li>
-                <li>I authorise Pro Mortgage SA (&ldquo;Pro Mortgage&rdquo;) to request my consumer credit report and credit information from registered credit bureaux, including Experian, for the purpose of assessing my eligibility for home-loan pre-qualification and origination, being a permissible purpose in terms of the National Credit Act 34 of 2005.</li>
-                <li>I consent to Pro Mortgage processing the personal information in this form for that purpose in terms of the Protection of Personal Information Act 4 of 2013, and to Pro Mortgage sharing it with participating banks and credit providers solely for the purpose of originating a home loan on my behalf.</li>
-                <li>I understand that this enquiry may be recorded on my credit profile as a consumer-consent enquiry.</li>
-                <li>I may withdraw this consent in writing at any time before the enquiry is performed.</li>
-              </ol>
+
+            <section class="clause-box notice-box" aria-labelledby="noticeHead">
+              <h2 id="noticeHead">Notice from Pro Mortgages SA</h2>
+              <ul>
+                <li>Pro Mortgages SA (<span class="ph">[registered company name]</span>, registration number <span class="ph">[company registration number]</span>, <span class="ph">[physical address]</span>) is collecting the information on this form. Contact us at <span class="ph">[contact email / phone]</span>.</li>
+                <li>Pro Mortgages SA is a MortgageMAX licensee. MortgageMAX, a division of BetterLife Origination Services (Pty) Ltd, obtains your credit report from Experian on your behalf.</li>
+                <li>We use your information only to pre-qualify you for a home loan and to originate your home loan.</li>
+                <li>Your information is stored on secure cloud infrastructure, which may be located outside South Africa.</li>
+                <li>You may ask us at any time for access to your information, or to correct or delete it.</li>
+                <li>Giving consent is voluntary, but we cannot check your credit or pre-qualify you without it.</li>
+              </ul>
+            </section>
+
+            <p class="small consent-intro">MortgageMAX&rsquo;s consent follows, exactly as MortgageMAX provides it.</p>
+            <p class="consent-status" id="consentStatus" role="status" aria-live="polite">Loading the consent wording&hellip;</p>
+            <div id="consentTypes"></div>
+            <div class="callout callout-error" id="consentError" role="alert" hidden>
+              <span class="callout-tag">Consent wording unavailable</span>
+              <p>We couldn&rsquo;t load MortgageMAX&rsquo;s consent wording, so this form can&rsquo;t be submitted yet. Please check your connection and try again.</p>
+              <button class="btn btn-ghost btn-sm" id="consentRetry" type="button">Retry</button>
             </div>
+
             <div class="field">
               <label class="consent-check" for="consent">
                 <input type="checkbox" id="consent" name="consent" required>
-                <span>I have read and accept the declaration above. <span class="req" aria-hidden="true">*</span></span>
+                <span>I have read and accept the Pro Mortgages SA notice and the MortgageMAX consent above. <span class="req" aria-hidden="true">*</span></span>
               </label>
               <span class="err" id="consent-err"></span>
             </div>
           </fieldset>
 
           <div class="form-actions rise">
-            <button class="btn btn-primary" type="submit">Submit and send my SMS code</button>
+            <button class="btn btn-primary" id="submitBtn" type="submit" disabled aria-describedby="submitHint">Submit and send my SMS code</button>
           </div>
+          <p class="small" id="submitHint">You can submit once the consent wording above has loaded.</p>
           <div class="callout callout-error err-summary" id="errSummary" role="alert" hidden></div>
         </form>
       </div>
 
       <section id="otpPanel" hidden>
         <header class="doc-head">
-          <p class="doc-meta">Step 2 of 2 &middot; Confirm consent</p>
+          <p class="doc-meta">Step 2 &middot; Confirm consent</p>
           <h1>Enter your SMS code</h1>
           <p class="lede" id="otpLede">We&rsquo;ve sent a 6-digit code to your cellphone. Entering it confirms your consent &mdash; only then is anything sent to the credit bureau.</p>
         </header>
@@ -408,12 +530,49 @@
         </div>
       </section>
 
+      <section id="workPanel" hidden>
+        <header class="doc-head">
+          <p class="doc-meta" id="workMeta">Step 2 &middot; Confirm consent</p>
+          <h1 id="workHead" tabindex="-1">Registering your consent</h1>
+        </header>
+        <div class="work-status">
+          <span class="spinner" aria-hidden="true"></span>
+          <p id="workMsg" role="status" aria-live="polite"></p>
+        </div>
+        <p class="small">Please keep this page open. This usually takes a few seconds.</p>
+      </section>
+
+      <section id="idvPanel" hidden>
+        <header class="doc-head">
+          <p class="doc-meta">Step 3 &middot; Verify your identity</p>
+          <h1 id="idvHead" tabindex="-1">Verify your identity</h1>
+          <p class="lede">The credit bureau has prepared a few questions that only you should be able to answer, based on your credit record. Choose the correct answer for each. You have 5 minutes.</p>
+        </header>
+        <p class="idv-timer" id="idvTimer"><span id="idvTimerLabel">Time left</span> <span class="clock" id="idvClock" role="timer" aria-labelledby="idvTimerLabel">5:00</span></p>
+        <p class="sr-only" id="idvTimeLive" aria-live="polite"></p>
+        <form id="idvForm" novalidate>
+          <div id="idvQuestions"></div>
+          <div class="callout callout-error" id="idvError" role="alert" hidden></div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="idvSubmit" type="submit">Submit my answers</button>
+          </div>
+          <p class="small" id="idvStatus" role="status" aria-live="polite"></p>
+        </form>
+        <div class="callout callout-error retry-box" id="idvRetryBox" hidden>
+          <span class="callout-tag" id="idvRetryTag">Not verified yet</span>
+          <p id="idvRetryMsg" tabindex="-1">We couldn&rsquo;t verify your identity with those answers.</p>
+          <button class="btn btn-primary" id="idvRetry" type="button" aria-describedby="idvRetryTag idvRetryMsg">Try again with new questions</button>
+          <p class="small" id="idvRetryStatus" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
       <section id="donePanel" hidden>
         <div class="done-mark" aria-hidden="true">&#10003;</div>
-        <h1>Consent confirmed &mdash; thank you</h1>
+        <h1 id="doneHead" tabindex="-1">Consent confirmed &mdash; thank you</h1>
         <p class="lede">Your details are with Pro Mortgage. Your reference number is:</p>
         <p class="ref-badge" id="doneRef"></p>
-        <p>Your consultant will request your credit report and contact you with the outcome. Please quote your reference number in any queries. You can close this page.</p>
+        <p id="doneMsg">Your consultant will request your credit report and contact you with the outcome.</p>
+        <p>Please quote your reference number in any queries. You can close this page.</p>
       </section>
 
     </div>
@@ -429,19 +588,46 @@
   var form = document.getElementById('ccForm');
   var formView = document.getElementById('formView');
   var otpPanel = document.getElementById('otpPanel');
+  var workPanel = document.getElementById('workPanel');
+  var idvPanel = document.getElementById('idvPanel');
   var donePanel = document.getElementById('donePanel');
+  var PANELS = [formView, otpPanel, workPanel, idvPanel, donePanel];
   var currentRef = null;
 
-  /* --- ID type toggle --- */
+  /* Demo mode keeps everything in this browser: say so before anyone types real details. */
+  document.getElementById('demoBanner').hidden = PMStore.mode !== 'demo';
+
+  /* Show exactly one panel; move focus to its heading (or the given element). */
+  function showPanel(panel, focusEl) {
+    PANELS.forEach(function (p) { p.hidden = p !== panel; });
+    window.scrollTo(0, 0);
+    var target = focusEl || panel.querySelector('h1[tabindex="-1"]');
+    if (target) target.focus();
+  }
+
+  /* --- ID type toggle (passport behind PMStore.allowPassport, BUILD-PLAN D11) --- */
+  var allowPassport = PMStore.allowPassport === true;
   var saidField = document.getElementById('saidField');
   var passportFields = document.getElementById('passportFields');
+  function idType() {
+    return allowPassport && form.idType.value === 'passport' ? 'passport' : 'said';
+  }
+  function syncIdType() {
+    var isSaid = idType() === 'said';
+    saidField.hidden = !isSaid;
+    passportFields.hidden = isSaid;
+  }
+  if (!allowPassport) {
+    var passportOpt = document.getElementById('passportOpt');
+    passportOpt.hidden = true;
+    passportOpt.querySelector('input').disabled = true;
+    form.querySelector('input[name="idType"][value="said"]').checked = true;
+    document.getElementById('passportHint').hidden = false;
+  }
   form.querySelectorAll('input[name="idType"]').forEach(function (r) {
-    r.addEventListener('change', function () {
-      var isSaid = form.idType.value === 'said';
-      saidField.hidden = !isSaid;
-      passportFields.hidden = isSaid;
-    });
+    r.addEventListener('change', syncIdType);
   });
+  syncIdType();
 
   /* --- SA ID live derivation --- */
   var idInput = document.getElementById('idNumber');
@@ -467,6 +653,132 @@
     });
   });
 
+  /* --- consent wording (BUILD-PLAN D13) ---
+     The declaration is MortgageMAX's text. When it is HTML it enters the page ONLY through
+     this allow-list rebuild: parsed inertly by DOMParser, then re-created element by element
+     with no attributes at all. Nothing from the vendor is ever assigned to innerHTML. */
+  var ALLOWED_TAGS = { p: 1, br: 1, strong: 1, b: 1, em: 1, i: 1, u: 1, sup: 1, sub: 1,
+    ul: 1, ol: 1, li: 1, span: 1, h4: 1, h5: 1 };
+  var DROPPED_TAGS = { script: 1, style: 1, template: 1 }; // code, not wording: dropped outright
+  function has(map, key) { return Object.prototype.hasOwnProperty.call(map, key); }
+  function cleanInto(src, dest) {
+    for (var n = src.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 3) { dest.appendChild(document.createTextNode(n.nodeValue)); continue; }
+      if (n.nodeType !== 1) continue; // comments, processing instructions
+      var tag = String(n.nodeName).toLowerCase();
+      if (has(ALLOWED_TAGS, tag)) {
+        var el = document.createElement(tag); // fresh element: every attribute is left behind
+        cleanInto(n, el);
+        dest.appendChild(el);
+      } else if (tag === 'a') {
+        var span = document.createElement('span'); // link text kept, href dropped
+        cleanInto(n, span);
+        dest.appendChild(span);
+      } else if (!has(DROPPED_TAGS, tag)) {
+        dest.appendChild(document.createTextNode(n.textContent || ''));
+      }
+    }
+  }
+  function sanitiseDeclaration(html) {
+    var doc = new DOMParser().parseFromString(String(html == null ? '' : html), 'text/html');
+    var frag = document.createDocumentFragment();
+    cleanInto(doc.body, frag);
+    return frag;
+  }
+  function plainDeclaration(text) {
+    var frag = document.createDocumentFragment();
+    String(text == null ? '' : text).replace(/\r\n?/g, '\n').split(/\n\s*\n/).forEach(function (para) {
+      para = para.trim();
+      if (!para) return;
+      var p = document.createElement('p');
+      p.textContent = para;
+      frag.appendChild(p);
+    });
+    return frag;
+  }
+  function renderConsentType(t, i) {
+    var wrap = document.createElement('div');
+    wrap.className = 'consent-type';
+    var headId = 'consentType-' + i;
+    var h = document.createElement('h2');
+    h.id = headId;
+    h.textContent = String(t.name || 'MortgageMAX consent');
+    wrap.appendChild(h);
+    var box = document.createElement('div');
+    box.className = 'clause-box decl' + (t.isHtml ? '' : ' plain');
+    box.tabIndex = 0;
+    box.setAttribute('role', 'region');
+    box.setAttribute('aria-labelledby', headId);
+    box.appendChild(t.isHtml ? sanitiseDeclaration(t.declaration) : plainDeclaration(t.declaration));
+    if (!box.textContent.trim()) throw new Error('Consent wording is empty');
+    wrap.appendChild(box);
+    var foot = document.createElement('p');
+    foot.className = 'consent-foot';
+    foot.textContent = 'MortgageMAX consent · version ' + String(t.version == null ? '?' : t.version);
+    wrap.appendChild(foot);
+    return wrap;
+  }
+
+  var errSummary = document.getElementById('errSummary');
+  var submitBtn = document.getElementById('submitBtn');
+  var submitHint = document.getElementById('submitHint');
+  var consentBox = document.getElementById('consentTypes');
+  var consentStatus = document.getElementById('consentStatus');
+  var consentError = document.getElementById('consentError');
+  var consentRetry = document.getElementById('consentRetry');
+  var consentsPresented = null; // [{id, version, hash}] exactly as consentTypes() returned them
+  var submitting = false;
+
+  /* The form cannot be submitted unless the consent wording is on screen. */
+  function syncSubmit() {
+    submitBtn.disabled = submitting || !consentsPresented;
+    submitHint.hidden = !!consentsPresented;
+  }
+  function loadConsents(fromRetry) {
+    consentsPresented = null;
+    syncSubmit();
+    consentError.hidden = true;
+    consentRetry.disabled = true;
+    consentBox.textContent = '';
+    consentStatus.textContent = 'Loading the consent wording…';
+    var loaded = false;
+    var p;
+    if (PMStore.mode === 'error') {
+      /* config.js points at Supabase but the client library failed to load: store.js would
+         otherwise fall back to this browser's local storage and the submission would never
+         reach Pro Mortgages SA. Keep the form unsubmittable; Retry reloads the page. */
+      p = Promise.reject(new Error('backend library failed to load'));
+    } else {
+      try { p = Promise.resolve(PMStore.consentTypes()); } catch (e) { p = Promise.reject(e); }
+    }
+    p.then(function (types) {
+      if (!Array.isArray(types) || !types.length) throw new Error('No consent wording returned');
+      var frag = document.createDocumentFragment();
+      types.forEach(function (t, i) { frag.appendChild(renderConsentType(t, i)); });
+      consentBox.appendChild(frag);
+      consentsPresented = types.map(function (t) { return { id: t.id, version: t.version, hash: t.hash }; });
+      consentStatus.textContent = '';
+      loaded = true;
+      if (errSummary.getAttribute('data-kind') === 'not-ready') errSummary.hidden = true;
+    }).catch(function (err) {
+      console.error('consent wording failed to load:', (err && err.code) || err);
+      consentBox.textContent = '';
+      consentStatus.textContent = '';
+      consentError.hidden = false;
+    }).finally(function () {
+      consentRetry.disabled = false; // re-enable before moving focus onto it
+      syncSubmit();
+      if (!fromRetry) return;
+      if (loaded) consentBox.querySelector('.clause-box').focus();
+      else consentRetry.focus();
+    });
+  }
+  consentRetry.addEventListener('click', function () {
+    if (PMStore.mode === 'error') { window.location.reload(); return; }
+    loadConsents(true);
+  });
+  loadConsents(false);
+
   /* --- validation --- */
   function setErr(id, msg) {
     var el = document.getElementById(id);
@@ -486,11 +798,14 @@
 
     check('firstNames', v('firstNames') !== '', 'Enter your full first names.');
     check('surname', v('surname') !== '', 'Enter your surname.');
-    if (form.idType.value === 'said') {
+    if (idType() === 'said') {
       check('idNumber', PMStore.validSaId(v('idNumber')), 'Enter a valid 13-digit South African ID number.');
+      setErr('passportNumber', '');
+      setErr('dateOfBirth', '');
     } else {
       check('passportNumber', v('passportNumber') !== '', 'Enter your passport number.');
       check('dateOfBirth', v('dateOfBirth') !== '', 'Enter your date of birth.');
+      setErr('idNumber', '');
     }
     check('email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email')), 'Enter a valid email address.');
     check('cell', /^0[6-8][0-9]{8}$/.test(v('cell').replace(/\s/g, '')), 'Enter a valid SA cellphone number, e.g. 0821234567.');
@@ -503,13 +818,22 @@
     check('maritalStatus', v('maritalStatus') !== '', 'Select your marital status.');
     check('grossIncome', parseAmount(v('grossIncome')) > 0, 'Enter your gross monthly income.');
     check('monthlyExpenses', parseAmount(v('monthlyExpenses')) > 0, 'Enter your total monthly expenses.');
-    check('consent', document.getElementById('consent').checked, 'Please accept the declaration to continue.');
+    check('consent', document.getElementById('consent').checked, 'Please accept the notice and the consent to continue.');
     return problems;
   }
 
-  var errSummary = document.getElementById('errSummary');
   form.addEventListener('submit', function (e) {
     e.preventDefault();
+    if (submitting) return;
+    if (!consentsPresented || PMStore.mode === 'error') {
+      /* Guard for implicit (Enter-key) submission: never submit without the wording shown. */
+      errSummary.hidden = false;
+      errSummary.setAttribute('data-kind', 'not-ready');
+      errSummary.innerHTML = '<span class="callout-tag">Not ready yet</span>' +
+        'The consent wording hasn’t loaded, so the form can’t be submitted. Use Retry in section 5.';
+      return;
+    }
+    errSummary.removeAttribute('data-kind');
     var problems = validate();
     if (problems.length) {
       errSummary.hidden = false;
@@ -524,14 +848,15 @@
     errSummary.hidden = true;
 
     var v = function (id) { return document.getElementById(id).value.trim(); };
-    var submitBtn = form.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
+    var kind = idType();
+    submitting = true;
+    syncSubmit();
     PMStore.submit({
       firstNames: v('firstNames'), surname: v('surname'),
-      idType: form.idType.value,
-      idNumber: form.idType.value === 'said' ? v('idNumber') : '',
-      passportNumber: form.idType.value === 'passport' ? v('passportNumber') : '',
-      dateOfBirth: form.idType.value === 'passport' ? v('dateOfBirth') : '',
+      idType: kind,
+      idNumber: kind === 'said' ? v('idNumber') : '',
+      passportNumber: kind === 'passport' ? v('passportNumber') : '',
+      dateOfBirth: kind === 'passport' ? v('dateOfBirth') : '',
       email: v('email'), cell: v('cell').replace(/\s/g, ''),
       homePhone: v('homePhone'), workPhone: v('workPhone'),
       street: v('street'), suburb: v('suburb'), city: v('city'),
@@ -542,7 +867,8 @@
       totalDeductions: parseAmount(v('totalDeductions')),
       monthlyExpenses: parseAmount(v('monthlyExpenses')),
       housingPayment: parseAmount(v('housingPayment')),
-      consentUA: navigator.userAgent
+      consentUA: navigator.userAgent,
+      consentsPresented: consentsPresented
     }).then(function (res) {
       currentRef = res.ref;
       var cell = v('cell').replace(/\s/g, '');
@@ -552,57 +878,368 @@
       var demoBox = document.getElementById('otpDemoBox');
       demoBox.hidden = !res.demo_otp;
       if (res.demo_otp) document.getElementById('otpDemoCode').textContent = res.demo_otp;
-      formView.hidden = true;
-      otpPanel.hidden = false;
-      window.scrollTo(0, 0);
-      document.getElementById('otpInput').focus();
+      showPanel(otpPanel, document.getElementById('otpInput'));
     }).catch(function (err) {
+      var m = String((err && err.message) || '');
       errSummary.hidden = false;
-      errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
-        'We couldn’t reach the server. Please check your connection and try again.';
+      /* Server-side checks (hardening migration) — static copy only, never the raw message. */
+      if (/invalid_id_number/.test(m)) {
+        setErr('idNumber', 'Enter a valid 13-digit South African ID number.');
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'Please check your ID number and try again.';
+      } else if (/too_many_submissions/.test(m)) {
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'This ID number has already been used several times today. Please contact your consultant directly.';
+      } else {
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'We couldn’t reach the server. Please check your connection and try again.';
+      }
       console.error('submit failed:', err);
     }).finally(function () {
-      submitBtn.disabled = false;
+      submitting = false;
+      syncSubmit();
     });
   });
+
+  /* --- done panel: every variant tells the client their consent IS recorded
+     (confirm_consent succeeded before any of these can be reached). --- */
+  var DONE = {
+    standard: 'Your consultant will request your credit report and contact you with the outcome.',
+    idvPassed: 'Your identity has been verified. Your consultant will request your credit report and contact you with the outcome.',
+    manual: 'Your consent has been recorded. A consultant will contact you to complete the credit check.',
+    idvUnavailable: 'We couldn’t generate identity questions for your ID number. Your consultant will contact you.',
+    idvFailed: 'We couldn’t verify your identity online. Your consultant will contact you.',
+    idvTimeout: 'Time’s up. Your consultant will contact you to finish verifying your identity.',
+    sessionTimeout: 'Your consent is confirmed. Your session timed out before we could finish; your consultant will complete the next step.',
+    stale: 'The consent wording was updated while you were completing the form. Your consultant will contact you.',
+    unreachable: 'Your consent is confirmed. We couldn’t reach MortgageMAX just now — your consultant will complete this step.'
+  };
+  function showDone(msg) {
+    stopIdvTimer();
+    document.getElementById('doneRef').textContent = currentRef || '';
+    document.getElementById('doneMsg').textContent = msg;
+    showPanel(donePanel);
+  }
+  /* Client-safe copy for a failed post-consent step. Codes go to the console only. */
+  function doneForError(err) {
+    var code = err && err.code;
+    console.error('post-consent step failed:', code || 'unknown', err && err.message);
+    if (code === 'forbidden') return DONE.sessionTimeout;
+    if (code === 'invalid_state' && err.message === 'consent_stale') return DONE.stale;
+    /* a consultant's retry got there first — the consent is being registered for them */
+    if (code === 'invalid_state' && err.message === 'registration_in_progress') return DONE.manual;
+    /* vendor_error (e.g. MortgageMAX briefly unavailable while preparing identity questions — the
+       round is not used up), network, server_error: all "couldn't reach MortgageMAX just now" */
+    return DONE.unreachable;
+  }
+
+  /* --- processing panel --- */
+  var workMeta = document.getElementById('workMeta');
+  var workHead = document.getElementById('workHead');
+  var workMsg = document.getElementById('workMsg');
+  var workSeq = 0;
+  function setWork(meta, head, msg) {
+    var seq = ++workSeq;
+    workMeta.textContent = meta;
+    workHead.textContent = head;
+    workMsg.textContent = '';
+    /* set after a tick so the (just-revealed) live region announces it */
+    setTimeout(function () { if (seq === workSeq) workMsg.textContent = msg; }, 60);
+  }
+
+  /* --- after OTP: register consent with MortgageMAX, then (if configured) identity questions --- */
+  function handleIdvStart(res) {
+    res = res || {};
+    if (res.skipped) return showDone(DONE.standard);
+    if (res.status === 'idv_unavailable') return showDone(DONE.idvUnavailable);
+    if (res.status === 'manual_required') return showDone(DONE.manual); // too many rounds for this ID number
+    if (res.status === 'idv_in_progress') return showIdv(res.questions);
+    showDone(DONE.unreachable);
+  }
+  function startPostConsent() {
+    setWork('Step 2 · Confirm consent', 'Registering your consent', 'Registering your consent with MortgageMAX…');
+    showPanel(workPanel);
+    PMStore.registerConsent(currentRef).then(function (res) {
+      res = res || {};
+      if (res.status === 'idv_waived') return showDone(DONE.standard);
+      if (res.status === 'manual_required') return showDone(res.reason === 'consent_stale' ? DONE.stale : DONE.manual);
+      if (res.status === 'consent_registered') {
+        setWork('Step 3 · Verify your identity', 'Preparing your identity questions',
+          'The credit bureau is preparing your identity questions. This can take up to 30 seconds…');
+        return PMStore.idvStart(currentRef).then(handleIdvStart);
+      }
+      showDone(DONE.unreachable);
+    }).catch(function (err) {
+      showDone(doneForError(err));
+    });
+  }
 
   /* --- OTP --- */
   var OTP_ERRORS = {
     mismatch: 'That code doesn’t match. Check the SMS and try again.',
     expired: 'This code has expired. Go back and submit the form again.',
     too_many_attempts: 'Too many incorrect attempts. Go back and submit the form again.',
-    already_confirmed: 'This consent has already been confirmed.',
+    /* status is no longer awaiting_otp: usually an earlier attempt succeeded but its reply was lost
+       (can also be an expired record, so never claim consent is recorded outright) */
+    already_confirmed: 'This code has already been used. If you entered it a moment ago, your consent is recorded and your consultant will contact you. Otherwise, go back and submit the form again.',
     not_found: 'Something went wrong. Go back and submit the form again.'
   };
-  document.getElementById('otpBack').addEventListener('click', function () {
+  var otpVerifyBtn = document.getElementById('otpVerify');
+  var otpBackBtn = document.getElementById('otpBack');
+  var otpInput = document.getElementById('otpInput');
+  otpBackBtn.addEventListener('click', function () {
+    if (otpVerifyBtn.disabled) return; // a confirmation is in flight; its outcome decides
     if (currentRef) PMStore.abandon(currentRef);
     currentRef = null;
-    document.getElementById('otpInput').value = '';
+    otpInput.value = '';
     setErr('otpInput', '');
-    otpPanel.hidden = true;
-    formView.hidden = false;
-    window.scrollTo(0, 0);
+    showPanel(formView, document.getElementById('formHead'));
   });
-  document.getElementById('otpVerify').addEventListener('click', function () {
-    var val = document.getElementById('otpInput').value.trim();
-    if (!currentRef) return;
-    var btn = document.getElementById('otpVerify');
-    btn.disabled = true;
-    PMStore.confirmConsent(currentRef, val).then(function (res) {
-      if (!res.ok) {
-        setErr('otpInput', OTP_ERRORS[res.error] || OTP_ERRORS.not_found);
+  otpInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); otpVerifyBtn.click(); }
+  });
+  otpVerifyBtn.addEventListener('click', function () {
+    var val = otpInput.value.trim();
+    var ref = currentRef;
+    if (!ref) return;
+    if (otpVerifyBtn.disabled) return;
+    otpVerifyBtn.disabled = true;
+    otpBackBtn.disabled = true;
+    PMStore.confirmConsent(ref, val).then(function (res) {
+      res = res || {};
+      if (res.ok) {
+        setErr('otpInput', '');
+        startPostConsent();
         return;
       }
-      setErr('otpInput', '');
-      document.getElementById('doneRef').textContent = currentRef;
-      otpPanel.hidden = true;
-      donePanel.hidden = false;
-      window.scrollTo(0, 0);
+      setErr('otpInput', OTP_ERRORS[res.error] || OTP_ERRORS.not_found);
     }).catch(function (err) {
       setErr('otpInput', 'We couldn’t reach the server. Please try again.');
       console.error('confirm failed:', err);
     }).finally(function () {
-      btn.disabled = false;
+      otpVerifyBtn.disabled = false;
+      otpBackBtn.disabled = false;
+    });
+  });
+
+  /* --- identity questions (IDV) --- */
+  var IDV_SECONDS = 5 * 60;
+  var idvForm = document.getElementById('idvForm');
+  var idvQuestionsBox = document.getElementById('idvQuestions');
+  var idvTimer = document.getElementById('idvTimer');
+  var idvClock = document.getElementById('idvClock');
+  var idvTimeLive = document.getElementById('idvTimeLive');
+  var idvError = document.getElementById('idvError');
+  var idvStatus = document.getElementById('idvStatus');
+  var idvRetryBox = document.getElementById('idvRetryBox');
+  var idvRetry = document.getElementById('idvRetry');
+  var idvRetryMsg = document.getElementById('idvRetryMsg');
+  var idvRetryStatus = document.getElementById('idvRetryStatus');
+  var idvQuestions = [];
+  var idvTimerId = null;
+  var idvDeadline = 0;
+  var idvWarned = false;
+  var idvBusy = false;
+
+  function fmtClock(sec) {
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function stopIdvTimer() {
+    if (idvTimerId) { clearInterval(idvTimerId); idvTimerId = null; }
+  }
+  function setIdvFormDisabled(disabled) {
+    idvForm.querySelectorAll('input, button').forEach(function (el) { el.disabled = disabled; });
+  }
+  function tickIdv() {
+    /* measured against a deadline, so a throttled background tab cannot stretch the 5 minutes */
+    var left = Math.max(0, Math.ceil((idvDeadline - Date.now()) / 1000));
+    idvClock.textContent = fmtClock(left);
+    idvTimer.classList.toggle('low', left <= 60);
+    if (left <= 60 && left > 0 && !idvWarned) {
+      idvWarned = true;
+      idvTimeLive.textContent = 'One minute left to answer.';
+    }
+    if (left === 0) {
+      stopIdvTimer();
+      if (idvBusy) return; // answers already on their way; their outcome decides
+      setIdvFormDisabled(true);
+      /* Close the round on the server now, so the second round the client is owed is available
+         immediately (otherwise the server only recovers it after its 6-minute window). */
+      idvBusy = true;
+      PMStore.idvExpire(currentRef).then(function (res) {
+        idvBusy = false;
+        if (res && res.status === 'idv_failed' && res.canRetry) return showIdvRetry('expired');
+        showDone(DONE.idvTimeout);
+      }).catch(function (err) {
+        idvBusy = false;
+        var code = err && err.code;
+        console.error('idv-expire failed:', code);
+        /* invalid_state / network: the round may already be closed server-side. Offer the retry —
+           idv-start re-checks eligibility and its refusal is handled like any other. */
+        if (code === 'invalid_state' || code === 'network') return showIdvRetry('expired');
+        showDone(DONE.idvTimeout);
+      });
+    }
+  }
+  function startIdvTimer() {
+    stopIdvTimer();
+    idvWarned = false;
+    idvTimeLive.textContent = '';
+    idvDeadline = Date.now() + IDV_SECONDS * 1000;
+    tickIdv();
+    idvTimerId = setInterval(tickIdv, 500);
+  }
+
+  /* Build one fieldset per question. All bureau text goes in via textContent. */
+  function renderIdv(questions) {
+    idvQuestions = Array.isArray(questions) ? questions : [];
+    idvQuestionsBox.textContent = '';
+    if (!idvQuestions.length) return false;
+    for (var i = 0; i < idvQuestions.length; i++) {
+      var q = idvQuestions[i] || {};
+      var answers = Array.isArray(q.possibleAnswers) ? q.possibleAnswers : [];
+      if (!answers.length) return false;
+      var fs = document.createElement('fieldset');
+      fs.className = 'idv-q';
+      fs.id = 'idvq-' + i;
+      fs.tabIndex = -1;
+      var legend = document.createElement('legend');
+      legend.textContent = String(q.questionText == null ? '' : q.questionText);
+      fs.appendChild(legend);
+      var opts = document.createElement('div');
+      opts.className = 'idv-opts';
+      for (var j = 0; j < answers.length; j++) {
+        var a = answers[j] || {};
+        var inputId = 'idvq-' + i + '-a' + j;
+        var label = document.createElement('label');
+        label.htmlFor = inputId;
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'idvq-' + i;
+        input.id = inputId;
+        input.value = String(a.value);
+        input.required = true;
+        input.setAttribute('data-idx', String(j));
+        label.appendChild(input);
+        var text = document.createElement('span');
+        text.textContent = String(a.label == null ? '' : a.label);
+        label.appendChild(text);
+        opts.appendChild(label);
+      }
+      fs.appendChild(opts);
+      var err = document.createElement('p');
+      err.className = 'err';
+      err.id = 'idvq-' + i + '-err';
+      fs.setAttribute('aria-describedby', err.id);
+      fs.appendChild(err);
+      idvQuestionsBox.appendChild(fs);
+    }
+    return true;
+  }
+  function showIdv(questions) {
+    if (!renderIdv(questions)) return showDone(DONE.idvUnavailable);
+    idvRetryBox.hidden = true;
+    idvForm.hidden = false;
+    idvTimer.hidden = false;
+    idvError.hidden = true;
+    idvStatus.textContent = '';
+    setIdvFormDisabled(false);
+    showPanel(idvPanel);
+    startIdvTimer();
+  }
+  /* Why a round failed (idv-answer reason) → what the client is told. Only 'mismatch' may say
+     the answers were wrong: 'expired' and 'error' rounds were never scored by the bureau. */
+  var IDV_RETRY_TEXT = {
+    mismatch: 'Those answers didn’t match the bureau’s records.',
+    expired: 'Time ran out for those questions.',
+    error: 'We couldn’t check your answers just now.'
+  };
+  function idvReason(res) {
+    if (res.reason) return res.reason;
+    return res.expired ? 'expired' : '';
+  }
+  function showIdvRetry(reason) {
+    stopIdvTimer();
+    idvForm.hidden = true;
+    idvTimer.hidden = true;
+    idvRetryMsg.textContent = IDV_RETRY_TEXT[reason] || 'We couldn’t verify your identity with those answers.';
+    idvRetryBox.hidden = false;
+    idvRetry.disabled = false;
+    idvRetryStatus.textContent = '';
+    /* focus the reason first so it is read out; Tab then reaches "Try again" (which also
+       carries the reason as its description) */
+    idvRetryMsg.focus();
+  }
+
+  idvQuestionsBox.addEventListener('change', function (e) {
+    var fs = e.target.closest('.idv-q');
+    if (!fs) return;
+    fs.classList.remove('invalid');
+    var err = document.getElementById(fs.id + '-err');
+    if (err) err.textContent = '';
+  });
+
+  idvForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (idvBusy) return;
+    var answers = [];
+    var firstMissing = null;
+    idvQuestions.forEach(function (q, i) {
+      var fs = document.getElementById('idvq-' + i);
+      var err = document.getElementById('idvq-' + i + '-err');
+      var checked = fs.querySelector('input[type="radio"]:checked');
+      if (!checked) {
+        fs.classList.add('invalid');
+        err.textContent = 'Choose an answer to this question.';
+        if (!firstMissing) firstMissing = fs;
+        return;
+      }
+      fs.classList.remove('invalid');
+      err.textContent = '';
+      /* send the bureau's own values back unchanged (the server compares them strictly) */
+      var chosen = q.possibleAnswers[Number(checked.getAttribute('data-idx'))];
+      answers.push({ questionNumber: q.questionNumber, answerNumber: chosen.value });
+    });
+    if (firstMissing) {
+      idvError.hidden = false;
+      idvError.textContent = 'Please answer every question before submitting.';
+      firstMissing.focus();
+      return;
+    }
+    idvError.hidden = true;
+    idvBusy = true;
+    stopIdvTimer();
+    setIdvFormDisabled(true);
+    idvStatus.textContent = 'Checking your answers with the credit bureau…';
+    PMStore.idvAnswer(currentRef, answers).then(function (res) {
+      res = res || {};
+      if (res.status === 'idv_passed') return showDone(DONE.idvPassed);
+      var reason = idvReason(res);
+      if (res.status === 'idv_failed' && res.canRetry) return showIdvRetry(reason);
+      if (res.status === 'idv_failed') {
+        return showDone(reason === 'error' ? DONE.unreachable : reason === 'expired' ? DONE.idvTimeout : DONE.idvFailed);
+      }
+      showDone(DONE.unreachable);
+    }).catch(function (err) {
+      showDone(doneForError(err));
+    }).finally(function () {
+      idvBusy = false;
+      idvStatus.textContent = '';
+    });
+  });
+
+  idvRetry.addEventListener('click', function () {
+    if (idvBusy) return;
+    idvBusy = true;
+    idvRetry.disabled = true;
+    idvRetryStatus.textContent = 'Preparing new questions…';
+    PMStore.idvStart(currentRef).then(function (res) {
+      idvBusy = false;
+      handleIdvStart(res);
+    }).catch(function (err) {
+      idvBusy = false;
+      showDone(doneForError(err));
     });
   });
 

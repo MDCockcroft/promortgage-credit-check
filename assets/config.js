@@ -5,5 +5,8 @@
    Leave both blank to run in local demo mode (browser localStorage). */
 window.PM_CONFIG = {
   SUPABASE_URL: 'https://mxakigcvckhmyppoiuds.supabase.co',
-  SUPABASE_ANON_KEY: 'sb_publishable_DrNDeaB_61zFz27q1QzW_w_PkiKd-AO'
+  SUPABASE_ANON_KEY: 'sb_publishable_DrNDeaB_61zFz27q1QzW_w_PkiKd-AO',
+  /* Passport applicants: MortgageMax's /CreditCheck/full takes only an ID number (BUILD-PLAN D11).
+     Keep false until the vendor confirms passport support; the server enforces this too. */
+  ALLOW_PASSPORT: false
 };

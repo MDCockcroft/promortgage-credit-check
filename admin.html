@@ -36,6 +36,7 @@
     padding: 3px 10px;
     text-transform: uppercase;
   }
+  .demo-badge.badge-quiet { color: var(--rail-muted); border-color: var(--rail-muted); }
   .topbar .btn-ghost { color: var(--rail-ink); border-color: #4a4a44; }
   .topbar .btn-ghost:hover:not(:disabled) { background: #232320; border-color: var(--rail-muted); }
 
@@ -70,10 +71,11 @@
     line-height: 1;
   }
   .stats dd small { font-size: var(--fs-small); font-family: var(--font-body); font-weight: 400; color: var(--ink-muted); }
+  .stats > div.tile-attention { border-left: 4px solid var(--gold-deep); }
 
   .controls { display: flex; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s4); }
   .controls .field { margin: 0; flex: 1 1 220px; }
-  .controls .field.narrow { flex: 0 1 220px; }
+  .controls .field.narrow { flex: 0 1 260px; }
 
   .register {
     background: var(--surface);
@@ -81,8 +83,9 @@
     border-radius: var(--r-m);
     box-shadow: var(--shadow-1);
     overflow-x: auto;
+    position: relative; /* contains the absolutely positioned .sr-only labels so they can't widen the page */
   }
-  table { border-collapse: collapse; width: 100%; min-width: 720px; }
+  table { border-collapse: collapse; width: 100%; min-width: 800px; }
   caption {
     text-align: left;
     font-family: var(--font-display);
@@ -103,6 +106,7 @@
   tbody tr:hover { background: var(--surface-sunken); }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
+  td.score-cell { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
 
   .empty {
     padding: var(--s7) var(--s5);
@@ -111,15 +115,49 @@
   }
   .empty .btn { margin-top: var(--s4); }
 
+  /* --- chips used by store.js STATUS (extends the shared .chip family) --- */
+  .chip-ready { color: #fff; background: var(--success); border-color: var(--success); }
+  .chip-failed { color: var(--error); background: var(--error-tint); }
+  .chip-attention { color: var(--ink); background: var(--gold-tint); border-color: var(--gold-deep); }
+  .chip-attention::before { background: var(--gold-deep); }
+  .chip-muted { color: var(--ink-muted); background: var(--surface); border-style: dashed; }
+  /* a status this page doesn't know yet: shown raw, deliberately neutral */
+  .chip-neutral { color: var(--ink); background: var(--surface); border-color: var(--border-strong); }
+  /* bureau flag chips: the word Yes/No/Unknown always carries the meaning, colour only reinforces it */
+  .flag-yes { color: var(--error); background: var(--error-tint); border-width: 2px; }
+  .flag-no { color: var(--ink-muted); background: var(--surface); }
+  .flag-unknown { color: var(--ink-muted); background: var(--surface); border-style: dashed; }
+  .risk-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  }
+
+  /* --- page messages / callouts --- */
+  .msg { min-height: 1.2em; margin: var(--s2) 0 0; font-size: var(--fs-small); font-weight: 600; }
+  .msg:empty { min-height: 0; margin: 0; }
+  .msg.msg-ok { color: var(--success); }
+  .msg.msg-err { color: var(--error); }
+  .msg .msg-sub { display: block; font-family: var(--font-mono); font-weight: 400; color: var(--ink-muted); margin-top: 2px; }
+  .msg a { font-weight: 700; }
+  .callout p { margin: 0 0 var(--s2); }
+  .callout p:last-child { margin-bottom: 0; }
+  #pageMsg { margin-bottom: var(--s4); }
+
   /* --- detail dialog --- */
   dialog {
     border: 0;
     border-radius: var(--r-m);
     box-shadow: var(--shadow-2);
     padding: 0;
-    width: min(720px, calc(100vw - 2 * var(--s4)));
-    max-height: 85vh;
+    width: min(760px, calc(100vw - 2 * var(--s4)));
+    max-height: 88vh;
   }
+  /* header and action bar stay put; only the body scrolls */
+  dialog[open] { display: flex; flex-direction: column; }
   dialog::backdrop { background: rgba(23, 21, 15, 0.5); }
   .dlg-head {
     background: var(--rail-bg);
@@ -129,6 +167,7 @@
     display: flex;
     align-items: center;
     gap: var(--s3);
+    flex: none;
   }
   .dlg-head h2 { font-size: 1.15rem; }
   .dlg-head .mono { color: var(--gold); font-size: var(--fs-small); }
@@ -139,7 +178,7 @@
     font-size: 1.1rem; cursor: pointer;
   }
   .dlg-close:hover { border-color: var(--rail-muted); background: #232320; }
-  .dlg-body { padding: var(--s5); overflow-y: auto; }
+  .dlg-body { padding: var(--s5); overflow-y: auto; flex: 1 1 auto; min-height: 0; position: relative; }
   .dlg-body h3 {
     font-size: var(--fs-small);
     font-family: var(--font-body);
@@ -152,9 +191,16 @@
     margin: var(--s5) 0 var(--s3);
   }
   .dlg-body h3:first-child { margin-top: 0; }
-  .kv { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: var(--s1) var(--s4); margin: 0; }
+  .dlg-body .dsec > h3:first-child { margin-top: var(--s5); }
+  .dlg-body h4.tier-h {
+    font-size: var(--fs-small);
+    font-weight: 700;
+    margin: var(--s4) 0 var(--s2);
+  }
+  .kv { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); gap: var(--s1) var(--s4); margin: 0; }
   .kv dt { font-size: var(--fs-small); color: var(--ink-muted); }
-  .kv dd { margin: 0; font-size: var(--fs-small); font-weight: 600; }
+  .kv dd { margin: 0; font-size: var(--fs-small); font-weight: 600; overflow-wrap: anywhere; }
+  .kv dd ul { margin: 0; padding-left: 1.1em; }
   .audit { list-style: none; margin: 0; padding: 0; }
   .audit li {
     display: flex; gap: var(--s3);
@@ -163,11 +209,157 @@
     font-size: var(--fs-small);
   }
   .audit time { font-family: var(--font-mono); color: var(--ink-muted); white-space: nowrap; }
+  .ua-line { margin-top: var(--s3); }
+  .dsec-actions { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; margin-top: var(--s3); }
+  .dsec .note { font-size: var(--fs-small); color: var(--ink-muted); margin: var(--s2) 0 0; }
+
+  .mini-wrap { overflow-x: auto; }
+  .mini-table { width: 100%; min-width: 0; border-collapse: collapse; margin: var(--s1) 0 var(--s2); }
+  .mini-table th, .mini-table td {
+    padding: var(--s1) var(--s2);
+    font-size: var(--fs-small);
+    border-bottom: 1px solid var(--border-hairline);
+    vertical-align: top;
+    word-break: break-word;
+  }
+  .mini-table thead th { border-bottom: 1px solid var(--border-strong); }
+  .mini-table tbody th { font-weight: 400; color: var(--ink-muted); width: 40%; }
+  .mini-table caption { font-size: var(--fs-micro); font-family: var(--font-body); padding: var(--s2) 0 0; color: var(--ink-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .inline-panel {
+    border: 1.5px solid var(--border-strong);
+    border-left-width: 6px;
+    border-radius: var(--r-s);
+    padding: var(--s4);
+    margin-top: var(--s3);
+    background: var(--surface);
+  }
+  .inline-panel h4 { font-size: var(--fs-body); margin: 0 0 var(--s2); }
+  .field textarea {
+    width: 100%;
+    min-height: 64px;
+    padding: var(--s2) var(--s3);
+    border: 1.5px solid var(--border-input);
+    border-radius: var(--r-s);
+    background: var(--surface);
+    color: var(--ink);
+    font: 400 1rem var(--font-body);
+    resize: vertical;
+  }
+  .field textarea:hover { border-color: var(--border-strong); }
+  .field textarea:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 1px; border-color: var(--border-strong); }
+  .field textarea[aria-invalid="true"] { border-color: var(--error); }
+  .field textarea[readonly] { background: var(--surface-sunken); }
+
+  /* --- report card --- */
+  .verdict {
+    display: grid;
+    grid-template-columns: minmax(150px, auto) 1fr;
+    gap: var(--s5);
+    border: 1px solid var(--border-hairline);
+    border-top: 4px solid var(--gold);
+    border-radius: var(--r-m);
+    padding: var(--s4) var(--s5);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+  @media (max-width: 560px) { .verdict { grid-template-columns: 1fr; gap: var(--s3); } }
+  .score-label {
+    font-size: var(--fs-micro);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    font-weight: 700;
+    margin: 0 0 var(--s1);
+  }
+  .score-big {
+    font-family: var(--font-display);
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    margin: 0 0 var(--s2);
+  }
+  .risk-line { font-size: var(--fs-small); font-weight: 600; margin: 0; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: var(--s2); list-style: none; margin: 0 0 var(--s3); padding: 0; }
+  .counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: var(--s2); margin: 0 0 var(--s3); }
+  .counts > div { background: var(--surface-sunken); border-radius: var(--r-s); padding: var(--s2) var(--s3); }
+  .counts dt { font-size: var(--fs-micro); color: var(--ink); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; }
+  .counts dd { margin: 0; font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .counts > div.count-alert { background: var(--error-tint); }
+  .counts > div.count-alert dd { color: var(--error); }
+  .decline-list { margin: 0 0 var(--s3); padding-left: 1.1em; font-size: var(--fs-small); }
+  .ids-line { margin: var(--s2) 0 0; font-size: var(--fs-micro); word-break: break-all; }
+  .sample-note { font-size: var(--fs-small); font-weight: 600; color: var(--gold-deep); margin: 0 0 var(--s2); }
+
+  .dlg-body details {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-s);
+    margin: var(--s2) 0;
+    background: var(--surface);
+  }
+  .dlg-body summary {
+    cursor: pointer;
+    padding: var(--s2) var(--s3);
+    font-weight: 600;
+    font-size: var(--fs-small);
+    min-height: 36px;
+    display: list-item;
+  }
+  .dlg-body details > .det-body { padding: 0 var(--s3) var(--s3); }
+  .also-checked { margin: var(--s2) 0 0; padding-left: 1.1em; font-size: var(--fs-small); color: var(--ink-muted); }
+  .raw-json {
+    max-height: 360px;
+    overflow: auto;
+    background: var(--surface-sunken);
+    padding: var(--s3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    border-radius: var(--r-s);
+    margin: 0;
+    white-space: pre;
+  }
+  .access-list { list-style: none; margin: 0; padding: 0; font-size: var(--fs-micro); }
+  .access-list li { padding: 2px 0; border-bottom: 1px dashed var(--border-hairline); }
+
+  /* --- dialog action bar (run / confirm / delete) --- */
   .dlg-actions {
-    display: flex; gap: var(--s3); flex-wrap: wrap;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
     padding: var(--s4) var(--s5);
     border-top: 1px solid var(--border-hairline);
     background: var(--surface-sunken);
+    flex: none;
+  }
+  .act-row { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: center; }
+  .act-row .push { margin-left: auto; }
+  .run-hint { margin: 0; }
+  .run-hint:empty { display: none; }
+  .confirm-q { font-weight: 600; margin: 0 0 var(--s3); flex-basis: 100%; }
+  .override-set {
+    border: 1.5px solid var(--gold-deep);
+    border-radius: var(--r-s);
+    padding: var(--s2) var(--s4) var(--s3);
+    margin: 0 0 var(--s2);
+    background: var(--gold-tint);
+    min-width: 0;
+  }
+  .override-set legend { font-size: var(--fs-small); font-weight: 700; padding: 0 var(--s1); }
+  .override-set .field { margin: var(--s2) 0 0; }
+  .check-row { display: flex; gap: var(--s2); align-items: center; font-size: var(--fs-small); font-weight: 600; min-height: 36px; }
+  .dlg-actions .msg { margin: 0; }
+
+  /* --- My details dialog --- */
+  #profileDlg { width: min(480px, calc(100vw - 2 * var(--s4))); }
+  .plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .plain-fieldset legend {
+    font-size: var(--fs-small);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-bottom: var(--s3);
   }
 
   .foot-note { margin-top: var(--s5); }
@@ -202,9 +394,11 @@
   </div>
   <h1>Credit check register</h1>
   <span class="demo-badge" id="modeBadge">Demo &mdash; local data only</span>
+  <span class="demo-badge" id="envBadge" hidden></span>
   <div class="spacer"></div>
-  <button class="btn btn-ghost btn-sm" id="seedBtn" type="button">Load sample data</button>
-  <button class="btn btn-ghost btn-sm" id="clearBtn" type="button">Clear all</button>
+  <button class="btn btn-ghost btn-sm" id="myDetailsBtn" type="button" hidden>My details</button>
+  <button class="btn btn-ghost btn-sm" id="seedBtn" type="button" hidden>Load sample data</button>
+  <button class="btn btn-ghost btn-sm" id="clearBtn" type="button" hidden>Clear all</button>
   <button class="btn btn-ghost btn-sm" id="signOutBtn" type="button" hidden>Sign out</button>
 </header>
 
@@ -226,6 +420,20 @@
 </div>
 
 <main id="main">
+  <div class="callout callout-demo" id="configWarn" hidden>
+    <span class="callout-tag">Settings unavailable</span>
+    <p>We couldn&rsquo;t load the MortgageMAX settings, so this page assumes identity questions are switched off.
+    The server still applies the real rules when you run a credit check. Reload the page to try again.</p>
+  </div>
+
+  <div class="callout callout-demo" id="profileNudge" hidden>
+    <span class="callout-tag">Your details</span>
+    <p>Add your details so MortgageMAX records which consultant ran each check.</p>
+    <button class="btn btn-ghost btn-sm" id="nudgeBtn" type="button">Add my details</button>
+  </div>
+
+  <p class="msg" id="pageMsg" role="status" aria-live="polite" tabindex="-1"></p>
+
   <dl class="stats" id="stats"></dl>
 
   <div class="controls">
@@ -237,16 +445,13 @@
       <label for="statusFilter">Status</label>
       <select id="statusFilter">
         <option value="">All statuses</option>
-        <option value="awaiting_otp">Awaiting SMS code</option>
-        <option value="consent_confirmed">Consent confirmed</option>
-        <option value="report_requested">Report requested</option>
       </select>
     </div>
   </div>
 
   <div class="register">
     <table id="regTable">
-      <caption>Submissions</caption>
+      <caption id="regCaption" tabindex="-1">Submissions</caption>
       <thead>
         <tr>
           <th scope="col">Reference</th>
@@ -254,6 +459,7 @@
           <th scope="col">ID number</th>
           <th scope="col">Submitted</th>
           <th scope="col" class="num">Gross income</th>
+          <th scope="col">Score</th>
           <th scope="col">Status</th>
           <th scope="col"><span class="sr-only">Actions</span></th>
         </tr>
@@ -261,28 +467,85 @@
       <tbody id="regBody"></tbody>
     </table>
     <div class="empty" id="emptyState" hidden>
-      <p><strong>No submissions yet.</strong><br>Send clients the form link, or load sample data to see how the register works.</p>
-      <button class="btn btn-primary" id="seedBtnEmpty" type="button">Load sample data</button>
+      <p id="emptyText"><strong>No submissions yet.</strong></p>
+      <button class="btn btn-primary" id="seedBtnEmpty" type="button" hidden>Load sample data</button>
     </div>
   </div>
 
-  <p class="small foot-note">Demo build: records are stored in this browser only and the &ldquo;Request ITC report&rdquo; action is a stub.
-  The production build adds a Supabase database, staff login, SMS delivery and the Experian credit report API call.
-  Client form: <a href="index.html">index.html</a></p>
+  <p class="small foot-note" id="footNote"></p>
 </main>
 
 <dialog id="detailDlg" aria-labelledby="dlgTitle">
   <div class="dlg-head">
-    <h2 id="dlgTitle">Submission</h2>
+    <h2 id="dlgTitle" tabindex="-1">Submission</h2>
     <span class="mono" id="dlgRef"></span>
     <div class="spacer"></div>
     <button class="dlg-close" id="dlgClose" type="button" aria-label="Close">&times;</button>
   </div>
   <div class="dlg-body" id="dlgBody"></div>
-  <div class="dlg-actions">
-    <button class="btn btn-primary" id="dlgRequest" type="button">Request ITC report</button>
-    <button class="btn btn-danger btn-sm" id="dlgDelete" type="button">Delete record</button>
+  <div class="dlg-actions" id="dlgActions">
+    <div id="runBlock">
+      <fieldset class="override-set" id="overrideSet" hidden>
+        <legend>Identity check override</legend>
+        <label class="check-row" for="overrideChk"><input type="checkbox" id="overrideChk"> Override identity check</label>
+        <div class="field" id="overrideField" hidden>
+          <label for="overrideReason">Reason for the override (required, recorded in the audit trail)</label>
+          <textarea id="overrideReason" rows="2" maxlength="200" aria-describedby="overrideErr"></textarea>
+          <span class="err" id="overrideErr"></span>
+        </div>
+      </fieldset>
+      <div class="act-row">
+        <button class="btn btn-primary" id="dlgRun" type="button" aria-describedby="runHint">Run credit check</button>
+        <button class="btn btn-danger btn-sm push" id="dlgDelete" type="button">Delete record</button>
+      </div>
+      <p class="small run-hint" id="runHint"></p>
+    </div>
+    <div id="confirmBlock" hidden>
+      <p class="confirm-q" id="confirmQ" tabindex="-1"></p>
+      <div class="act-row">
+        <button class="btn btn-primary" id="confirmYes" type="button">Yes</button>
+        <button class="btn btn-ghost" id="confirmNo" type="button">Cancel</button>
+      </div>
+    </div>
+    <p class="msg" id="dlgMsg" role="status" aria-live="polite"></p>
   </div>
+</dialog>
+
+<dialog id="profileDlg" aria-labelledby="profileTitle">
+  <div class="dlg-head">
+    <h2 id="profileTitle" tabindex="-1">My details</h2>
+    <div class="spacer"></div>
+    <button class="dlg-close" id="profileClose" type="button" aria-label="Close">&times;</button>
+  </div>
+  <form class="dlg-body" id="profileForm" novalidate>
+    <p class="small">MortgageMAX records the consultant who runs each credit check. These details are sent with every check you run.</p>
+    <fieldset class="plain-fieldset">
+      <legend>Consultant details</legend>
+      <div class="field">
+        <label for="pfName">Full name <span class="req">(required)</span></label>
+        <input type="text" id="pfName" autocomplete="name" required aria-describedby="pfNameErr">
+        <span class="err" id="pfNameErr"></span>
+      </div>
+      <div class="field">
+        <label for="pfEmail">Email <span class="req">(required)</span></label>
+        <input type="email" id="pfEmail" autocomplete="email" required aria-describedby="pfEmailErr">
+        <span class="err" id="pfEmailErr"></span>
+      </div>
+      <div class="field">
+        <label for="pfCell">Cell number</label>
+        <input type="tel" id="pfCell" autocomplete="tel">
+      </div>
+      <div class="field">
+        <label for="pfBranch">Branch</label>
+        <input type="text" id="pfBranch" autocomplete="organization-title">
+      </div>
+    </fieldset>
+    <div class="act-row">
+      <button class="btn btn-primary" id="profileSave" type="submit">Save details</button>
+      <button class="btn btn-ghost" id="profileCancel" type="button">Cancel</button>
+    </div>
+    <p class="msg" id="profileMsg" role="status" aria-live="polite"></p>
+  </form>
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -291,42 +554,283 @@
 <script>
 (function () {
   'use strict';
-  var currentRef = null;
 
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+  /* ================= state ================= */
+  /* System settings from PMStore.config(); idvMode drives which statuses may run a check.
+     If config() fails we assume 'off' — the server re-applies the real guard on every run. */
+  var sysCfg = { mode: PMStore.mode, idvMode: 'off', env: '', allowPassport: false };
+  var cfgLoaded = false;
+  var currentRef = null;      // record open in the detail dialog
+  var currentRec = null;
+  var busy = false;           // a dialog action is in flight (blocks double submits)
+  var pending = null;         // inline confirm step in progress: {kind:'run'|'delete', ...}
+  var withdrawOpen = false;   // withdrawal reason form is open
+  var staleDetail = false;    // a live update arrived while the user was mid-action
+  var viewLogged = {};        // ref -> 'view' already logged during this dialog session
+  var rawLogged = {};         // ref -> 'view_raw' already logged during this dialog session
+  var flashes = [];           // messages to show after the next dialog render
+  var profile = null;
+  var listening = false;
+  var refreshTimer = null;
+  var lastAll = null;         // the register rows last loaded (search/filter re-render from these)
+  var withdrawWarn = {};      // ref -> {code}: MortgageMAX did not accept a withdrawal recorded this session
+
+  var STALE_IN_FLIGHT_MS = 5 * 60 * 1000;  // server's stale window for a running check
+  var PDF_FETCH_STALE_MS = 3 * 60 * 1000;  // a PDF still "fetching" after this was interrupted
+  /* Statuses the server recovers when they are stale; opening such a record asks it to. */
+  var RECOVERABLE = ['check_in_flight', 'idv_in_progress'];
+
+  /* Statuses where "Run credit check" can never apply — hidden, not just disabled. */
+  var NEVER_RUN = ['report_ready', 'consent_withdrawn', 'expired', 'awaiting_otp'];
+
+  var dlg = document.getElementById('detailDlg');
+  var pdlg = document.getElementById('profileDlg');
+  var mainEl = document.getElementById('main');
+  var loginView = document.getElementById('loginView');
+
+  /* ================= DOM helpers (all data goes in via textContent) ================= */
+  function $(id) { return document.getElementById(id); }
+  var PROPS = { className: 1, value: 1, disabled: 1, hidden: 1, checked: 1, htmlFor: 1, open: 1,
+    required: 1, type: 1, href: 1, target: 1, rel: 1, id: 1, title: 1, maxLength: 1, rows: 1, readOnly: 1 };
+  function el(tag, props, kids) {
+    var n = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        var v = props[k];
+        if (v == null) return;
+        if (k === 'text') n.textContent = String(v);
+        else if (PROPS[k]) n[k] = v;
+        else if (v !== false) n.setAttribute(k, String(v));
+      });
+    }
+    return append(n, kids);
   }
+  function append(n, kids) {
+    if (kids == null) return n;
+    if (!Array.isArray(kids)) kids = [kids];
+    kids.forEach(function (k) {
+      if (k == null || k === false) return;
+      n.appendChild(typeof k === 'object' ? k : document.createTextNode(String(k)));
+    });
+    return n;
+  }
+  function btn(label, cls, onClick, id) {
+    var b = el('button', { type: 'button', className: cls, text: label, id: id || null });
+    if (onClick) b.addEventListener('click', onClick);
+    return b;
+  }
+  function h3(text, id) { return el('h3', { text: text, id: id || null, tabindex: id ? '-1' : null }); }
+  function kv(pairs) {
+    var dl = el('dl', { className: 'kv' });
+    pairs.forEach(function (p) {
+      if (!p) return;
+      dl.appendChild(el('dt', { text: p[0] }));
+      dl.appendChild(el('dd', { className: p[2] || null }, p[1] == null || p[1] === '' ? '—' : p[1]));
+    });
+    return dl;
+  }
+  function msgRegion(id) { return el('p', { id: id, className: 'msg', role: 'status', 'aria-live': 'polite' }); }
+  function setMsg(id, text, kind, sub) {
+    var n = $(id);
+    if (!n) return null;
+    n.textContent = '';
+    n.className = 'msg' + (kind ? ' msg-' + kind : '');
+    if (text) n.appendChild(el('span', { text: text }));
+    if (sub) n.appendChild(el('span', { className: 'msg-sub', text: sub }));
+    return n;
+  }
+  function pushFlash(target, text, kind, sub) { flashes.push({ target: target, text: text, kind: kind, sub: sub }); }
+  function applyFlashes() {
+    var list = flashes;
+    flashes = [];
+    /* set after a tick so screen readers announce text arriving in a freshly built live region */
+    if (list.length) setTimeout(function () { list.forEach(function (f) { setMsg(f.target, f.text, f.kind, f.sub); }); }, 80);
+  }
+  /* Run a store call so that a synchronous throw (e.g. browser storage full in demo) becomes a
+     rejection — otherwise a button could stay stuck on "Running…". */
+  function safe(fn) { return new Promise(function (resolve) { resolve(fn()); }); }
+  /* Focus the first usable element from a list of ids, else the dialog title. */
+  function focusSafe(ids) {
+    ids = [].concat(ids || []);
+    for (var i = 0; i < ids.length; i++) {
+      var n = ids[i] && $(ids[i]);
+      if (n && !n.disabled && !n.closest('[hidden]')) { n.focus(); return; }
+    }
+    $('dlgTitle').focus();
+  }
+
+  /* ================= formatting ================= */
+  function fullName(r) { return String((r.firstNames || '') + ' ' + (r.surname || '')).trim() || r.ref; }
   function maskId(rec) {
-    if (rec.idType === 'passport') return 'Passport ' + esc(rec.passportNumber);
+    if (rec.idType === 'passport') return 'Passport ' + (rec.passportNumber || '');
     var id = rec.idNumber || '';
     return id.slice(0, 6) + '•••••' + id.slice(-2);
   }
   function rand(n) {
-    return 'R ' + Number(n || 0).toLocaleString('en-ZA').replace(/,/g, ' ');
+    return 'R ' + Number(n || 0).toLocaleString('en-ZA').replace(/,/g, ' ');
+  }
+  function zar(n) {
+    return 'R ' + Math.round(Number(n)).toLocaleString('en-ZA').replace(/,/g, ' ');
   }
   function fmtDate(ts) {
     if (!ts) return '—';
     var d = new Date(ts);
+    if (isNaN(d.getTime())) return String(ts);
     return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) +
       ', ' + d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
   }
-  function chip(status) {
-    var s = PMStore.STATUS[status] || { label: status, chip: 'chip-requested' };
-    return '<span class="chip ' + s.chip + '">' + esc(s.label) + '</span>';
+  function shortId(id) { return id ? String(id).slice(0, 8).toUpperCase() : '—'; }
+  function statusInfo(status) {
+    return PMStore.STATUS[status] || { label: String(status || 'Unknown'), chip: 'chip-neutral', group: '' };
+  }
+  function chipEl(status, rec) {
+    var s = statusInfo(status);
+    if (rec && isStalled(rec)) return el('span', { className: 'chip chip-attention', text: s.label + ' — stalled' });
+    return el('span', { className: 'chip ' + s.chip, text: s.label });
+  }
+  /* Mirrors the server's recovery windows (states.ts): an unanswered identity round after 6 min,
+     a check still "running" after 5 min. Opening the record triggers the server recovery. */
+  function isStalled(r) {
+    var now = Date.now();
+    if (r.status === 'idv_in_progress' && r.idvStartedAt) return now - r.idvStartedAt > 6 * 60 * 1000;
+    if (r.status === 'check_in_flight' && r.checkStartedAt) return now - r.checkStartedAt > 5 * 60 * 1000;
+    return false;
+  }
+  var RAG_COLOURS = { green: 'var(--success)', amber: 'var(--gold)', red: 'var(--error)' };
+  function ragKey(rag) { return typeof rag === 'string' ? rag.trim().toLowerCase() : ''; }
+  function dotEl(sum) {
+    var c = sum && sum.riskColour;
+    if (!(typeof c === 'string' && /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/.test(c))) {
+      c = RAG_COLOURS[ragKey(sum && sum.rag)] || null;
+    }
+    if (!c) return null;
+    var d = el('span', { className: 'risk-dot', 'aria-hidden': 'true' });
+    d.style.background = c;
+    return d;
+  }
+  function scoreCell(sum) {
+    if (!sum || sum.score == null || sum.score === '') return '—';
+    return [dotEl(sum), String(sum.score),
+      sum.riskType ? el('span', { className: 'sr-only', text: ' (' + sum.riskType + ' risk)' }) : null];
+  }
+  function ragChip(rag) {
+    var k = ragKey(rag);
+    var cls = k === 'green' ? 'chip-confirmed' : k === 'amber' ? 'chip-attention' : k === 'red' ? 'chip-failed' : 'chip-muted';
+    return el('span', { className: 'chip ' + cls, text: 'RAG: ' + rag });
+  }
+  function flagChip(label, v) {
+    var f = v === 'yes' || v === 'no' ? v : 'unknown';
+    var word = f === 'yes' ? 'Yes' : f === 'no' ? 'No' : 'Unknown';
+    return el('span', { className: 'chip flag-' + f, text: label + ': ' + word });
+  }
+
+  /* invalid_state reasons the server names in the message → what the consultant should do. */
+  var INVALID_STATE_TEXT = {
+    consent_not_granted: 'MortgageMAX does not show a granted consent for this person — refresh consents or check with the client.',
+    withdrawn_elsewhere: 'This person withdrew consent on another application, so no credit check can be run. Speak to the client before doing anything further.',
+    consent_never_registered: 'This client’s consent was never registered with MortgageMAX, so there is nothing to read back.',
+    registration_in_progress: 'A consent registration for this record is already in progress. Wait a moment, then close and reopen the record.',
+    consent_stale: 'The consent wording this client agreed to is no longer current at MortgageMAX, so it can’t be registered. Ask the client to complete the form again.',
+    consent_not_presented: 'No consent wording was recorded for this application, so it can’t be registered. Ask the client to complete the form again.'
+  };
+
+  /* err.code → message a consultant can act on. Codes only ever go in the secondary line. */
+  function staffError(err, ctx) {
+    var code = err && err.code;
+    var m = (err && err.message) || 'Something went wrong';
+    var text;
+    var special = code === 'invalid_state' && Object.prototype.hasOwnProperty.call(INVALID_STATE_TEXT, m)
+      ? INVALID_STATE_TEXT[m] : null;
+    switch (special ? '_special' : code) {
+      case '_special': text = special; break;
+      case 'invalid_state':
+        text = ctx === 'run'
+          ? 'Someone may already have run this, or the record isn’t ready: ' + m
+          : 'This record has changed and the action no longer applies: ' + m;
+        break;
+      case 'vendor_timeout':
+        text = ctx === 'run'
+          ? 'MortgageMAX did not respond in time. It may still have processed the enquiry — check the record before retrying.'
+          : 'MortgageMAX did not respond in time. Try again in a moment.';
+        break;
+      case 'vendor_error': text = 'MortgageMAX returned an error: ' + m; break;
+      case 'config_error': text = 'System configuration problem — contact Michael.'; break;
+      case 'unauthenticated': text = 'Your session has expired — sign in again.'; break;
+      case 'network':
+        /* the paid call may have started before the connection dropped — never invite a blind retry */
+        text = ctx === 'run'
+          ? 'Could not reach the server, so we can’t tell whether the credit check ran. Close and reopen the record to check its status before retrying.'
+          : 'Could not reach the server. Check your connection and try again.';
+        break;
+      case 'bad_request': text = m; break;
+      default:
+        text = m && m !== 'Something went wrong'
+          ? 'Something went wrong: ' + m
+          : 'Something went wrong. Try again, and contact Michael if it keeps happening.';
+    }
+    var sub = [];
+    if (err && err.vendorCode) sub.push('Vendor code: ' + err.vendorCode);
+    if (err && err.traceId) sub.push('Trace ID: ' + err.traceId);
+    return { text: text, sub: sub.join(' · ') };
+  }
+
+  /* ================= register: stats, filter, table ================= */
+  function buildFilter() {
+    var sel = $('statusFilter');
+    var keep = sel.value;
+    sel.textContent = '';
+    sel.appendChild(el('option', { value: '', text: 'All statuses' }));
+    Object.keys(PMStore.STATUS).forEach(function (k) {
+      sel.appendChild(el('option', { value: k, text: PMStore.STATUS[k].label }));
+    });
+    sel.value = keep;
+  }
+
+  function renderStats(all) {
+    var ready = PMStore.allowedFrom(sysCfg.idvMode, false).filter(function (s) { return s !== 'check_failed'; });
+    var c = { awaiting: 0, ready: 0, reports: 0, attention: 0 };
+    all.forEach(function (r) {
+      var g = statusInfo(r.status).group;
+      /* a stalled round or check needs a consultant, not the client (opening it recovers it) */
+      if (isStalled(r)) { c.attention++; return; }
+      /* a running check is ours, not the client's, so it is not "awaiting client" */
+      if (g === 'awaiting' && r.status !== 'check_in_flight') c.awaiting++;
+      if (ready.indexOf(r.status) !== -1) c.ready++;
+      if (g === 'reports') c.reports++;
+      if (g === 'attention') c.attention++;
+    });
+    var tiles = [
+      ['Total submissions', all.length],
+      ['Awaiting client', c.awaiting],
+      ['Ready to run', c.ready],
+      ['Reports ready', c.reports, 'via MortgageMAX'],
+      ['Needs attention', c.attention, null, c.attention ? 'tile-attention' : null]
+    ];
+    var dl = $('stats');
+    dl.textContent = '';
+    tiles.forEach(function (t) {
+      dl.appendChild(el('div', { className: t[3] || null }, [
+        el('dt', { text: t[0] }),
+        el('dd', null, [String(t[1]), t[2] ? ' ' : null, t[2] ? el('small', { text: t[2] }) : null])
+      ]));
+    });
   }
 
   function render() {
-    return PMStore.all().then(renderRows).catch(function (err) {
+    return PMStore.all().then(function (all) {
+      lastAll = all;
+      renderRows(all);
+    }).catch(function (err) {
       console.error('load failed:', err);
-      document.getElementById('regBody').innerHTML =
-        '<tr><td colspan="7"><em>Could not load submissions: ' + esc(err.message) + '</em></td></tr>';
+      var body = $('regBody');
+      body.textContent = '';
+      body.appendChild(el('tr', null, el('td', { colspan: 8 },
+        el('em', { text: 'Could not load submissions: ' + ((err && err.message) || 'unknown error') }))));
     });
   }
   function renderRows(all) {
-    var q = document.getElementById('search').value.trim().toLowerCase();
-    var sf = document.getElementById('statusFilter').value;
+    var q = $('search').value.trim().toLowerCase();
+    var sf = $('statusFilter').value;
     var rows = all.filter(function (r) {
       if (sf && r.status !== sf) return false;
       if (!q) return true;
@@ -334,186 +838,1383 @@
         .toLowerCase().indexOf(q) !== -1;
     });
 
-    /* stats */
-    var counts = { awaiting_otp: 0, consent_confirmed: 0, report_requested: 0 };
-    all.forEach(function (r) { if (counts[r.status] != null) counts[r.status]++; });
-    document.getElementById('stats').innerHTML =
-      '<div><dt>Total submissions</dt><dd>' + all.length + '</dd></div>' +
-      '<div><dt>Awaiting SMS code</dt><dd>' + counts.awaiting_otp + '</dd></div>' +
-      '<div><dt>Consent confirmed</dt><dd>' + counts.consent_confirmed + '</dd></div>' +
-      '<div><dt>Reports requested</dt><dd>' + counts.report_requested + ' <small>via Experian</small></dd></div>';
+    renderStats(all);
 
-    /* table */
-    var body = document.getElementById('regBody');
-    document.getElementById('emptyState').hidden = all.length !== 0;
-    body.innerHTML = rows.map(function (r) {
-      return '<tr>' +
-        '<td class="mono">' + esc(r.ref) + '</td>' +
-        '<td><strong>' + esc(r.firstNames + ' ' + r.surname) + '</strong></td>' +
-        '<td class="mono">' + maskId(r) + '</td>' +
-        '<td>' + fmtDate(r.createdAt) + '</td>' +
-        '<td class="num">' + rand(r.grossIncome) + '</td>' +
-        '<td>' + chip(r.status) + '</td>' +
-        '<td><button class="btn btn-ghost btn-sm" data-view="' + esc(r.ref) + '" type="button">View</button></td>' +
-        '</tr>';
-    }).join('');
+    var body = $('regBody');
+    body.textContent = '';
+    $('emptyState').hidden = all.length !== 0;
+    rows.forEach(function (r) {
+      var name = fullName(r);
+      body.appendChild(el('tr', null, [
+        el('td', { className: 'mono', text: r.ref }),
+        el('td', null, el('strong', { text: name })),
+        el('td', { className: 'mono', text: maskId(r) }),
+        el('td', { text: fmtDate(r.createdAt) }),
+        el('td', { className: 'num', text: rand(r.grossIncome) }),
+        el('td', { className: 'score-cell' }, scoreCell(r.reportSummary)),
+        el('td', null, chipEl(r.status, r)),
+        el('td', null, el('button', { type: 'button', className: 'btn btn-ghost btn-sm', 'data-view': r.ref,
+          'aria-label': 'View ' + name + ' (' + r.ref + ')', text: 'View' }))
+      ]));
+    });
     if (all.length && !rows.length) {
-      body.innerHTML = '<tr><td colspan="7"><em>No submissions match the current search or filter.</em></td></tr>';
+      body.appendChild(el('tr', null, el('td', { colspan: 8 },
+        el('em', { text: 'No submissions match the current search or filter.' }))));
     }
   }
 
-  /* --- detail dialog --- */
-  var dlg = document.getElementById('detailDlg');
+  /* ================= detail dialog ================= */
   function openDetail(ref) {
+    if (busy && dlg.open) return Promise.resolve();
     return PMStore.get(ref).then(function (r) {
-      if (!r) return;
-      renderDetail(r, ref);
-    }).catch(function (err) { console.error('detail failed:', err); });
+      if (!r) {
+        setMsg('pageMsg', 'That record no longer exists.', 'err');
+        render();
+        return;
+      }
+      renderDetail(r, { focus: 'dlgTitle' });
+      if (RECOVERABLE.indexOf(r.status) !== -1) recoverOpen(ref, r.status);
+    }).catch(function (err) {
+      console.error('detail failed:', err);
+      setMsg('pageMsg', 'Could not open the record: ' + ((err && err.message) || 'unknown error'), 'err');
+    });
   }
-  function renderDetail(r, ref) {
-    currentRef = ref;
-    document.getElementById('dlgTitle').textContent = r.firstNames + ' ' + r.surname;
-    document.getElementById('dlgRef').textContent = r.ref;
 
-    var idBlock = r.idType === 'passport'
-      ? '<dt>Passport</dt><dd class="mono">' + esc(r.passportNumber) + '</dd><dt>Date of birth</dt><dd>' + esc(r.dateOfBirth) + '</dd>'
-      : '<dt>SA ID number</dt><dd class="mono">' + esc(r.idNumber) + '</dd>';
-    var derived = r.idType !== 'passport' ? PMStore.saIdDerive(r.idNumber) : null;
-    if (derived) {
-      idBlock += '<dt>Derived</dt><dd>Born ' + derived.dob + ' · ' + derived.gender + ' · ' + derived.citizen + '</dd>';
+  /* A record left "running" (check) or "in progress" (identity questions) may be stale: the
+     server's recovery moves it on (check → check_failed, questions → idv_failed) when its window
+     has passed, and does nothing otherwise. The server decides, not this browser's clock. */
+  function recoverOpen(ref, was) {
+    safe(function () { return PMStore.recover(ref); }).then(function (d) {
+      if (d && d.status && d.status !== was) render();
+      if (dlg.open && currentRef === ref) refreshOpenDetail();
+    }, function (err) {
+      console.error('recover failed:', (err && err.code) || err);
+    });
+  }
+
+  /* Re-fetch the open record and re-render it (after an action or a live update). */
+  function reloadDetail(ref, focusId) {
+    return PMStore.get(ref).then(function (r) {
+      if (!dlg.open || currentRef !== ref) return;
+      if (!r) { showDeleted(); return; }
+      staleDetail = false;
+      renderDetail(r, { preserve: true, focus: focusId });
+    }).catch(function (err) {
+      if (!dlg.open || currentRef !== ref) return;
+      var note = 'Could not reload the record (' + ((err && err.message) || 'unknown error') +
+        '). Close and reopen it to see the latest.';
+      var hit = null;
+      flashes.forEach(function (f) { if (f.target === 'dlgMsg') hit = f; });
+      if (hit) hit.text += ' ' + note; else pushFlash('dlgMsg', note, 'err');
+      /* re-render what we have so no button stays stuck in its busy state, but block a
+         (billable) run on data we know is stale */
+      if (currentRec) renderDetail(currentRec, { preserve: true, focus: focusId });
+      else applyFlashes();
+      $('overrideSet').hidden = true;
+      $('dlgRun').disabled = true;
+      $('runHint').textContent = 'Close and reopen this record before running a credit check.';
+    });
+  }
+
+  /* The open record was deleted (here or by a colleague): drop any half-finished step. */
+  function showDeleted() {
+    flashes = [];
+    pending = null;
+    withdrawOpen = false;
+    staleDetail = false;
+    $('confirmBlock').hidden = true;
+    $('runBlock').hidden = false;
+    $('overrideSet').hidden = true;
+    $('dlgRun').disabled = true;
+    $('dlgDelete').disabled = true;
+    $('runHint').textContent = '';
+    var wp = $('withdrawPanel');
+    if (wp) { wp.textContent = ''; wp.hidden = true; }
+    setMsg('dlgMsg', 'This record has been deleted.', 'err');
+  }
+
+  function renderDetail(r, opts) {
+    opts = opts || {};
+    var body = $('dlgBody');
+    var openKeys = [];
+    var scroll = 0;
+    var keep = null;
+    if (opts.preserve && currentRef === r.ref) {
+      scroll = body.scrollTop;
+      Array.prototype.forEach.call(body.querySelectorAll('details[data-k]'), function (d) {
+        if (d.open) openKeys.push(d.getAttribute('data-k'));
+      });
+      keep = {
+        override: $('overrideChk').checked,
+        reason: $('overrideReason').value,
+        withdraw: withdrawOpen && $('withdrawReason') ? $('withdrawReason').value : null,
+        pending: pending && !busy ? pending : null
+      };
+    }
+    currentRef = r.ref;
+    currentRec = r;
+    withdrawOpen = false;
+    $('dlgTitle').textContent = fullName(r);
+    $('dlgRef').textContent = r.ref;
+
+    body.textContent = '';
+    body.appendChild(buildBody(r));
+    Array.prototype.forEach.call(body.querySelectorAll('details[data-k]'), function (d) {
+      if (openKeys.indexOf(d.getAttribute('data-k')) !== -1) d.open = true;
+    });
+    body.scrollTop = scroll;
+
+    renderActions(r);
+    if (keep) restoreInputs(keep);
+    if (!dlg.open) dlg.showModal();
+
+    /* PCR undertaking: every view of a report is logged (once per opening of the dialog). */
+    if (r.reportSummary && !viewLogged[r.ref]) {
+      viewLogged[r.ref] = true;
+      PMStore.logAccess(r.ref, 'view');
+    }
+    applyFlashes();
+    if (opts.focus) focusSafe(opts.focus);
+  }
+
+  /* Put back an override, a withdrawal reason or an open confirm step that a re-render
+     (e.g. after "Refresh from MortgageMAX") would otherwise wipe — only if still valid. */
+  function restoreInputs(k) {
+    if (k.withdraw != null && $('withdrawBtn')) {
+      openWithdraw();
+      $('withdrawReason').value = k.withdraw;
+    }
+    if (!$('overrideSet').hidden) {
+      $('overrideReason').value = k.reason || '';
+      $('overrideChk').checked = !!k.override;
+      syncOverride();
+    }
+    var p = k.pending;
+    if (!p) return;
+    if (p.kind === 'run' && !$('dlgRun').hidden && !$('dlgRun').disabled) startConfirm(p, p.q, p.yesLabel, p.yesClass);
+    else if (p.kind === 'delete' && !$('dlgDelete').disabled) startConfirm(p, p.q, p.yesLabel, p.yesClass);
+  }
+
+  function buildBody(r) {
+    var f = document.createDocumentFragment();
+    f.appendChild(h3('Status'));
+    f.appendChild(el('p', { id: 'dlgStatusChip' }, chipEl(r.status, r)));
+
+    var personal = [];
+    if (r.idType === 'passport') {
+      personal.push(['Passport', r.passportNumber, 'mono'], ['Date of birth', r.dateOfBirth]);
+    } else {
+      personal.push(['SA ID number', r.idNumber, 'mono']);
+      var derived = PMStore.saIdDerive(r.idNumber);
+      if (derived) personal.push(['Derived', 'Born ' + derived.dob + ' · ' + derived.gender + ' · ' + derived.citizen]);
+    }
+    personal.push(['Email', r.email], ['Cell', r.cell, 'mono']);
+    if (r.homePhone) personal.push(['Home phone', r.homePhone, 'mono']);
+    if (r.workPhone) personal.push(['Work phone', r.workPhone, 'mono']);
+    f.appendChild(h3('Personal'));
+    f.appendChild(kv(personal));
+
+    f.appendChild(h3('Address'));
+    f.appendChild(kv([
+      ['Street', r.street], ['Suburb', r.suburb], ['City', r.city],
+      ['Province', r.province], ['Postal code', r.postalCode, 'mono']
+    ]));
+
+    f.appendChild(h3('Employment & household'));
+    f.appendChild(kv([
+      ['Employment', r.employmentStatus], ['Marital status', r.maritalStatus],
+      r.referral ? ['Referral', r.referral] : null
+    ]));
+
+    f.appendChild(h3('Income & commitments (monthly)'));
+    f.appendChild(kv([
+      ['Gross income', rand(r.grossIncome)], ['Deductions', rand(r.totalDeductions)],
+      ['Expenses', rand(r.monthlyExpenses)], ['Rent / bond', rand(r.housingPayment)]
+    ]));
+
+    f.appendChild(h3('Consent audit trail'));
+    var ul = el('ul', { className: 'audit' });
+    (r.audit || []).forEach(function (a) {
+      ul.appendChild(el('li', null, [el('time', { text: fmtDate(a && a.at) }), el('span', { text: a && a.event })]));
+    });
+    f.appendChild(ul);
+    if (r.consentUA) f.appendChild(el('p', { className: 'small ua-line', text: 'Consent device: ' + r.consentUA }));
+
+    f.appendChild(consentSection(r));
+    f.appendChild(idvSection(r));
+    if (r.reportSummary) f.appendChild(reportSection(r));
+    var callout = statusCallout(r);
+    if (callout) f.appendChild(callout);
+    return f;
+  }
+
+  /* ---------- a. consent with MortgageMAX ---------- */
+  var EVENT_LABELS = { registered: 'Registered', withdrawn: 'Withdrawn', readback: 'Read back', deleted: 'Deleted' };
+  /* Statuses where "Record withdrawal" is not offered (the server refuses them too). */
+  var NO_WITHDRAW = ['awaiting_otp', 'consent_withdrawn', 'check_in_flight'];
+
+  /* GET /Consents returns every consent MortgageMAX holds for the person, from any licensee and of
+     any type. Show only the types this client was shown; count the rest separately. */
+  function readBackNode(r, presented) {
+    var ids = {};
+    presented.forEach(function (c) {
+      var id = c && (c.id || c.consentTypeId);
+      if (id) ids[String(id).toLowerCase()] = c;
+    });
+    var ours = [];
+    var others = 0;
+    r.mmConsentsSnapshot.forEach(function (x) {
+      if (x && x.consentTypeId != null && ids[String(x.consentTypeId).toLowerCase()]) ours.push(x);
+      else others++;
+    });
+    var out = [];
+    if (ours.length) {
+      out.push(el('ul', null, ours.map(function (x) {
+        var snap = isObj(x.consentTypeSnapshot) ? x.consentTypeSnapshot : {};
+        var shown = ids[String(x.consentTypeId).toLowerCase()] || {};
+        var name = snap.name || shown.name || 'Type ' + shortId(x.consentTypeId);
+        var ver = snap.version != null ? snap.version : shown.version;
+        return el('li', { text: name + (ver != null && ver !== '' ? ' v' + ver : '') + ': ' +
+          (x.granted === true ? 'granted' : x.granted === false ? 'not granted' : 'unknown') +
+          (x.createdDate ? ' · MortgageMAX date ' + fmtDate(x.createdDate) : '') });
+      })));
+    } else {
+      out.push(el('span', { text: 'No record of the consent type shown to this client' }));
+    }
+    var notes = [];
+    if (r.mmConsentsSyncedAt) notes.push('Checked ' + fmtDate(r.mmConsentsSyncedAt));
+    if (r.consentWithdrawnAt && r.mmConsentsSyncedAt && r.consentWithdrawnAt > r.mmConsentsSyncedAt) {
+      notes.push('read before the withdrawal — refresh to confirm');
+    }
+    if (others) notes.push(others + ' other consent record' + (others === 1 ? '' : 's') +
+      ' MortgageMAX holds for this person (other types or licensees) not shown');
+    if (notes.length) out.push(el('span', { className: 'small', style: 'display:block;font-weight:400', text: notes.join(' · ') }));
+    return out;
+  }
+
+  function consentSection(r) {
+    var s = el('section', { className: 'dsec', 'aria-labelledby': 'secConsentH' });
+    s.appendChild(h3('Consent with MortgageMAX', 'secConsentH'));
+
+    var presented = Array.isArray(r.consentsPresented) ? r.consentsPresented : [];
+    var presentedNode = presented.length
+      ? el('ul', null, presented.map(function (c) {
+          c = c || {};
+          return el('li', { text: (c.name ? c.name + ' · ' : '') + 'type ' + shortId(c.id || c.consentTypeId) +
+            ' · version ' + (c.version != null ? c.version : '—') +
+            (c.hash ? ' · wording ' + String(c.hash).slice(0, 10) : '') });
+        }))
+      : 'Not recorded';
+
+    var pairs = [['Registered', r.consentRegisteredAt ? fmtDate(r.consentRegisteredAt) : 'Not registered yet']];
+    if (r.consentWithdrawnAt) pairs.push(['Withdrawn', fmtDate(r.consentWithdrawnAt)]);
+    pairs.push(['Wording shown to client', presentedNode]);
+    if (Array.isArray(r.mmConsentsSnapshot)) pairs.push(['MortgageMAX read-back', readBackNode(r, presented)]);
+    s.appendChild(kv(pairs));
+
+    var warn = withdrawWarn[r.ref];
+    if (warn && r.status === 'consent_withdrawn') {
+      s.appendChild(el('div', { className: 'callout callout-error', role: 'alert' }, [
+        el('span', { className: 'callout-tag', text: 'MortgageMAX not updated' }),
+        el('p', { text: 'MortgageMAX did not accept the withdrawal (' + (warn.code || 'no vendor code') +
+          ') — record it with MortgageMAX manually. The record is withdrawn here, so no credit check can run on it.' })
+      ]));
     }
 
-    document.getElementById('dlgBody').innerHTML =
-      '<h3>Status</h3><p>' + chip(r.status) + '</p>' +
-      '<h3>Personal</h3><dl class="kv">' + idBlock +
-      '<dt>Email</dt><dd>' + esc(r.email) + '</dd>' +
-      '<dt>Cell</dt><dd class="mono">' + esc(r.cell) + '</dd>' +
-      (r.homePhone ? '<dt>Home phone</dt><dd class="mono">' + esc(r.homePhone) + '</dd>' : '') +
-      (r.workPhone ? '<dt>Work phone</dt><dd class="mono">' + esc(r.workPhone) + '</dd>' : '') +
-      '</dl>' +
-      '<h3>Address</h3><dl class="kv">' +
-      '<dt>Street</dt><dd>' + esc(r.street) + '</dd>' +
-      '<dt>Suburb</dt><dd>' + esc(r.suburb) + '</dd>' +
-      '<dt>City</dt><dd>' + esc(r.city) + '</dd>' +
-      '<dt>Province</dt><dd>' + esc(r.province) + '</dd>' +
-      '<dt>Postal code</dt><dd class="mono">' + esc(r.postalCode) + '</dd>' +
-      '</dl>' +
-      '<h3>Employment &amp; household</h3><dl class="kv">' +
-      '<dt>Employment</dt><dd>' + esc(r.employmentStatus) + '</dd>' +
-      '<dt>Marital status</dt><dd>' + esc(r.maritalStatus) + '</dd>' +
-      (r.referral ? '<dt>Referral</dt><dd>' + esc(r.referral) + '</dd>' : '') +
-      '</dl>' +
-      '<h3>Income &amp; commitments (monthly)</h3><dl class="kv">' +
-      '<dt>Gross income</dt><dd>' + rand(r.grossIncome) + '</dd>' +
-      '<dt>Deductions</dt><dd>' + rand(r.totalDeductions) + '</dd>' +
-      '<dt>Expenses</dt><dd>' + rand(r.monthlyExpenses) + '</dd>' +
-      '<dt>Rent / bond</dt><dd>' + rand(r.housingPayment) + '</dd>' +
-      '</dl>' +
-      '<h3>Consent audit trail</h3><ul class="audit">' +
-      (r.audit || []).map(function (a) {
-        return '<li><time>' + fmtDate(a.at) + '</time><span>' + esc(a.event) + '</span></li>';
-      }).join('') + '</ul>' +
-      (r.consentUA ? '<p class="small" style="margin-top:var(--s3)">Consent device: ' + esc(r.consentUA) + '</p>' : '');
+    s.appendChild(el('h4', { className: 'tier-h', text: 'Consent events' }));
+    var box = el('div', { 'aria-busy': 'true' }, el('p', { className: 'small', text: 'Loading consent events…' }));
+    s.appendChild(box);
+    loadConsentEvents(r.ref, box);
 
-    var reqBtn = document.getElementById('dlgRequest');
-    reqBtn.disabled = r.status !== 'consent_confirmed';
-    reqBtn.textContent = r.status === 'report_requested'
-      ? 'Report already requested'
-      : (r.status === 'awaiting_otp' ? 'Awaiting client consent' : 'Request ITC report');
-
-    dlg.showModal();
+    var row = el('div', { className: 'dsec-actions' });
+    /* only a registered consent has anything at MortgageMAX to read back — otherwise the
+       person's ID number would be sent for nothing */
+    if (r.consentRegisteredAt) {
+      row.appendChild(btn('Refresh from MortgageMAX', 'btn btn-ghost btn-sm', onRefreshConsents));
+    }
+    /* Not in the first 2 minutes after the SMS code: the client's own registration is still
+       running, and a staff retry would take the claim from them (they would then skip IDV). */
+    if (r.status === 'consent_confirmed' && (!r.consentConfirmedAt || Date.now() - r.consentConfirmedAt > 2 * 60 * 1000)) {
+      row.appendChild(btn('Retry consent registration', 'btn btn-ghost btn-sm', onRetryRegistration));
+    }
+    if (NO_WITHDRAW.indexOf(r.status) === -1) {
+      row.appendChild(btn('Record withdrawal', 'btn btn-danger btn-sm', openWithdraw, 'withdrawBtn'));
+    } else if (r.status === 'check_in_flight') {
+      row.appendChild(el('span', { className: 'small', text: 'A withdrawal can be recorded once the running credit check finishes.' }));
+    }
+    if (row.childNodes.length) s.appendChild(row);
+    s.appendChild(el('div', { id: 'withdrawPanel', className: 'inline-panel', hidden: true }));
+    s.appendChild(msgRegion('consentMsg'));
+    return s;
   }
 
-  document.getElementById('regBody').addEventListener('click', function (e) {
-    var btn = e.target.closest('button[data-view]');
-    if (btn) openDetail(btn.dataset.view);
-  });
-  document.getElementById('dlgClose').addEventListener('click', function () { dlg.close(); });
-  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+  function loadConsentEvents(ref, box) {
+    PMStore.consentEvents(ref).then(function (rows) {
+      if (!box.isConnected || currentRef !== ref) return;
+      box.removeAttribute('aria-busy');
+      box.textContent = '';
+      if (!rows || !rows.length) {
+        box.appendChild(el('p', { className: 'small', text: PMStore.mode === 'demo'
+          ? 'None recorded — demo mode does not contact MortgageMAX.'
+          : 'None recorded yet.' }));
+        return;
+      }
+      var tbody = el('tbody');
+      rows.forEach(function (e) {
+        tbody.appendChild(el('tr', null, [
+          el('td', { text: EVENT_LABELS[e.event] || e.event || '—' }),
+          el('td', { className: 'mono', text: shortId(e.consent_type_id) }),
+          el('td', { text: e.consent_version != null ? e.consent_version : '—' }),
+          el('td', { text: e.granted === true ? 'Yes' : e.granted === false ? 'No' : '—' }),
+          el('td', { text: fmtDate(e.vendor_created_date || e.created_at) }),
+          el('td', { text: e.created_by || '—' })
+        ]));
+      });
+      box.appendChild(el('div', { className: 'mini-wrap' }, el('table', { className: 'mini-table' }, [
+        el('caption', { className: 'sr-only', text: 'Consent events' }),
+        el('thead', null, el('tr', null, ['Event', 'Type', 'Version', 'Granted', 'When', 'By'].map(function (h) {
+          return el('th', { scope: 'col', text: h });
+        }))),
+        tbody
+      ])));
+    }, function () {
+      if (box.isConnected) { box.removeAttribute('aria-busy'); box.textContent = 'Could not load consent events.'; }
+    });
+  }
 
-  document.getElementById('dlgRequest').addEventListener('click', function () {
-    if (!currentRef) return;
-    /* EXPERIAN PHASE TODO: the Experian credit report API call replaces this stub
-       (see PMStore.requestReport in assets/store.js) */
-    var btn = document.getElementById('dlgRequest');
-    btn.disabled = true;
-    PMStore.requestReport(currentRef).then(function () {
-      render();
-      return openDetail(currentRef);
+  function onRefreshConsents(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRef) return;
+    var ref = currentRef;
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Refreshing…';
+    setMsg('consentMsg', 'Asking MortgageMAX for the current consent records…');
+    safe(function () { return PMStore.refreshConsents(ref); }).then(function (d) {
+      busy = false;
+      pushFlash('consentMsg', PMStore.mode === 'demo'
+        ? 'Demo mode: MortgageMAX is not contacted, so there is nothing to refresh.'
+        : 'Consents refreshed from MortgageMAX — see the read-back above.', 'ok');
+      reloadDetail(ref, 'secConsentH');
     }).catch(function (err) {
-      btn.disabled = false;
-      alert('Could not update the record: ' + err.message);
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Refresh from MortgageMAX';
+      var m = staffError(err, 'refresh');
+      setMsg('consentMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  function onRetryRegistration(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRef) return;
+    var ref = currentRef;
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Registering…';
+    setMsg('consentMsg', 'Registering the client’s consent with MortgageMAX…');
+    safe(function () { return PMStore.staffRegisterConsent(ref); }).then(function (d) {
+      busy = false;
+      var st = d && d.status;
+      pushFlash('consentMsg', st === 'manual_required'
+        ? 'Moved to manual handling — see the audit trail for why.'
+        : 'Consent registered with MortgageMAX.', st === 'manual_required' ? null : 'ok');
+      render();
+      reloadDetail(ref, 'secConsentH');
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Retry consent registration';
+      var m = staffError(err, 'register');
+      setMsg('consentMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  /* Withdrawal: reason form → confirm step → call. Inline, never window.prompt/confirm. */
+  function openWithdraw() {
+    if (busy || !currentRec) return;
+    withdrawOpen = true;
+    var p = $('withdrawPanel');
+    p.textContent = '';
+    p.hidden = false;
+    var h = el('h4', { id: 'withdrawH', tabindex: '-1', text: 'Record a consent withdrawal' });
+    p.appendChild(h);
+    p.appendChild(el('p', { className: 'small', id: 'withdrawHint',
+      text: currentRec.consentRegisteredAt
+        ? 'MortgageMAX is told that the client has withdrawn consent, and no credit check can be run on this record afterwards.'
+        : 'This consent was never registered with MortgageMAX, so the withdrawal is recorded here only — nothing is sent to MortgageMAX. No credit check can be run on this record afterwards.' }));
+    p.appendChild(el('div', { className: 'field' }, [
+      el('label', { htmlFor: 'withdrawReason', text: 'Reason (required, recorded in the audit trail)' }),
+      el('textarea', { id: 'withdrawReason', rows: 3, maxLength: 200, 'aria-describedby': 'withdrawHint withdrawErr' }),
+      el('span', { className: 'err', id: 'withdrawErr' })
+    ]));
+    p.appendChild(el('div', { id: 'withdrawStep', className: 'act-row' }));
+    withdrawStep(false);
+    var wb = $('withdrawBtn');
+    if (wb) wb.disabled = true;
+    h.focus();
+  }
+  function withdrawStep(confirming) {
+    var step = $('withdrawStep');
+    var ta = $('withdrawReason');
+    if (!step || !ta) return;
+    step.textContent = '';
+    ta.readOnly = confirming;
+    if (!confirming) {
+      step.appendChild(btn('Continue', 'btn btn-danger btn-sm', withdrawContinue));
+      step.appendChild(btn('Cancel', 'btn btn-ghost btn-sm', closeWithdraw));
+      return;
+    }
+    var q = el('p', { className: 'confirm-q', id: 'withdrawQ', tabindex: '-1',
+      text: 'Record that ' + fullName(currentRec) + ' has withdrawn consent? This cannot be undone.' });
+    var yes = btn('Yes, record withdrawal', 'btn btn-danger btn-sm', function () { doWithdraw(ta.value.trim(), yes, back); });
+    var back = btn('Back', 'btn btn-ghost btn-sm', function () { withdrawStep(false); ta.focus(); });
+    step.appendChild(q);
+    step.appendChild(yes);
+    step.appendChild(back);
+    q.focus();
+  }
+  function withdrawContinue() {
+    var ta = $('withdrawReason');
+    if (!ta.value.trim()) {
+      $('withdrawErr').textContent = 'Give a reason for the withdrawal.';
+      ta.setAttribute('aria-invalid', 'true');
+      ta.focus();
+      return;
+    }
+    $('withdrawErr').textContent = '';
+    ta.removeAttribute('aria-invalid');
+    withdrawStep(true);
+  }
+  function closeWithdraw() {
+    withdrawOpen = false;
+    var p = $('withdrawPanel');
+    if (p) { p.textContent = ''; p.hidden = true; }
+    var wb = $('withdrawBtn');
+    if (wb) { wb.disabled = false; wb.focus(); }
+    if (staleDetail && !isMidInteraction()) refreshOpenDetail();
+  }
+  function doWithdraw(reason, yes, back) {
+    if (busy || !currentRef) return;
+    var ref = currentRef;
+    busy = true;
+    yes.disabled = true;
+    back.disabled = true;
+    yes.textContent = 'Recording…';
+    setMsg('consentMsg', 'Recording the withdrawal…');
+    safe(function () { return PMStore.recordWithdrawal(ref, reason); }).then(function (d) {
+      d = d || {};
+      busy = false;
+      withdrawOpen = false;
+      /* trust what the SERVER did, not the (possibly stale) record shown when the panel opened */
+      if (d.localOnly === true) {
+        pushFlash('consentMsg', 'Withdrawal recorded here. This consent was never registered with MortgageMAX, so nothing was sent to them.', 'ok');
+      } else if (d.vendorRecorded === false) {
+        /* withdrawn here regardless (the client's right to withdraw stops our processing);
+           the warning stays on this record for the rest of this session */
+        withdrawWarn[ref] = { code: d.vendorCode ? String(d.vendorCode) : '' };
+        pushFlash('consentMsg', 'Withdrawal recorded here, but MortgageMAX was not updated — see the warning above.', 'err');
+      } else {
+        delete withdrawWarn[ref];
+        pushFlash('consentMsg', 'Withdrawal recorded with MortgageMAX.', 'ok');
+      }
+      render();
+      reloadDetail(ref, 'secConsentH');
+    }).catch(function (err) {
+      busy = false;
+      yes.disabled = false;
+      back.disabled = false;
+      yes.textContent = 'Yes, record withdrawal';
+      var m = staffError(err, 'withdraw');
+      setMsg('consentMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  /* ---------- b. identity check (never shows answers — they are not stored) ---------- */
+  var IDV_MODE_TEXT = {
+    off: 'Switched off',
+    optional: 'Optional (a consultant may override)',
+    required: 'Required before a credit check'
+  };
+  var POST_CONSENT = ['consent_registered', 'idv_waived', 'check_in_flight', 'report_ready', 'check_failed', 'consent_withdrawn'];
+
+  function idvSection(r) {
+    var s = el('section', { className: 'dsec', 'aria-labelledby': 'secIdvH' });
+    s.appendChild(h3('Identity check', 'secIdvH'));
+    var mode = sysCfg.idvMode;
+    var state;
+    if (r.status === 'idv_waived') state = 'Waived by configuration';
+    else if (String(r.status).indexOf('idv_') === 0) state = statusInfo(r.status).label;
+    else if (r.idvPassedAt) state = 'Identity verified';
+    else if (r.idvAttempts) state = 'Attempted (see audit trail)';
+    else state = 'Not started';
+
+    var pairs = [
+      ['Identity questions', (IDV_MODE_TEXT[mode] || mode) + (cfgLoaded ? '' : ' (assumed — settings unavailable)')],
+      ['Current state', state],
+      ['Attempts', (r.idvAttempts || 0) + ' of ' + PMStore.MAX_IDV_ROUNDS]
+    ];
+    if (r.idvStartedAt) pairs.push(['Last started', fmtDate(r.idvStartedAt)]);
+    if (r.idvPassedAt) pairs.push(['Passed at', fmtDate(r.idvPassedAt)]);
+    var res = r.idvResult;
+    if (res && typeof res === 'object') {
+      if (res.pending) {
+        pairs.push(['Result', 'Answers submitted — waiting for MortgageMAX']);
+      } else if (res.expired) {
+        pairs.push(['Result', 'Questions expired before the client answered them']);
+      } else {
+        pairs.push(['Result', res.success === true ? 'Passed' : res.success === false ? 'Not passed' : '—']);
+        if (res.statusCode != null && res.statusCode !== '') pairs.push(['Result code', String(res.statusCode), 'mono']);
+        if (res.finalScore != null && res.finalScore !== '') pairs.push(['Final score', String(res.finalScore)]);
+        if (res.vendorCode) pairs.push(['Vendor code', String(res.vendorCode), 'mono']);
+        if (res.vendorMessage) pairs.push(['Vendor message', String(res.vendorMessage)]);
+      }
+    }
+    s.appendChild(kv(pairs));
+
+    var waived = r.status === 'idv_waived' ||
+      (mode === 'off' && !r.idvAttempts && !r.idvPassedAt && POST_CONSENT.indexOf(r.status) !== -1);
+    if (waived) {
+      s.appendChild(el('p', { className: 'note',
+        text: 'Identity questions are switched off; this record was waived by configuration.' }));
+    }
+    s.appendChild(el('p', { className: 'note', text: 'The client’s answers are never stored.' }));
+    return s;
+  }
+
+  /* ---------- c. credit report ---------- */
+  var SECTION_NAMES = {
+    enqCC_CompuSCORE: 'CompuScore', enqCC_JUDGEMENTS: 'Judgements', enqCC_ADVERSE: 'Adverse listings',
+    enqCC_PUBLIC_DEFAULTS: 'Public defaults', enqCC_DEBT_RESTRUCT: 'Debt restructuring', enqCC_NOTICES: 'Notices',
+    enqCC_COLLECTIONS: 'Collections', enqCC_ENQ_COUNTS: 'Enquiry counts', enqCC_ADDRESS: 'Addresses',
+    enqCC_EMPLOYER: 'Employers', nlR_SUMMARY: 'NLR summary'
+  };
+  function humanKey(k) {
+    var s = String(k).replace(/^enqCC_/i, '').replace(/([a-z])([A-Z][a-z])/g, '$1 $2')
+      .replace(/_+/g, ' ').trim().toLowerCase();
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : String(k);
+  }
+  function sectionName(k) { return SECTION_NAMES[k] || humanKey(k); }
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function valueText(v) {
+    if (v == null || v === '') return '—';
+    if (typeof v === 'object') { try { return JSON.stringify(v); } catch (e) { return String(v); } }
+    return String(v);
+  }
+  function kvTable(obj, caption) {
+    var tbody = el('tbody');
+    if (isObj(obj)) {
+      Object.keys(obj).forEach(function (k) {
+        tbody.appendChild(el('tr', null, [el('th', { scope: 'row', text: humanKey(k) }), el('td', { text: valueText(obj[k]) })]));
+      });
+    } else {
+      tbody.appendChild(el('tr', null, [el('th', { scope: 'row', text: 'Value' }), el('td', { text: valueText(obj) })]));
+    }
+    return el('div', { className: 'mini-wrap' }, el('table', { className: 'mini-table' },
+      [caption ? el('caption', { text: caption }) : null, tbody]));
+  }
+  function detailsBlock(key, title, contentFn) {
+    var d = el('details', { 'data-k': key });
+    var inner = el('div', { className: 'det-body' });
+    d.appendChild(el('summary', { text: title }));
+    d.appendChild(inner);
+    append(inner, contentFn());
+    return d;
+  }
+
+  function reportSection(r) {
+    var s = r.reportSummary || {};
+    var sec = el('section', { className: 'dsec', 'aria-labelledby': 'secReportH' });
+    sec.appendChild(h3('Credit report', 'secReportH'));
+    if (PMStore.mode === 'demo' || /mock/i.test(r.mmEnv || '')) {
+      sec.appendChild(el('p', { className: 'sample-note', text: PMStore.mode === 'demo'
+        ? 'Sample data (demo mode) — not a real credit report.'
+        : 'Sample data from MortgageMAX test mode — not a real credit report.' }));
+    }
+    if (r.reportReadyAt) sec.appendChild(el('p', { className: 'small', text: 'Received ' + fmtDate(r.reportReadyAt) }));
+
+    /* Tier 1 — verdict card */
+    var card = el('div', { className: 'verdict' });
+    card.appendChild(el('div', null, [
+      el('p', { className: 'score-label', text: 'Credit score' }),
+      el('p', { className: 'score-big', text: s.score != null && s.score !== '' ? String(s.score) : '—' }),
+      el('p', { className: 'risk-line' }, [dotEl(s), s.riskType ? s.riskType + ' risk' : 'Risk band not given'])
+    ]));
+
+    var meta = el('div');
+    var top = el('ul', { className: 'chip-row', 'aria-label': 'Verdict' });
+    if (s.rag) top.appendChild(el('li', null, ragChip(s.rag)));
+    top.appendChild(el('li', null, flagChip('Thin file', s.thinFile)));
+    meta.appendChild(top);
+
+    meta.appendChild(el('p', { className: 'score-label', text: 'Bureau flags' }));
+    var fl = s.flags || {};
+    var flags = el('ul', { className: 'chip-row', 'aria-label': 'Bureau flags' });
+    [['Deceased', 'deceased'], ['Fraud', 'fraud'], ['Dispute', 'dispute'], ['Sequestration', 'sequestration'],
+      ['Debt review', 'debtReview'], ['Debt review requested', 'debtReviewRequested'], ['Debt review granted', 'debtReviewGranted']
+    ].forEach(function (f) { flags.appendChild(el('li', null, flagChip(f[0], fl[f[1]]))); });
+    meta.appendChild(flags);
+
+    /* a count is null when the bureau did not return that section: "—", never a clean 0 */
+    var ct = s.counts || {};
+    var counts = el('dl', { className: 'counts' });
+    var unknown = 0;
+    [['Judgements', 'judgements'], ['Adverse', 'adverse'], ['Public defaults', 'publicDefaults'],
+      ['Debt restructures', 'debtRestructures'], ['Notices', 'notices'], ['Collections', 'collections']
+    ].forEach(function (c) {
+      var raw = ct[c[1]];
+      var v = Number(raw);
+      var known = raw != null && raw !== '' && isFinite(v);
+      if (!known) unknown++;
+      counts.appendChild(el('div', { className: known && v > 0 ? 'count-alert' : null }, [
+        el('dt', { text: c[0] }),
+        el('dd', null, known ? String(v) : [el('span', { 'aria-hidden': 'true', text: '—' }),
+          el('span', { className: 'sr-only', text: 'Not returned by the bureau' })])
+      ]));
+    });
+    meta.appendChild(counts);
+    if (unknown) meta.appendChild(el('p', { className: 'small', text: '— means the bureau did not return that section, not that there are none.' }));
+
+    var a = s.affordability || {};
+    var hasAmount = a.present && a.amount != null && a.amount !== '' && isFinite(Number(a.amount));
+    meta.appendChild(kv([
+      ['Affordability', hasAmount ? zar(a.amount) : 'Not included in this subscription'],
+      a.present && a.error ? ['Affordability note', String(a.error)] : null
+    ]));
+
+    if (Array.isArray(s.declineReasons) && s.declineReasons.length) {
+      meta.appendChild(el('p', { className: 'score-label', text: 'Decline reasons', style: 'margin-top:var(--s3)' }));
+      meta.appendChild(el('ul', { className: 'decline-list' }, s.declineReasons.map(function (d) {
+        return el('li', { text: d });
+      })));
+    }
+    meta.appendChild(el('p', { className: 'ids-line mono',
+      text: 'Bureau enquiry ' + (s.enquiryId || r.bureauEnquiryId || '—') + ' · Group ' + (r.groupId || '—') }));
+    card.appendChild(meta);
+    sec.appendChild(card);
+
+    /* Tier 2 — the bureau's own sections */
+    sec.appendChild(bureauDetail(r.reportJson));
+
+    /* Tier 3 — PDF + raw data */
+    sec.appendChild(pdfAndRaw(r));
+    return sec;
+  }
+
+  function bureauDetail(rj) {
+    var wrap = el('div');
+    wrap.appendChild(el('h4', { className: 'tier-h', text: 'Bureau detail' }));
+    var root = isObj(rj) ? rj : {};
+    var res = isObj(root.cC_RESULTS) ? root.cC_RESULTS
+      : (isObj(root.experianCreditCheckData) && isObj(root.experianCreditCheckData.cC_RESULTS)
+        ? root.experianCreditCheckData.cC_RESULTS : {});
+    var nlr = isObj(res.nlR_SUMMARY) ? res.nlR_SUMMARY : (isObj(root.nlR_SUMMARY) ? root.nlR_SUMMARY : null);
+    var empties = [];
+    var shown = 0;
+    if (nlr) {
+      shown++;
+      wrap.appendChild(detailsBlock('nlR_SUMMARY', 'NLR summary', function () { return kvTable(nlr); }));
+    }
+    Object.keys(res).forEach(function (k) {
+      var v = res[k];
+      if (!Array.isArray(v)) return;
+      if (!v.length) { empties.push(sectionName(k)); return; }
+      shown++;
+      wrap.appendChild(detailsBlock(k, sectionName(k) + ' (' + v.length + ')', function () {
+        return v.map(function (item, i) {
+          return kvTable(item, v.length > 1 ? 'Record ' + (i + 1) + ' of ' + v.length : null);
+        });
+      }));
+    });
+    if (empties.length) {
+      wrap.appendChild(el('p', { className: 'score-label', text: 'Also checked', style: 'margin-top:var(--s3)' }));
+      wrap.appendChild(el('ul', { className: 'also-checked' }, empties.map(function (n) {
+        return el('li', { text: n + ': None recorded' });
+      })));
+    }
+    if (!shown && !empties.length) {
+      wrap.appendChild(el('p', { className: 'small', text: 'No itemised bureau sections in this report.' }));
+    }
+    return wrap;
+  }
+
+  var PDF_STATUS = {
+    pending: ['PDF pending', 'chip-awaiting'],
+    fetching: ['Fetching PDF…', 'chip-requested'],
+    stored: ['PDF stored', 'chip-confirmed'],
+    failed: ['PDF fetch failed', 'chip-failed'],
+    locked: ['PDF is password-protected by the bureau', 'chip-attention']
+  };
+  function pdfChip(st) {
+    var p = PDF_STATUS[st] || [st ? 'PDF: ' + st : (PMStore.mode === 'demo' ? 'No PDF (demo mode)' : 'No PDF'), 'chip-muted'];
+    return el('span', { className: 'chip ' + p[1], text: p[0] });
+  }
+
+  function pdfAndRaw(r) {
+    var wrap = el('div');
+    wrap.appendChild(el('h4', { className: 'tier-h', id: 'secPdfH', tabindex: '-1', text: 'Report PDF and raw data' }));
+    var row = el('div', { className: 'dsec-actions' });
+    row.appendChild(pdfChip(r.pdfStatus));
+    var open = btn('Open PDF', 'btn btn-primary btn-sm', onOpenPdf, 'openPdfBtn');
+    open.disabled = r.pdfStatus !== 'stored';
+    row.appendChild(open);
+    var pdfStale = r.pdfStatus === 'fetching' && r.reportReadyAt && (Date.now() - r.reportReadyAt > PDF_FETCH_STALE_MS);
+    if (r.pdfStatus === 'failed' || r.pdfStatus === 'pending' || pdfStale) {
+      row.appendChild(btn('Fetch PDF', 'btn btn-ghost btn-sm', onFetchPdf));
+    }
+    wrap.appendChild(row);
+    if (r.pdfStatus === 'locked') {
+      wrap.appendChild(el('p', { className: 'note',
+        text: 'The bureau sent a password-protected PDF, so it can’t be opened here. The report data on this page is unaffected.' }));
+    }
+    if (r.pdfAttempts) wrap.appendChild(el('p', { className: 'note', text: 'PDF fetch attempts: ' + r.pdfAttempts }));
+    wrap.appendChild(msgRegion('pdfMsg'));
+
+    var ref = r.ref;
+    var pre = el('pre', { className: 'raw-json', tabindex: '0', 'aria-label': 'Raw report data (JSON)' });
+    var raw = el('details', { 'data-k': 'raw' }, [el('summary', { text: 'Raw report data' }), el('div', { className: 'det-body' }, pre)]);
+    raw.addEventListener('toggle', function () {
+      if (!raw.open) return;
+      if (!pre.textContent) {
+        var txt;
+        try { txt = JSON.stringify(r.reportJson, null, 2); } catch (e) { txt = String(r.reportJson); }
+        pre.textContent = txt == null ? 'null' : txt;
+      }
+      if (!rawLogged[ref]) { rawLogged[ref] = true; PMStore.logAccess(ref, 'view_raw'); }
+    });
+    wrap.appendChild(raw);
+
+    var logBox = el('div', { className: 'det-body' }, el('p', { className: 'small', text: 'Loading…' }));
+    var logDet = el('details', { 'data-k': 'access' }, [el('summary', { text: 'Report access log' }), logBox]);
+    logDet.addEventListener('toggle', function () {
+      if (!logDet.open) return;
+      PMStore.accessLog(ref).then(function (rows) {
+        if (!logBox.isConnected) return;
+        logBox.textContent = '';
+        if (!rows || !rows.length) {
+          logBox.appendChild(el('p', { className: 'small', text: PMStore.mode === 'demo'
+            ? 'Access logging runs in live mode only.' : 'No access recorded yet.' }));
+          return;
+        }
+        logBox.appendChild(el('ul', { className: 'access-list' }, rows.slice(0, 20).map(function (x) {
+          var what = x.action === 'download_pdf' ? 'Opened PDF' : x.action === 'view_raw' ? 'Viewed raw data' : 'Viewed report';
+          return el('li', { text: fmtDate(x.created_at) + ' · ' + what + ' · ' + (x.name ? x.name : 'user ' + shortId(x.user_id)) });
+        })));
+      });
+    });
+    wrap.appendChild(logDet);
+    return wrap;
+  }
+
+  function onOpenPdf(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRec) return;
+    var rec = currentRec;
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Opening…';
+    setMsg('pdfMsg', 'Preparing a secure link…');
+    safe(function () { return PMStore.pdfUrl(rec); }).then(function (url) {
+      if (typeof url !== 'string' || !/^https:\/\//i.test(url)) throw new Error('The PDF link was not valid');
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Open PDF';
+      window.open(url, '_blank', 'noopener');
+      /* fallback for popup blockers: the signed link is valid for 60 seconds */
+      var n = setMsg('pdfMsg', 'PDF opened in a new tab. If nothing opened, use this link (valid for 60 seconds): ', 'ok');
+      if (n) {
+        var a = el('a', { href: url, target: '_blank', rel: 'noopener', text: 'open the report PDF' });
+        n.firstChild.appendChild(a);
+        setTimeout(function () {
+          if (a.isConnected) setMsg('pdfMsg', 'The PDF link has expired — use Open PDF again if you need it.');
+        }, 60000);
+      }
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Open PDF';
+      var m = staffError(err, 'pdf');
+      setMsg('pdfMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  function onFetchPdf(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRef) return;
+    var ref = currentRef;
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Fetching…';
+    setMsg('pdfMsg', 'Fetching the report PDF from MortgageMAX…');
+    safe(function () { return PMStore.fetchPdf(ref); }).then(function (d) {
+      busy = false;
+      var st = d && d.pdfStatus;
+      var text = st === 'stored' ? 'PDF stored — you can open it now.'
+        : st === 'locked' ? 'The bureau sent a password-protected PDF.'
+        : st === 'failed' ? 'The PDF could not be fetched. Try again later.'
+        : 'PDF status: ' + (st || 'unknown');
+      pushFlash('pdfMsg', text, st === 'stored' ? 'ok' : st === 'failed' ? 'err' : null);
+      render();
+      reloadDetail(ref, 'secPdfH');
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Fetch PDF';
+      var m = staffError(err, 'pdf');
+      setMsg('pdfMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  /* ---------- d. failure / system callouts (staff may see codes) ---------- */
+  function statusCallout(r) {
+    var c;
+    if (r.status === 'check_failed') {
+      var errText = r.checkErrorText || 'MortgageMAX did not return a report for this enquiry.';
+      c = el('div', { className: 'callout callout-error' }, [
+        el('span', { className: 'callout-tag', text: 'Credit check failed' }),
+        el('p', { text: errText })
+      ]);
+      if (r.checkErrorCode) c.appendChild(el('p', { className: 'small mono', text: 'Code: ' + r.checkErrorCode }));
+      /* uncertain_* (no answer / 5xx) and stale_in_flight: the bureau may have billed it */
+      var uncertain = /^(uncertain_|stale_in_flight)/.test(r.checkErrorCode || '') ||
+        /time\s*-?\s*out|timed\s+out/i.test(errText + ' ' + (r.checkErrorCode || ''));
+      if (uncertain && !/may still have processed/i.test(errText)) {
+        c.appendChild(el('p', { text: 'MortgageMAX may still have processed this enquiry — check before retrying.' }));
+      }
+      return c;
+    }
+    if (r.status === 'config_error') {
+      c = el('div', { className: 'callout callout-error' }, [
+        el('span', { className: 'callout-tag', text: 'System issue' }),
+        el('p', { text: 'MortgageMAX rejected our system credentials for this record. This is a configuration problem — contact Michael.' })
+      ]);
+      if (r.checkErrorCode) c.appendChild(el('p', { className: 'small mono', text: 'Code: ' + r.checkErrorCode }));
+      c.appendChild(el('p', { className: 'small', id: 'clearCfgHint',
+        text: 'Only after the credential problem is fixed: “Clear system error” returns this record to the step it had reached, so it can be retried.' }));
+      var clr = btn('Clear system error', 'btn btn-ghost btn-sm', onClearConfigError, 'clearCfgBtn');
+      clr.setAttribute('aria-describedby', 'clearCfgHint');
+      c.appendChild(el('div', { className: 'dsec-actions' }, clr));
+      c.appendChild(msgRegion('configMsg'));
+      return c;
+    }
+    if (r.status === 'manual_required') {
+      return el('div', { className: 'callout callout-demo' }, [
+        el('span', { className: 'callout-tag', text: 'Manual handling' }),
+        el('p', { text: 'The automated process has stopped for this record and a consultant needs to handle it. ' +
+          'The consent audit trail above records why — for example a passport applicant, an ID number that could not be validated, ' +
+          'consent wording that changed, a previous withdrawal on record, or too many identity-question rounds.' })
+      ]);
+    }
+    return null;
+  }
+
+  function onClearConfigError(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRef) return;
+    var ref = currentRef;
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Clearing…';
+    setMsg('configMsg', 'Clearing the system error…');
+    safe(function () { return PMStore.clearConfigError(ref); }).then(function (d) {
+      busy = false;
+      var st = d && d.status;
+      pushFlash('dlgMsg', 'System error cleared. This record is now: ' + statusInfo(st).label + '.', 'ok');
+      render();
+      reloadDetail(ref, 'dlgTitle');
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Clear system error';
+      var m = staffError(err, 'clear');
+      setMsg('configMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  /* ================= primary action: Run credit check ================= */
+  function inFlightStale(r) {
+    /* 30 s of slack for a browser clock that runs ahead of the server's */
+    return !!(r && r.status === 'check_in_flight' && r.checkStartedAt &&
+      Date.now() - r.checkStartedAt > STALE_IN_FLIGHT_MS + 30 * 1000);
+  }
+  function whyNot(st, mode, canForce, r) {
+    if (canForce) return 'The identity check has not been passed. Tick “Override identity check” and give a reason to run it anyway.';
+    switch (st) {
+      case 'check_in_flight':
+        return inFlightStale(r)
+          ? 'This credit check has not finished after 5 minutes and was probably interrupted. Close and reopen the record in a minute to see its status — MortgageMAX may still have processed it.'
+          : 'A credit check is running for this record.';
+      case 'consent_confirmed': return 'Consent has not been registered with MortgageMAX yet. Use “Retry consent registration” above.';
+      case 'idv_in_progress': return 'The client is answering identity questions.';
+      case 'manual_required': return 'This record needs manual handling; the automated check cannot run. The audit trail says why.';
+      case 'config_error': return 'A system configuration problem is blocking this record. Once the credentials are fixed, use “Clear system error” above.';
+    }
+    if (mode === 'required') return 'A verified identity is required before a credit check in the current configuration.';
+    return 'This record is not ready for a credit check (' + statusInfo(st).label + ').';
+  }
+
+  function resetOverride() {
+    $('overrideChk').checked = false;
+    $('overrideReason').value = '';
+    $('overrideReason').removeAttribute('aria-invalid');
+    $('overrideErr').textContent = '';
+    $('overrideField').hidden = true;
+  }
+
+  function renderActions(r) {
+    pending = null;
+    $('confirmBlock').hidden = true;
+    $('runBlock').hidden = false;
+    setMsg('dlgMsg', '');
+    resetOverride();
+
+    var st = r.status;
+    var mode = sysCfg.idvMode;
+    var allowed = PMStore.allowedFrom(mode, false).indexOf(st) !== -1;
+    var canForce = mode === 'optional' && !allowed && PMStore.allowedFrom('optional', true).indexOf(st) !== -1;
+    var run = $('dlgRun');
+    run.hidden = NEVER_RUN.indexOf(st) !== -1;
+    run.textContent = st === 'check_in_flight' ? 'Credit check running…' : 'Run credit check';
+    run.disabled = !allowed;
+    $('overrideSet').hidden = run.hidden || !canForce;
+    $('runHint').textContent = run.hidden ? '' : allowed ? '' : whyNot(st, mode, canForce, r);
+
+    /* mirrors the server's delete guard: not while a check runs, nor while the PDF is being
+       stored (unless that fetch has plainly been interrupted) */
+    var pdfBusy = r.pdfStatus === 'fetching' && !(r.reportReadyAt && Date.now() - r.reportReadyAt > PDF_FETCH_STALE_MS);
+    var del = $('dlgDelete');
+    del.disabled = st === 'check_in_flight' || pdfBusy;
+    del.textContent = 'Delete record';
+    del.title = st === 'check_in_flight' ? 'A credit check is running — try again shortly'
+      : pdfBusy ? 'The report PDF is being stored — try again in a few minutes' : '';
+  }
+
+  function syncOverride() {
+    var on = $('overrideChk').checked;
+    $('overrideField').hidden = !on;
+    $('dlgRun').disabled = !on;
+    $('runHint').textContent = on ? 'The override and your reason will be recorded in the audit trail.'
+      : whyNot(currentRec ? currentRec.status : '', sysCfg.idvMode, true, currentRec);
+    if (!on) {
+      $('overrideErr').textContent = '';
+      $('overrideReason').removeAttribute('aria-invalid');
+    }
+  }
+  $('overrideChk').addEventListener('change', syncOverride);
+
+  function startConfirm(p, question, yesLabel, yesClass) {
+    p.q = question;
+    p.yesLabel = yesLabel;
+    p.yesClass = yesClass;
+    pending = p;
+    $('runBlock').hidden = true;
+    $('confirmBlock').hidden = false;
+    $('confirmQ').textContent = question;
+    var yes = $('confirmYes');
+    yes.textContent = yesLabel;
+    yes.className = yesClass;
+    yes.disabled = false;
+    $('confirmNo').disabled = false;
+    setMsg('dlgMsg', '');
+    $('confirmQ').focus();
+  }
+  function endConfirm(focusId) {
+    var p = pending;
+    pending = null;
+    $('confirmBlock').hidden = true;
+    $('runBlock').hidden = false;
+    focusSafe(focusId || (p && p.kind === 'delete' ? 'dlgDelete' : 'dlgRun'));
+    if (staleDetail && !isMidInteraction()) refreshOpenDetail();
+  }
+
+  $('dlgRun').addEventListener('click', function () {
+    if (busy || !currentRec) return;
+    var r = currentRec;
+    var opts = {};
+    var override = !$('overrideSet').hidden && $('overrideChk').checked;
+    if (override) {
+      var reason = $('overrideReason').value.trim();
+      if (!reason) {
+        $('overrideErr').textContent = 'Give a reason for overriding the identity check.';
+        $('overrideReason').setAttribute('aria-invalid', 'true');
+        $('overrideReason').focus();
+        return;
+      }
+      $('overrideErr').textContent = '';
+      $('overrideReason').removeAttribute('aria-invalid');
+      opts = { force: true, reason: reason };
+    }
+    var name = fullName(r);
+    var q = 'This runs a billable credit enquiry with MortgageMAX for ' + name + '. Continue?';
+    if (PMStore.mode === 'demo') q += ' (Demo mode: sample data only, nothing is billed.)';
+    else if (sysCfg.mode === 'mock') q += ' (MortgageMAX test mode: sample data only.)';
+    if (override) q += ' Your identity-check override and reason will be recorded.';
+    startConfirm({ kind: 'run', ref: r.ref, name: name, opts: opts }, q, 'Yes, run credit check', 'btn btn-primary');
+  });
+
+  $('dlgDelete').addEventListener('click', function () {
+    if (busy || !currentRec) return;
+    var name = fullName(currentRec);
+    startConfirm({ kind: 'delete', ref: currentRec.ref, name: name },
+      'Delete ' + name + '’s record permanently? Any stored report PDF is deleted too. This cannot be undone.',
+      'Yes, delete record', 'btn btn-danger');
+  });
+
+  $('confirmNo').addEventListener('click', function () { if (!busy) endConfirm(); });
+  $('confirmYes').addEventListener('click', function () {
+    if (!pending || busy) return;
+    if (pending.kind === 'run') doRun(pending);
+    else if (pending.kind === 'delete') doDelete(pending);
+  });
+
+  function doRun(p) {
+    busy = true;
+    var yes = $('confirmYes');
+    yes.disabled = true;
+    $('confirmNo').disabled = true;
+    yes.textContent = 'Running…';
+    $('dlgRun').disabled = true;
+    $('dlgRun').textContent = 'Running…';
+    $('dlgDelete').disabled = true;
+    setMsg('dlgMsg', 'Running the credit check with MortgageMAX. This can take up to a minute and a half — keep this window open.');
+    safe(function () { return PMStore.runCheck(p.ref, p.opts); }).then(function (res) {
+      busy = false;
+      pending = null;
+      var text = 'Credit report received for ' + p.name + '.';
+      if (res && res.pdfStatus === 'failed') text += ' The PDF could not be fetched yet — use Fetch PDF to retry.';
+      render();
+      if (dlg.open && currentRef === p.ref) {
+        pushFlash('dlgMsg', text, 'ok');
+        reloadDetail(p.ref, 'secReportH');
+      } else {
+        setMsg('pageMsg', text, 'ok');
+      }
+    }).catch(function (err) {
+      busy = false;
+      pending = null;
+      var m = staffError(err, 'run');
+      render();
+      if (dlg.open && currentRef === p.ref) {
+        pushFlash('dlgMsg', m.text, 'err', m.sub);
+        reloadDetail(p.ref, ['dlgRun', 'overrideChk']);
+      } else {
+        setMsg('pageMsg', 'Credit check for ' + p.ref + ': ' + m.text, 'err', m.sub);
+      }
+    });
+  }
+
+  function doDelete(p) {
+    busy = true;
+    var yes = $('confirmYes');
+    yes.disabled = true;
+    $('confirmNo').disabled = true;
+    yes.textContent = 'Deleting…';
+    setMsg('dlgMsg', 'Deleting the record…');
+    safe(function () { return PMStore.remove(p.ref); }).then(function () {
+      busy = false;
+      pending = null;
+      if (dlg.open && currentRef === p.ref) dlg.close();
+      render();
+      setMsg('pageMsg', 'Record ' + p.ref + ' deleted.', 'ok');
+      $('regCaption').focus();
+    }).catch(function (err) {
+      busy = false;
+      yes.disabled = false;
+      $('confirmNo').disabled = false;
+      yes.textContent = 'Yes, delete record';
+      var m = staffError(err, 'delete');
+      setMsg('dlgMsg', m.text, 'err', m.sub);
+    });
+  }
+
+  /* ================= live refresh ================= */
+  function isMidInteraction() {
+    return busy || !!pending || withdrawOpen || $('overrideChk').checked || $('overrideReason').value.trim() !== '';
+  }
+  function updateStatusChip(r) {
+    var n = $('dlgStatusChip');
+    if (!n) return;
+    n.textContent = '';
+    n.appendChild(chipEl(r.status, r));
+    if (!busy && currentRec && r.status !== currentRec.status) {
+      n.appendChild(el('span', { className: 'small',
+        text: ' Updated just now — the rest of this record refreshes when you finish or cancel.' }));
+    }
+  }
+  function refreshOpenDetail() {
+    var ref = currentRef;
+    if (!dlg.open || !ref) return;
+    PMStore.get(ref).then(function (r) {
+      if (!dlg.open || currentRef !== ref) return;
+      if (!r) {
+        if (!busy) showDeleted();
+        return;
+      }
+      if (isMidInteraction()) {
+        staleDetail = true;
+        updateStatusChip(r);
+        return;
+      }
+      staleDetail = false;
+      renderDetail(r, { preserve: true });
+    }).catch(function () { /* next change event will retry */ });
+  }
+  function onRemoteChange() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () {
+      render();
+      if (dlg.open && currentRef) refreshOpenDetail();
+    }, 300);
+  }
+
+  /* ================= dialog wiring ================= */
+  $('regBody').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-view]');
+    if (b) openDetail(b.getAttribute('data-view'));
+  });
+  $('dlgClose').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) {
+    if (e.target === dlg && !isMidInteraction()) dlg.close();
+  });
+  dlg.addEventListener('cancel', function (e) {
+    /* Escape backs out of an inline confirm first, rather than closing the whole record */
+    if (busy) return;
+    if (pending) { e.preventDefault(); endConfirm(); }
+    else if (withdrawOpen) { e.preventDefault(); closeWithdraw(); }
+  });
+  dlg.addEventListener('close', function () {
+    /* 'close' is dispatched asynchronously: if the dialog was reopened in the meantime, keep its state */
+    if (dlg.open) return;
+    currentRef = null;
+    currentRec = null;
+    pending = null;
+    withdrawOpen = false;
+    staleDetail = false;
+    viewLogged = {};
+    rawLogged = {};
+    flashes = [];
+    $('confirmBlock').hidden = true;
+    $('runBlock').hidden = false;
+    resetOverride();
+  });
+
+  /* ================= My details ================= */
+  function setFieldErr(id, text) {
+    var input = $(id);
+    $(id + 'Err').textContent = text || '';
+    if (text) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
+    input.closest('.field').classList.toggle('invalid', !!text);
+  }
+  function fillProfile(p) {
+    p = p || {};
+    $('pfName').value = p.full_name || '';
+    $('pfEmail').value = p.email || '';
+    $('pfCell').value = p.cell || '';
+    $('pfBranch').value = p.branch_name || '';
+  }
+  function updateNudge() { $('profileNudge').hidden = !!(profile && profile.full_name); }
+  function loadProfile() {
+    return PMStore.myProfile().then(function (p) {
+      profile = p || null;
+      updateNudge();
+    }).catch(function () { /* unknown: leave the nudge hidden rather than nag wrongly */ });
+  }
+  function openProfile() {
+    var opener = $('myDetailsBtn');
+    opener.disabled = true;
+    setMsg('profileMsg', '');
+    setFieldErr('pfName', '');
+    setFieldErr('pfEmail', '');
+    PMStore.myProfile().then(function (p) { profile = p || profile; }, function () {}).then(function () {
+      opener.disabled = false;
+      fillProfile(profile);
+      if (!pdlg.open) pdlg.showModal();
+      $('profileTitle').focus();
+    });
+  }
+  $('myDetailsBtn').addEventListener('click', openProfile);
+  $('nudgeBtn').addEventListener('click', openProfile);
+  $('profileClose').addEventListener('click', function () { pdlg.close(); });
+  $('profileCancel').addEventListener('click', function () { pdlg.close(); });
+  pdlg.addEventListener('click', function (e) { if (e.target === pdlg && !$('profileSave').disabled) pdlg.close(); });
+  $('profileForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var save = $('profileSave');
+    if (save.disabled) return;
+    var name = $('pfName').value.trim();
+    var email = $('pfEmail').value.trim();
+    var first = null;
+    setFieldErr('pfName', name ? '' : 'Enter your full name.');
+    if (!name) first = 'pfName';
+    var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    setFieldErr('pfEmail', emailOk ? '' : 'Enter a valid email address.');
+    if (!emailOk && !first) first = 'pfEmail';
+    if (first) { $(first).focus(); return; }
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    setMsg('profileMsg', 'Saving your details…');
+    var payload = {
+      full_name: name, email: email,
+      cell: $('pfCell').value.trim(), branch_name: $('pfBranch').value.trim()
+    };
+    safe(function () { return PMStore.saveMyProfile(payload); }).then(function (saved) {
+      profile = saved || { full_name: name, email: email };
+      updateNudge();
+      pdlg.close();
+      setMsg('pageMsg', 'Your details are saved. They are sent to MortgageMAX with each credit check you run.', 'ok');
+    }).catch(function (err) {
+      var m = staffError(err, 'profile');
+      setMsg('profileMsg', m.text, 'err', m.sub);
+    }).then(function () {
+      save.disabled = false;
+      save.textContent = 'Save details';
     });
   });
-  document.getElementById('dlgDelete').addEventListener('click', function () {
-    if (!currentRef) return;
-    if (confirm('Delete this record permanently? This cannot be undone.')) {
-      PMStore.remove(currentRef).then(function () {
-        currentRef = null;
-        dlg.close();
-        render();
-      }).catch(function (err) { alert('Could not delete: ' + err.message); });
-    }
-  });
 
-  /* --- controls --- */
+  /* ================= demo controls ================= */
   function seed() { PMStore.seedDemo().then(render); }
-  document.getElementById('seedBtn').addEventListener('click', seed);
-  document.getElementById('seedBtnEmpty').addEventListener('click', seed);
-  document.getElementById('clearBtn').addEventListener('click', function () {
+  $('seedBtn').addEventListener('click', seed);
+  $('seedBtnEmpty').addEventListener('click', seed);
+  $('clearBtn').addEventListener('click', function () {
     if (confirm('Remove ALL records from this browser?')) { PMStore.clearAll().then(render); }
   });
-  document.getElementById('search').addEventListener('input', render);
-  document.getElementById('statusFilter').addEventListener('change', render);
+  /* search and filter work on the rows already loaded — no reload per keystroke */
+  function renderFromCache() { if (lastAll) renderRows(lastAll); else render(); }
+  $('search').addEventListener('input', renderFromCache);
+  $('statusFilter').addEventListener('change', renderFromCache);
 
-  /* --- boot: login gate in live mode, straight in otherwise --- */
-  var mainEl = document.getElementById('main');
-  var loginView = document.getElementById('loginView');
+  /* ================= config, badges, copy ================= */
+  function updateBadges() {
+    var mb = $('modeBadge');
+    var eb = $('envBadge');
+    if (PMStore.mode !== 'live') { eb.hidden = true; return; }
+    mb.textContent = 'Live — Supabase';
+    eb.hidden = false;
+    eb.classList.remove('badge-quiet');
+    if (!cfgLoaded) {
+      eb.textContent = 'MortgageMAX: unknown';
+      eb.classList.add('badge-quiet');
+    } else if (sysCfg.mode === 'mock') {
+      eb.textContent = 'MortgageMAX: mock';
+      eb.classList.add('badge-quiet');
+    } else {
+      eb.textContent = 'MortgageMAX: live' + (sysCfg.env ? ' (' + sysCfg.env.toUpperCase() + ')' : '');
+    }
+    eb.title = 'Identity questions: ' + sysCfg.idvMode;
+  }
 
+  function updateFootNote() {
+    var p = $('footNote');
+    p.textContent = '';
+    if (PMStore.mode === 'live') {
+      p.appendChild(document.createTextNode('Records are stored securely in Supabase; credit checks run through MortgageMAX.' +
+        (cfgLoaded && sysCfg.mode === 'mock' ? ' MortgageMAX is in test mode, so reports contain sample data.' : '') + ' '));
+    } else {
+      p.appendChild(document.createTextNode('Demo mode: records are stored in this browser only, and credit checks return ' +
+        'sample data — nothing is sent to MortgageMAX. '));
+    }
+    /* in demo, keep the demo switches so the client form stays in demo too */
+    var href = 'index.html';
+    if (PMStore.mode === 'demo') {
+      var src = new URLSearchParams(window.location.search);
+      var keep = new URLSearchParams();
+      if (src.get('demo') === '1') keep.set('demo', '1');
+      var idv = src.get('idv');
+      if (idv === 'optional' || idv === 'required') keep.set('idv', idv);
+      var qs = keep.toString();
+      if (qs) href += '?' + qs;
+    }
+    p.appendChild(document.createTextNode('Client form: '));
+    p.appendChild(el('a', { href: href, text: 'index.html' }));
+  }
+
+  function loadConfig() {
+    return PMStore.config().then(function (c) {
+      c = c || {};
+      sysCfg.mode = c.mode || PMStore.mode;
+      sysCfg.idvMode = c.idvMode === 'optional' || c.idvMode === 'required' ? c.idvMode : 'off';
+      sysCfg.env = c.env ? String(c.env) : '';
+      sysCfg.allowPassport = c.allowPassport === true;
+      cfgLoaded = true;
+      $('configWarn').hidden = true;
+    }).catch(function (err) {
+      console.error('config failed:', err);
+      cfgLoaded = false;
+      sysCfg.idvMode = 'off';
+      $('configWarn').hidden = false;
+    }).then(function () {
+      updateBadges();
+      updateFootNote();
+      if (dlg.open && currentRec && !isMidInteraction()) renderDetail(currentRec, { preserve: true });
+    });
+  }
+
+  /* ================= boot: login gate in live mode, straight in otherwise ================= */
   function enter() {
     loginView.hidden = true;
     mainEl.hidden = false;
-    document.getElementById('signOutBtn').hidden = PMStore.mode !== 'live';
+    $('signOutBtn').hidden = PMStore.mode !== 'live';
+    $('myDetailsBtn').hidden = false;
     render();
-    PMStore.onChange(render);
+    loadConfig().then(render);
+    loadProfile();
+    if (!listening) {
+      listening = true;
+      PMStore.onChange(onRemoteChange);
+      /* Fallback when realtime is down, and to keep time-based "stalled" flags current:
+         refresh every 60 s while visible, and whenever the tab becomes visible again. */
+      setInterval(function () { if (document.visibilityState === 'visible') onRemoteChange(); }, 60 * 1000);
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') onRemoteChange(); });
+    }
   }
   function showLogin() {
     mainEl.hidden = true;
     loginView.hidden = false;
-    document.getElementById('loginEmail').focus();
+    $('loginEmail').focus();
   }
 
-  document.getElementById('loginForm').addEventListener('submit', function (e) {
+  $('loginForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    var btn = document.getElementById('loginBtn');
-    var errEl = document.getElementById('login-err');
-    btn.disabled = true;
+    var b = $('loginBtn');
+    var errEl = $('login-err');
+    if (b.disabled) return;
+    b.disabled = true;
     errEl.textContent = '';
     PMStore.signIn(
-      document.getElementById('loginEmail').value.trim(),
-      document.getElementById('loginPassword').value
+      $('loginEmail').value.trim(),
+      $('loginPassword').value
     ).then(enter).catch(function (err) {
       errEl.textContent = /invalid/i.test(err.message)
         ? 'Email or password incorrect.'
         : 'Sign-in failed: ' + err.message;
-    }).finally(function () { btn.disabled = false; });
+    }).finally(function () { b.disabled = false; });
   });
-  document.getElementById('signOutBtn').addEventListener('click', function () {
+  $('signOutBtn').addEventListener('click', function () {
     PMStore.signOut().then(function () { location.reload(); });
   });
 
+  buildFilter();
+
   if (PMStore.mode === 'live') {
-    document.getElementById('modeBadge').textContent = 'Live — Supabase';
-    document.getElementById('seedBtn').hidden = true;
-    document.getElementById('clearBtn').hidden = true;
-    var emptyBtn = document.getElementById('seedBtnEmpty');
-    if (emptyBtn) emptyBtn.hidden = true;
-    PMStore.getSession().then(function (s) { s ? enter() : showLogin(); });
+    $('modeBadge').textContent = 'Live — Supabase';
+    $('emptyText').textContent = '';
+    $('emptyText').appendChild(el('strong', { text: 'No submissions yet.' }));
+    $('emptyText').appendChild(document.createElement('br'));
+    $('emptyText').appendChild(document.createTextNode('Send clients the form link to get started.'));
+    updateFootNote();
+    mainEl.hidden = true;
+    PMStore.getSession().then(function (s) { s ? enter() : showLogin(); }, showLogin);
   } else if (PMStore.mode === 'error') {
-    document.getElementById('modeBadge').textContent = 'Backend error';
+    $('modeBadge').textContent = 'Backend error';
     mainEl.innerHTML = '<div class="callout callout-error"><span class="callout-tag">Backend not reachable</span>' +
       'config.js points at Supabase but the client library failed to load. Check your connection and reload.</div>';
   } else {
+    $('seedBtn').hidden = false;
+    $('clearBtn').hidden = false;
+    $('seedBtnEmpty').hidden = false;
+    $('emptyText').appendChild(document.createElement('br'));
+    $('emptyText').appendChild(document.createTextNode('Send clients the form link, or load sample data to see how the register works.'));
+    updateFootNote();
     enter();
   }
 })();

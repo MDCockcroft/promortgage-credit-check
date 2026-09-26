@@ -1,0 +1,67 @@
+[
+  {
+    "id": "5911C3C5-EBA7-4340-82D3-5771F0CF4427",
+    "name": "Telephonic Consent",
+    "version": "3",
+    "description": "Customer provides telephonic consent for use of services",
+    "category": "Consent required from customer",
+    "scope": "MOBBCreditCheck MOMMCreditCheck MOBBBonds MOBBPrequal",
+    "declaration": "In order to continue -Do you consent to BetterBond processing, collecting, storing and sharing your personal information with the related parties for the purpose of which same is collected for the home buying journey, including a credit check. By proceeding, you agree to our Services Terms and Conditions, which are available at BetterBond.co.za's T&C's page. Please note that you can opt-out at any stage by informing us of your wishes",
+    "active": true,
+    "fileName": "string",
+    "fileId": "string",
+    "contextDefinition": {}
+  },
+  {
+    "id": "818BB417-0963-4DFF-B7E3-09C66F6D0AF9",
+    "name": "Broad consent MM",
+    "version": "13",
+    "description": "Customer provides consent for a use of services",
+    "category": "Consent required from customer",
+    "scope": "MOMMPrequal MOMMBonds BSSales",
+    "declaration": "<p>MortgageMAX, a division of BetterLife Origination Services Proprietary Limited and <a>MortgageMAX Licensees<sup>1</sup></a> (“MortgageMAX”), together with other members of the BetterHome Group (comprising BetterHome Group Limited and entities in which it has a direct or indirect financial interest) (collectively “we” or “us”), offers a range of services relating to your home journey to make your home dreams come true, seamlessly and efficiently. MortgageMAX accordingly offers the following services (i) bond pre-qualification applications; (ii) credit checks; (iii) home loan applications to various <a>credit providers<sup>2</sup></a> including your nominated banks; (iv) insurance brokering services in relation to life (such as, but not limited to, life insurance) and non-life cover (such as, but not limited to, building and home contents insurance); (v) services regarding estate planning and wills; (vi) personal loan services regarding assistance for transfer and bond costs; and (vii) other services that relate to the purchase of your home and/or fulfilling bond grant conditions (collectively “Services”). </p><p>By signing this form in the space provided below, you appoint MortgageMAX, and the BetterHome Group to render the Services to you and appoint MortgageMAX as your sole agent and on your behalf to submit an application to various financial institutions relating to the Services. You agree to MortgageMAX’s Terms and Conditions available at https://www.MortgageMAX.co.za. <br>When MortgageMAX submits your application to financial institutions for the purpose of assessing your home loan, such financial institution will only be granted consent to process your personal information for this specific purpose, and may not use it for marketing, solicitation, or promotion of any other products or services, in accordance with the Protection of Personal Information Act (“POPIA”).</p><p>DECLARATIONS I DECLARE AND CONFIRM THAT</p><ul><li>I am not unrehabilitated or insolvent and I have not applied for nor am I under debt rescue;</li><li>I hold no other citizenships and residence for local and international tax purposes, other than those disclosed in this application form. I will inform the relevant financial institution in writing of any changes to this status within 30 days of the change of status;</li><li>I warrant that all information (irrespective of the format) supplied by me is to the best of my knowledge and belief true and correct in all material respects. I am are not aware of any other information which would, if it were to become known to the financial institution, affect the consideration of my application in any way;</li><li>the Licensee that has assisted me/us has explained (i) the advantages of paying a deposit on the property that I/we intend on purchasing; (ii) that there are costs involved in taking transfer of the property; and (iii) that he/she will earn commission on the registration of the bond that will be registered over the property</li><li>the Services provided require personal information being shared on various electronic platforms including but not limited to contacting me via a phone call, WhatsApp, Email, SMS or any other digital means. </li></ul><h5>CONSENT TO PROCESS PERSONAL INFORMATION:</h5><p>In order to render the Services to you, we will process your personal information and special personal information (where applicable) in accordance with the purpose for which it has been collected. For more information about how we protect personal information please see the privacy policy available at https://www.mortgagemax.co.za</p><p>By signing this form, you consent to MortgageMAX processing your personal information in order to render the aforementioned Services to you which includes, inter alia </p><ul><li>using your personal information to render Services to you, including sharing information and Offer to Purchase with our Service Providers;</li><li>collecting your personal information (such as your payslips, bank statements, payment history and identity verification information) from third parties including your bank(s), your employer(s), credit bureau, telecommunication providers, retailers insurers, your spouse, any co-applicant, educational institutions, any academic verification agencies and any governmental authority or other third party that processes information on behalf of any governmental authority; </li><li>obtaining your credit report from a credit bureau, sharing it with credit providers for your home loan application, and assisting you with credit management or correcting inaccurate information. You have been made aware that you are entitled to one free report per year from any registered credit bureau. </li><li>sharing your personal information with members of the BetterHome Group, its service providers and other relevant parties such as financial institutions, personal loan service platforms, insurers and any other person who requires your personal information in order for us to render or in connection with us rendering the Services to you for your approval of the credit provider’s offer to finance your immovable property; </li><li>storing your personal information including storage on cloud facilities that may be located outside of South Africa. We will ensure that appropriate measures are put in place to protect your information in accordance with the standards that are no less onerous that those imposed by South African laws; and</li><li>using your personal information for research and statistical purposes.</li></ul><p><sup>1</sup>The MortgageMAX Licensee means the person or business that you have engaged to render the selected Services to you and which has concluded a licensing agreement with MortgageMAX in terms of which the MortgageMAX Licensee undertakes to utilise services, systems and/or the platform provided by or on behalf of MortgageMAX to render the Services to you.</p><p><sup>2</sup>MortgageMAX currently submits applications to the following credit providers being ABSA, First National Bank, Nedbank, Standard Bank, Investec,  Sentinel, Auto Assist, First Home Finance and RMB Private  Bank, however, this list is not exhaustive and new home loan providers may be added to this list from time to time.</p>",
+    "active": true,
+    "fileName": "string",
+    "fileId": "string",
+    "contextDefinition": {}
+  },
+  {
+    "id": "99DBD2CD-A010-41C4-871F-454F0F21BC21",
+    "name": "BetterSure Life Insurance",
+    "version": "2",
+    "description": "Customer provides consent for a use of services",
+    "category": "Consent required from customer",
+    "scope": "MOMMPrequal MOMMBonds BSSales",
+    "declaration": "I hereby consent to MortgageMAX sharing my personal information with BetterSure Financial Consultants (Pty) Ltd (FSP24015) (“BetterSure”). This consent is granted for the purpose of receiving additional information pertaining to Life Insurance financial products, and services in relation to Estate Planning and Wills, specifically tailored to my bond application requirements and associated needs. I acknowledge that I have the right to opt-out of such future communications.",
+    "active": true,
+    "fileName": "N/A",
+    "fileId": "N/A",
+    "contextDefinition": {}
+  },
+  {
+    "id": "AB264240-8651-42F8-BA3D-ED99A3BA3DE3",
+    "name": "MM Personal Loans",
+    "version": "3",
+    "description": "Customer provides consent for a use of services",
+    "category": "Consent required from customer",
+    "scope": "MOMMPrequal MOMMBonds",
+    "declaration": "I hereby consent to MortgageMAX sharing my personal information with Personal Loan Providers. This consent is granted for purposes of receiving competitive personal loan options from credit providers to access funding that may be required in connection with purchasing a new home (such as transfer fees, moving costs and the like). I acknowledge that I have the right to opt-out of such future communications.",
+    "active": true,
+    "fileName": "N/A",
+    "fileId": "N/A",
+    "contextDefinition": {}
+  },
+  {
+    "id": "B2AC8062-E68C-4DA5-9893-E24525524167",
+    "name": "BetterSure Buildings & Contents Insurance",
+    "version": "4",
+    "description": "Customer provides consent for a use of services",
+    "category": "Consent required from customer",
+    "scope": "MOMMPrequal MOMMBonds BSSales",
+    "declaration": "I hereby consent to MortgageMAX sharing my personal information with BetterSure. This consent is granted for the purpose of receiving additional information pertaining to Building and Home Contents Insurance financial products and services, specifically tailored to my bond application requirements and associated needs. I acknowledge that I have the right to opt-out of such future communications.",
+    "active": true,
+    "fileName": "N/A",
+    "fileId": "",
+    "contextDefinition": {}
+  }
+]
