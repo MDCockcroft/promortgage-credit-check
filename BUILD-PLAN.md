@@ -245,10 +245,10 @@ Draft: `~/ARRABON Services/Systems/Pro Mortgages SA - Credit Check/vendor-email-
 
 | Item | Owner | Why |
 |---|---|---|
-| SMS gateway (Clickatell / BulkSMS / Twilio), strip `demo_otp` | Michael + Opus | The OTP is the consent evidence. Compliance blocker, no vendor dependency. |
+| SMS gateway, strip `demo_otp` — **built 2026-09-27, mock mode**: SMSPortal (cheapest published SA rate, R0.29/SMS at the 500 minimum), account in Pro Mortgages SA's name. `mm-client` submit/resend-otp, `_shared/sms.ts`, migration `20260928_sms_otp.sql` (limits: 60 s cooldown, 3 sends per application, 5 per number per 24 h, daily cap). Remaining: deploy, Liz's SMSPortal keys → `SMS_MODE=test` → `live`. | Michael + Opus | The OTP is the consent evidence. Compliance blocker, no vendor dependency. |
 | POPIA Operator Agreement (ARB-Q-2026-002 §7 requires it before commencement) | Michael | ARRABON is Pro Mortgages SA's operator handling credit data. |
 | s18 notice content: registered legal name, address, company/FSP/NCR numbers; fix "Pro Mortgage / Pro Mortgage SA / Pro Mortgages SA" inconsistency | Liz | Placeholders are still in the page rail. |
 | Business decisions: IDV mode for go-live; passport holders' manual path; whether reports are shared with agents/attorneys; accept IDV as added scope vs ARB-Q-2026-002 | Liz + Michael | Product, not engineering. |
 | Legal-adviser list: POPIA s57(1)(c) prior authorisation for credit-reporting purposes; Information Officer; PAIA manual; the PCR declaration's undertakings (access log, destroy-after-purpose) | Liz's adviser | Flag, do not assert. |
 | Production: new host + key; day-one smoke = `GET /ConsentTypes` with the prod key; re-verify D1 | Michael + Opus | APIM policies commonly differ UAT → prod. |
-| Reissue ARB-Q-2026-002 (expired 18 Sept; §2.3 says "direct Experian", wrong; IDV unscoped) | Michael | Commercial hygiene. |
+| ~~Reissue ARB-Q-2026-002 (expired 18 Sept; §2.3 says "direct Experian", wrong; IDV unscoped)~~ **Done (2026-09-27).** | Michael | Commercial hygiene. |

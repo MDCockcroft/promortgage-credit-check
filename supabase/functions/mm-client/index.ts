@@ -8,7 +8,12 @@
 // stored, with a 30-minute expiry, in credit_check_secrets (unreadable by any client role).
 // Deploy with --no-verify-jwt: the project's publishable key is not a JWT.
 //
+// 'submit' creates the application and SMSes the consent code (SMS_MODE, _shared/sms.ts); it hands
+// back a one-time otp_session (sha256 stored) that alone may ask for 'resend-otp'.
+//
 // POST { action: 'consent-types' }
+// POST { action: 'submit', payload }                → { ref, otp_session, sms, demo_otp (not live) }
+// POST { action: 'resend-otp', ref, otp_session }   → { sent, reason?, retryAfter, sendsLeft }
 // POST { ref, idv_token, action: 'register-consent' | 'idv-start' | 'idv-answer' | 'idv-expire', answers? }
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -20,6 +25,9 @@ import { type Ctx, idvModeFromEnv, type Mode, publicConsentTypes, registerConsen
 import { recoverStale } from "../_shared/recover.ts";
 import { idvIdType, personIdFor } from "../_shared/idnumber.ts";
 import { IDV_ANSWER_WINDOW_MS } from "../_shared/states.ts";
+import {
+  OTP_COOLDOWN_S, OTP_FAILED_RETRY_S, OTP_MAX_PER_CELL_24H, OTP_MAX_SENDS, otpMessage, sendSms, type SmsConfig, smsConfigFromEnv, smsGuard,
+} from "../_shared/sms.ts";
 
 const APP_NAME = "promortgage-credit-check";
 const APP_VERSION = "2026.09.26";
@@ -28,13 +36,61 @@ const MAX_IDV_ROUNDS = 2;
 // C5: identity-question rounds per ID number across ALL records, rolling 24 h. Stops anyone from
 // harvesting a person's credit-file facts (or running up IDV calls) by submitting fresh forms.
 const MAX_IDV_ROUNDS_PER_PERSON_24H = 3;
+// submit_credit_check's own refusals — safe to pass to the form as codes (it maps them to copy).
+const SUBMIT_REFUSALS = new Set([
+  "invalid_id_number", "invalid_passport_number", "invalid_id_type", "invalid_cell", "too_many_submissions",
+]);
+
+type SendOutcome =
+  | { missing: true }
+  | {
+    missing?: false; sent: boolean; reason?: string; retryAfter?: number; sendsLeft?: number;
+    uncertain?: boolean; demoCode?: string;
+  };
+
+/**
+ * Make a code and SMS it. claim_otp_send (migration 20260928) does every check and writes the
+ * sms_log row BEFORE the send; record_sms_result closes it. The code is returned to the browser
+ * ONLY outside live mode. { missing: true } = the migration is not applied yet.
+ */
+async function sendCode(sb: SupabaseClient, sms: SmsConfig, ref: string, sessionHash: string, isResend: boolean): Promise<SendOutcome> {
+  const c = await sb.rpc("claim_otp_send", {
+    p_ref: ref, p_session_hash: sessionHash, p_is_resend: isResend, p_mode: sms.mode,
+    p_cooldown_s: OTP_COOLDOWN_S, p_max_sends: OTP_MAX_SENDS, p_cell_max: OTP_MAX_PER_CELL_24H, p_daily_max: sms.dailyMax,
+  });
+  if (c.error) {
+    if (c.error.code === "PGRST202" || /claim_otp_send/.test(c.error.message ?? "")) return { missing: true };
+    throw new Error(`server_error: ${c.error.message}`);
+  }
+  const d = c.data as { ok: boolean; reason?: string; retry_after?: number; code?: string; cell?: string; sms_id?: number; send_no?: number };
+  if (!d?.ok) {
+    if (d?.reason === "daily_limit") console.error(JSON.stringify({ event: "sms_daily_limit", ref, dailyMax: sms.dailyMax }));
+    return { sent: false, reason: d?.reason ?? "server_error", retryAfter: d?.retry_after };
+  }
+  const r = await sendSms(sms, { to: d.cell!, text: otpMessage(sms.brand, d.code!), customerId: ref });
+  const rec = await sb.rpc("record_sms_result", {
+    p_sms_id: d.sms_id, p_status: r.status, p_http: r.http, p_event_id: r.eventId, p_error: r.errorCode, p_cost: r.cost,
+  });
+  if (rec.error) console.error(JSON.stringify({ event: "sms_record_failed", ref, message: rec.error.message }));
+  // Never the number, the code or the text.
+  console.log(JSON.stringify({
+    event: "sms_send", ref, mode: sms.mode, sendNo: d.send_no, status: r.status, http: r.http,
+    errorCode: r.errorCode, latencyMs: r.latencyMs,
+  }));
+  if (r.http === 401 || r.http === 403) console.error(JSON.stringify({ event: "sms_config_error", ref, http: r.http }));
+  const sendsLeft = Math.max(0, OTP_MAX_SENDS - (d.send_no ?? OTP_MAX_SENDS));
+  const demoCode = sms.mode === "live" ? undefined : d.code;
+  // record_sms_result gives a failed send back (sendsLeft + 1) and allows a retry after 15 s.
+  if (r.status === "failed") return { sent: false, reason: "send_failed", retryAfter: OTP_FAILED_RETRY_S, sendsLeft: sendsLeft + 1, demoCode };
+  return { sent: true, uncertain: r.status === "unknown", retryAfter: OTP_COOLDOWN_S, sendsLeft, demoCode };
+}
 
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin");
   if (req.method === "OPTIONS") return preflight(origin);
   if (req.method !== "POST") return fail("bad_request", "POST only", origin);
 
-  let body: { ref?: string; idv_token?: string; action?: string; answers?: unknown };
+  let body: { ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown; otp_session?: string };
   try {
     body = await req.json();
   } catch {
@@ -69,6 +125,70 @@ Deno.serve(async (req) => {
       const msg = String(e instanceof Error ? e.message : e);
       console.error(JSON.stringify({ event: "consent_types_failed", message: msg }));
       return fail(msg.startsWith("config_error") ? "config_error" : "vendor_error", "Consent wording is unavailable", origin);
+    }
+  }
+
+  // ---- the form, and its SMS code ------------------------------------------------------------
+  // The browser no longer calls submit_credit_check itself: the code must never reach it (live).
+  if (action === "submit" || action === "resend-otp") {
+    let sms: SmsConfig;
+    try {
+      sms = smsConfigFromEnv();
+    } catch (e) {
+      console.error(JSON.stringify({ event: "sms_config_error", message: String(e instanceof Error ? e.message : e) }));
+      return fail("config_error", "Service is not configured", origin);
+    }
+    const unsafe = smsGuard(sms, cfg.env);
+    if (unsafe) {
+      console.error(JSON.stringify({ event: "sms_config_error", message: unsafe }));
+      return fail("config_error", "Service is not configured", origin);
+    }
+    try {
+      if (action === "submit") {
+        const p = body.payload;
+        if (!p || typeof p !== "object" || Array.isArray(p)) return fail("bad_request", "payload is required", origin);
+        const sub = await sb.rpc("submit_credit_check", { payload: p });
+        if (sub.error) {
+          const m = sub.error.message ?? "";
+          if (SUBMIT_REFUSALS.has(m)) return fail("bad_request", m, origin);
+          throw new Error(`server_error: ${m}`);
+        }
+        const d = sub.data as { ref: string; demo_otp?: string };
+        const session = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+        const out = await sendCode(sb, sms, d.ref, await sha256Hex(session), false);
+        if (out.missing) {
+          // Migration 20260928 not applied: submit_credit_check still made the code and returned it.
+          // Fine for mock/test; never for live (no limits, no log) — the row just expires.
+          if (sms.mode === "live") {
+            console.error(JSON.stringify({ event: "sms_config_error", message: "SMS_MODE=live before migration 20260928" }));
+            return fail("config_error", "Service is not configured", origin);
+          }
+          return ok({ ref: d.ref, demo_otp: d.demo_otp ?? null, sms: { sent: true, mode: sms.mode, canResend: false } }, origin);
+        }
+        return ok({
+          ref: d.ref, otp_session: session, demo_otp: out.demoCode ?? null,
+          sms: {
+            sent: out.sent, reason: out.reason, uncertain: out.uncertain ?? false, retryAfter: out.retryAfter ?? 0,
+            sendsLeft: out.sendsLeft ?? 0, mode: sms.mode, canResend: true,
+          },
+        }, origin);
+      }
+
+      // resend-otp: only the browser that submitted holds otp_session.
+      const session = body.otp_session;
+      if (!ref || typeof session !== "string" || session.length < 32) return fail("forbidden", "Invalid or expired session", origin);
+      const out = await sendCode(sb, sms, ref, await sha256Hex(session), true);
+      if (out.missing) return ok({ sent: false, reason: "unavailable" }, origin);
+      if (!out.sent && (out.reason === "forbidden" || out.reason === "not_found")) {
+        return fail("forbidden", "Invalid or expired session", origin);
+      }
+      return ok({
+        sent: out.sent, reason: out.reason, uncertain: out.uncertain ?? false, retryAfter: out.retryAfter ?? 0,
+        sendsLeft: out.sendsLeft, demo_otp: out.demoCode ?? null, mode: sms.mode,
+      }, origin);
+    } catch (e) {
+      console.error(JSON.stringify({ event: "mm_client_error", action, message: String(e instanceof Error ? e.message : e) }));
+      return fail("server_error", "Something went wrong", origin);
     }
   }
 

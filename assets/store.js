@@ -102,6 +102,17 @@
   }
   var memTokens = {};
 
+  /* ---------- resend token for the SMS code (issued by mm-client submit) ---------- */
+  var OTP_COOLDOWN_S = 60;   /* mirrors _shared/sms.ts — the server enforces both */
+  var OTP_MAX_SENDS = 3;
+  var memOtpSessions = {};
+  function otpKey(ref) { return 'pm_otp_' + ref; }
+  function setOtpSession(ref, t) { try { sessionStorage.setItem(otpKey(ref), t); } catch (e) { /* private mode */ } memOtpSessions[ref] = t; }
+  function getOtpSession(ref) {
+    if (memOtpSessions[ref]) return memOtpSessions[ref];
+    try { return sessionStorage.getItem(otpKey(ref)); } catch (e) { return null; }
+  }
+
   /* ---------- demo-mode storage ---------- */
   function readAll() {
     try { return JSON.parse(localStorage.getItem(KEY)) || []; }
@@ -385,12 +396,14 @@
       return demoConsentTypes();
     },
 
-    /* returns {ref, demo_otp} — demo_otp present until the SMS gateway phase */
+    /* returns {ref, demo_otp, sms: {sent, reason?, uncertain, retryAfter, sendsLeft, canResend}}.
+       demo_otp is null when the code really went by SMS (SMS_MODE=live). Refusals throw an Error
+       whose message is the code (invalid_id_number, invalid_cell, too_many_submissions, …). */
     submit: function (data) {
       if (mode === 'live') {
-        return sb.rpc('submit_credit_check', { payload: data }).then(function (res) {
-          if (res.error) throw new Error(res.error.message);
-          return res.data;
+        return invoke('mm-client', { action: 'submit', payload: data }).then(function (d) {
+          if (d.otp_session) setOtpSession(d.ref, d.otp_session);
+          return d;
         });
       }
       var rec = Object.assign({}, data, {
@@ -400,13 +413,39 @@
         otp: makeOtp(),
         otpExpires: Date.now() + 10 * 60 * 1000,
         otpAttempts: 0,
+        otpSends: 1,
+        otpSentAt: Date.now(),
         idvAttempts: 0,
-        audit: [auditEntry('Form submitted by client')]
+        audit: [auditEntry('Form submitted by client'), auditEntry('Consent code sent by SMS [demo mode]')]
       });
       var list = readAll();
       list.push(rec);
       writeAll(list);
-      return Promise.resolve({ ref: rec.ref, demo_otp: rec.otp });
+      return Promise.resolve({
+        ref: rec.ref, demo_otp: rec.otp,
+        sms: { sent: true, uncertain: false, retryAfter: OTP_COOLDOWN_S, sendsLeft: OTP_MAX_SENDS - 1, canResend: true }
+      });
+    },
+
+    /* Ask for a new SMS code (the old one stops working).
+       → {sent, reason?: cooldown|too_many_sends|send_failed|cell_limit|daily_limit|invalid_state|unavailable,
+          uncertain, retryAfter (seconds), sendsLeft, demo_otp}. A lost or foreign session throws code 'forbidden'. */
+    resendCode: function (ref) {
+      if (mode === 'live') {
+        var session = getOtpSession(ref);
+        if (!session) return Promise.reject(mkErr({ code: 'forbidden', message: 'Invalid or expired session' }));
+        return invoke('mm-client', { action: 'resend-otp', ref: ref, otp_session: session });
+      }
+      var rec = demoFind(ref);
+      if (!rec || rec.status !== 'awaiting_otp') return Promise.resolve({ sent: false, reason: 'invalid_state' });
+      var wait = Math.ceil(((rec.otpSentAt || 0) + OTP_COOLDOWN_S * 1000 - Date.now()) / 1000);
+      if (wait > 0) return Promise.resolve({ sent: false, reason: 'cooldown', retryAfter: wait });
+      if ((rec.otpSends || 1) >= OTP_MAX_SENDS) return Promise.resolve({ sent: false, reason: 'too_many_sends' });
+      var sends = (rec.otpSends || 1) + 1;
+      var code = makeOtp();
+      demoUpdate(ref, { otp: code, otpExpires: Date.now() + 10 * 60 * 1000, otpAttempts: 0, otpSends: sends, otpSentAt: Date.now() },
+        'Consent code sent by SMS — resend ' + (sends - 1) + ' [demo mode]');
+      return Promise.resolve({ sent: true, uncertain: false, retryAfter: OTP_COOLDOWN_S, sendsLeft: OTP_MAX_SENDS - sends, demo_otp: code });
     },
 
     /* returns {ok, ref} or {ok:false, error: not_found|already_confirmed|expired|mismatch|too_many_attempts}.

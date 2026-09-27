@@ -515,9 +515,10 @@
           <h1>Enter your SMS code</h1>
           <p class="lede" id="otpLede">We&rsquo;ve sent a 6-digit code to your cellphone. Entering it confirms your consent &mdash; only then is anything sent to the credit bureau.</p>
         </header>
+        <div class="callout callout-error" id="otpSendBox" role="alert" hidden></div>
         <div class="callout callout-demo" id="otpDemoBox">
           <span class="callout-tag">Demo mode</span>
-          No SMS gateway is connected yet. Your code is <strong class="mono" id="otpDemoCode"></strong>. In production this arrives by SMS and is never shown on screen.
+          No SMS is sent in demo mode. Your code is <strong class="mono" id="otpDemoCode"></strong>. In production this arrives by SMS and is never shown on screen.
         </div>
         <div class="field">
           <label for="otpInput">6-digit code</label>
@@ -526,8 +527,10 @@
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" id="otpVerify" type="button">Confirm consent</button>
+          <button class="btn btn-ghost" id="otpResend" type="button">Send a new code</button>
           <button class="btn btn-ghost" id="otpBack" type="button">Back to the form</button>
         </div>
+        <p class="small" id="otpResendNote" aria-live="polite" style="margin-top: 12px"></p>
       </section>
 
       <section id="workPanel" hidden>
@@ -872,13 +875,15 @@
     }).then(function (res) {
       currentRef = res.ref;
       var cell = v('cell').replace(/\s/g, '');
+      maskedCell = cell.slice(0, 3) + ' ••• ••' + cell.slice(-2);
       document.getElementById('otpLede').textContent =
-        'We’ve sent a 6-digit code to ' + cell.slice(0, 3) + ' ••• ••' + cell.slice(-2) +
+        'We’ve sent a 6-digit code to ' + maskedCell +
         '. Entering it confirms your consent — only then is anything sent to the credit bureau.';
-      var demoBox = document.getElementById('otpDemoBox');
-      demoBox.hidden = !res.demo_otp;
-      if (res.demo_otp) document.getElementById('otpDemoCode').textContent = res.demo_otp;
-      showPanel(otpPanel, document.getElementById('otpInput'));
+      otpInput.value = '';
+      setErr('otpInput', '');
+      showOtpDemo(res.demo_otp);
+      applySmsOutcome(res.sms || { sent: true, canResend: false });
+      showPanel(otpPanel, otpInput);
     }).catch(function (err) {
       var m = String((err && err.message) || '');
       errSummary.hidden = false;
@@ -887,6 +892,10 @@
         setErr('idNumber', 'Enter a valid 13-digit South African ID number.');
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'Please check your ID number and try again.';
+      } else if (/invalid_cell/.test(m)) {
+        setErr('cell', 'Enter a valid SA cellphone number, e.g. 0821234567.');
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'Please check your cellphone number — your SMS code goes to it.';
       } else if (/too_many_submissions/.test(m)) {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'This ID number has already been used several times today. Please contact your consultant directly.';
@@ -977,8 +986,8 @@
   /* --- OTP --- */
   var OTP_ERRORS = {
     mismatch: 'That code doesn’t match. Check the SMS and try again.',
-    expired: 'This code has expired. Go back and submit the form again.',
-    too_many_attempts: 'Too many incorrect attempts. Go back and submit the form again.',
+    expired: 'This code has expired.',
+    too_many_attempts: 'Too many incorrect attempts.',
     /* status is no longer awaiting_otp: usually an earlier attempt succeeded but its reply was lost
        (can also be an expired record, so never claim consent is recorded outright) */
     already_confirmed: 'This code has already been used. If you entered it a moment ago, your consent is recorded and your consultant will contact you. Otherwise, go back and submit the form again.',
@@ -987,8 +996,106 @@
   var otpVerifyBtn = document.getElementById('otpVerify');
   var otpBackBtn = document.getElementById('otpBack');
   var otpInput = document.getElementById('otpInput');
+  var otpResendBtn = document.getElementById('otpResend');
+  var otpResendNote = document.getElementById('otpResendNote');
+  var otpSendBox = document.getElementById('otpSendBox');
+  var maskedCell = '';
+  var resendTimerId = null;
+  var resendAllowed = true; /* false once no further code can be sent for this application */
+
+  /* Why a code could not be sent. Static copy only — reason codes go to the console. */
+  var SEND_PROBLEMS = {
+    send_failed: 'We couldn’t send the SMS just now. Try “Send a new code” in a few seconds.',
+    cell_limit: 'We’ve sent the maximum number of codes to this cellphone number today. Please contact your consultant.',
+    daily_limit: 'We can’t send SMS codes right now. Please contact your consultant.',
+    too_many_sends: 'We’ve sent the maximum number of codes for this application. Go back and submit the form again, or contact your consultant.',
+    invalid_state: 'This application is no longer waiting for a code. If you already confirmed it, your consultant will contact you.',
+    unavailable: 'A new code can’t be sent right now. Go back and submit the form again.',
+    bad_cell: 'We can’t send an SMS to this cellphone number. Go back and check it, or contact your consultant.',
+    forbidden: 'This page’s session has ended. Go back and submit the form again.'
+  };
+
+  function showOtpDemo(code) {
+    document.getElementById('otpDemoBox').hidden = !code;
+    if (code) document.getElementById('otpDemoCode').textContent = code;
+  }
+  function stopResendTimer() {
+    if (resendTimerId) { clearInterval(resendTimerId); resendTimerId = null; }
+  }
+  /* Disable "Send a new code" for `sec` seconds, showing the countdown in its label. */
+  function startResendCooldown(sec) {
+    stopResendTimer();
+    var until = Date.now() + sec * 1000;
+    var tick = function () {
+      var left = Math.ceil((until - Date.now()) / 1000);
+      if (left <= 0) {
+        stopResendTimer();
+        otpResendBtn.disabled = !resendAllowed;
+        otpResendBtn.textContent = 'Send a new code';
+        return;
+      }
+      otpResendBtn.disabled = true;
+      otpResendBtn.textContent = 'Send a new code (' + left + 's)';
+    };
+    tick();
+    if (sec > 0) resendTimerId = setInterval(tick, 1000);
+  }
+  /* One place that turns a send outcome (submit or resend) into what the client sees. */
+  function applySmsOutcome(o) {
+    o = o || {};
+    resendAllowed = o.canResend !== false && (o.sendsLeft === undefined || o.sendsLeft > 0 || !o.sent);
+    if (o.reason === 'too_many_sends' || o.reason === 'cell_limit' || o.reason === 'daily_limit' ||
+        o.reason === 'invalid_state' || o.reason === 'unavailable' || o.reason === 'forbidden' ||
+        o.reason === 'bad_cell') {
+      resendAllowed = false;
+    }
+    if (o.sent) {
+      otpSendBox.hidden = true;
+      otpResendNote.textContent = o.uncertain
+        ? 'The SMS is taking longer than usual. If it hasn’t arrived in a minute, send a new code.'
+        : (resendAllowed ? 'Didn’t get it? You can ask for a new code in a minute. Only the newest code works.'
+          : 'This is the last code we can send for this application.');
+    } else if (o.reason === 'cooldown') {
+      otpResendNote.textContent = 'Please wait a moment before asking for another code.';
+    } else if (o.reason) {
+      console.error('SMS code not sent:', o.reason);
+      otpSendBox.hidden = false;
+      otpSendBox.textContent = SEND_PROBLEMS[o.reason] || SEND_PROBLEMS.send_failed;
+      otpResendNote.textContent = '';
+    }
+    otpResendBtn.hidden = !resendAllowed;
+    startResendCooldown(resendAllowed ? (o.retryAfter || 0) : 0);
+  }
+
+  otpResendBtn.addEventListener('click', function () {
+    var ref = currentRef;
+    if (!ref || otpResendBtn.disabled) return;
+    otpResendBtn.disabled = true;
+    otpResendNote.textContent = 'Sending a new code…';
+    PMStore.resendCode(ref).then(function (res) {
+      if (ref !== currentRef) return;
+      res = res || {};
+      if (res.sent) {
+        otpInput.value = '';
+        setErr('otpInput', '');
+        document.getElementById('otpLede').textContent = 'We’ve sent a new 6-digit code to ' + maskedCell +
+          '. Only the newest code works. Entering it confirms your consent — only then is anything sent to the credit bureau.';
+      }
+      if (res.demo_otp) showOtpDemo(res.demo_otp);
+      applySmsOutcome(res);
+      otpInput.focus();
+    }).catch(function (err) {
+      if (ref !== currentRef) return;
+      if (err && err.code === 'forbidden') return applySmsOutcome({ sent: false, reason: 'forbidden' });
+      console.error('resend failed:', err);
+      otpResendNote.textContent = 'We couldn’t reach the server. Please try again.';
+      otpResendBtn.disabled = !resendAllowed;
+    });
+  });
+
   otpBackBtn.addEventListener('click', function () {
     if (otpVerifyBtn.disabled) return; // a confirmation is in flight; its outcome decides
+    stopResendTimer();
     if (currentRef) PMStore.abandon(currentRef);
     currentRef = null;
     otpInput.value = '';
@@ -1012,7 +1119,14 @@
         startPostConsent();
         return;
       }
-      setErr('otpInput', OTP_ERRORS[res.error] || OTP_ERRORS.not_found);
+      var msg = OTP_ERRORS[res.error] || OTP_ERRORS.not_found;
+      if (res.error === 'expired' || res.error === 'too_many_attempts') {
+        /* Only point at the resend button while it is actually on screen. */
+        msg += resendAllowed && !otpResendBtn.hidden
+          ? ' Tap “Send a new code”, or go back and submit the form again.'
+          : ' Go back and submit the form again, or contact your consultant.';
+      }
+      setErr('otpInput', msg);
     }).catch(function (err) {
       setErr('otpInput', 'We couldn’t reach the server. Please try again.');
       console.error('confirm failed:', err);
