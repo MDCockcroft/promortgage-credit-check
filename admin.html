@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Credit Check Register — Pro Mortgage SA</title>
-<link rel="stylesheet" href="assets/styles.css">
+<link rel="stylesheet" href="assets/styles.css?v=20260927-3">
 <style>
   body { background: var(--surface-sunken); }
 
@@ -549,8 +549,10 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="assets/config.js"></script>
-<script src="assets/store.js"></script>
+<!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
+     10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
+<script src="assets/config.js?v=20260927-3"></script>
+<script src="assets/store.js?v=20260927-3"></script>
 <script>
 (function () {
   'use strict';
