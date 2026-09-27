@@ -245,7 +245,7 @@ Draft: `~/ARRABON Services/Systems/Pro Mortgages SA - Credit Check/vendor-email-
 
 | Item | Owner | Why |
 |---|---|---|
-| SMS gateway, strip `demo_otp` — **built 2026-09-27, mock mode**: SMSPortal (cheapest published SA rate, R0.29/SMS at the 500 minimum), account in Pro Mortgages SA's name. `mm-client` submit/resend-otp, `_shared/sms.ts`, migration `20260928_sms_otp.sql` (limits: 60 s cooldown, 3 sends per application, 5 per number per 24 h, daily cap). Remaining: deploy, Liz's SMSPortal keys → `SMS_MODE=test` → `live`. | Michael + Opus | The OTP is the consent evidence. Compliance blocker, no vendor dependency. |
+| SMS gateway, strip `demo_otp` — **built 2026-09-27, mock mode**: SMSPortal (cheapest published SA rate, R0.29/SMS at the 500 minimum), account in Pro Mortgages SA's name. `mm-client` submit/resend-otp, `_shared/sms.ts`, migration `20260928_sms_otp.sql` (limits: 60 s cooldown, 3 sends per application, 5 per number per 24 h, daily cap). **Deployed and migration applied 2026-09-27** (mock mode). Remaining: Liz's SMSPortal keys → `SMS_MODE=test` → `live`. | Michael + Opus | The OTP is the consent evidence. Compliance blocker, no vendor dependency. |
 | POPIA Operator Agreement (ARB-Q-2026-002 §7 requires it before commencement) | Michael | ARRABON is Pro Mortgages SA's operator handling credit data. |
 | s18 notice content: registered legal name, address, company/FSP/NCR numbers; fix "Pro Mortgage / Pro Mortgage SA / Pro Mortgages SA" inconsistency | Liz | Placeholders are still in the page rail. |
 | Business decisions: IDV mode for go-live; passport holders' manual path; whether reports are shared with agents/attorneys; accept IDV as added scope vs ARB-Q-2026-002 | Liz + Michael | Product, not engineering. |
