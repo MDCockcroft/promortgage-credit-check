@@ -266,6 +266,57 @@
     report_requested:   { label: 'Report requested (legacy)',  chip: 'chip-requested', group: 'awaiting' }
   };
 
+  /* ---------- what staff see: five buckets (list, filter, tiles); the detail is in View ---------- */
+  var BUCKETS = [
+    { key: 'waiting',   label: 'Waiting on client', chip: 'chip-awaiting' },
+    { key: 'ready',     label: 'Ready to run',      chip: 'chip-confirmed' },
+    { key: 'report',    label: 'Report ready',      chip: 'chip-ready' },
+    { key: 'attention', label: 'Needs attention',   chip: 'chip-attention' },
+    { key: 'closed',    label: 'Closed',            chip: 'chip-muted' }
+  ];
+  /* Exactly one bucket per record. Order matters: a stalled record or one a consultant must decide
+     on is "Needs attention" even when the identity setting would let it run. */
+  var ATTENTION = ['consent_confirmed', 'idv_failed', 'idv_unavailable', 'check_failed',
+                   'manual_required', 'config_error', 'report_requested'];
+  function bucketOf(status, idvMode, stalled) {
+    if (stalled || ATTENTION.indexOf(status) !== -1) return 'attention';
+    if (status === 'report_ready') return 'report';
+    if (status === 'consent_withdrawn' || status === 'expired') return 'closed';
+    if (status === 'check_in_flight' || allowedFrom(idvMode, false).indexOf(status) !== -1) return 'ready';
+    return 'waiting'; /* awaiting_otp, idv_in_progress, consent_registered while identity questions are due */
+  }
+  function bucketInfo(key) {
+    for (var i = 0; i < BUCKETS.length; i++) if (BUCKETS[i].key === key) return BUCKETS[i];
+    return { key: key, label: 'Unknown', chip: 'chip-neutral' };
+  }
+  /* One plain sentence for View: what is happening, and what (if anything) staff should do. */
+  var HINTS = {
+    awaiting_otp: 'The client submitted the form but hasn’t entered their SMS code yet. Nothing to do unless they ask for help — it expires after 24 hours.',
+    consent_confirmed: 'The client confirmed consent, but it isn’t registered with MortgageMAX yet. Use “Retry consent registration” below.',
+    idv_in_progress: 'The client is answering the identity questions (5-minute limit). Nothing to do.',
+    idv_passed: 'The client passed the identity questions. You can run the credit check.',
+    idv_waived: 'Consent is registered and identity questions aren’t required. You can run the credit check.',
+    idv_failed: 'The client didn’t pass the identity questions. Verify their identity another way (for example by phone) before any credit check.',
+    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. Verify the client’s identity another way before any credit check.',
+    check_in_flight: 'The credit check is running. This usually takes under a minute.',
+    report_ready: 'The credit report is ready — see below.',
+    check_failed: 'The credit check didn’t complete. See the error below, then run it again.',
+    manual_required: 'This needs a person. The history below says why (for example an earlier withdrawal of consent, a passport, or too many identity attempts).',
+    config_error: 'MortgageMAX rejected our system credentials — not the client’s fault. Contact ARRABON; once fixed, use “Clear system error”.',
+    consent_withdrawn: 'The client withdrew consent. No credit check may be run.',
+    expired: 'The client didn’t finish in time. Nothing to do — they can submit a new form.',
+    report_requested: 'A record from the old August form. Handle it manually.'
+  };
+  function hintFor(status, bucket, stalled) {
+    if (stalled) return 'This has been stuck for a while. Opening it asked the system to recover it — it updates in a moment.';
+    if (status === 'consent_registered') {
+      return bucket === 'ready'
+        ? 'Consent is registered with MortgageMAX. You can run the credit check.'
+        : 'Consent is registered with MortgageMAX. The client still has to answer the identity questions.';
+    }
+    return HINTS[status] || '';
+  }
+
   /* Which statuses may start a credit check — identical to mm-staff allowedFrom(). */
   function allowedFrom(idvMode, force) {
     var retry = ['check_failed'];
@@ -380,6 +431,10 @@
     mode: mode,
     STATUS: STATUS,
     allowedFrom: allowedFrom,
+    BUCKETS: BUCKETS,
+    bucketOf: bucketOf,
+    bucketInfo: bucketInfo,
+    hintFor: hintFor,
     MAX_IDV_ROUNDS: MAX_IDV_ROUNDS,
     allowPassport: cfg.ALLOW_PASSPORT === true,
     validSaId: validSaId,

@@ -444,7 +444,7 @@
     <div class="field narrow">
       <label for="statusFilter">Status</label>
       <select id="statusFilter">
-        <option value="">All statuses</option>
+        <option value="">All</option>
       </select>
     </div>
   </div>
@@ -683,6 +683,16 @@
   function statusInfo(status) {
     return PMStore.STATUS[status] || { label: String(status || 'Unknown'), chip: 'chip-neutral', group: '' };
   }
+  /* The list, filter and tiles show five buckets; View shows the detailed status (chipEl + hint). */
+  function bucketFor(r) { return PMStore.bucketOf(r.status, sysCfg.idvMode, isStalled(r)); }
+  function bucketChipEl(r) {
+    var b = PMStore.bucketInfo(bucketFor(r));
+    return el('span', { className: 'chip ' + b.chip, text: b.label });
+  }
+  function hintEl(r) {
+    var t = PMStore.hintFor(r.status, bucketFor(r), isStalled(r));
+    return t ? el('p', { className: 'small', id: 'dlgStatusHint', text: t }) : null;
+  }
   function chipEl(status, rec) {
     var s = statusInfo(status);
     if (rec && isStalled(rec)) return el('span', { className: 'chip chip-attention', text: s.label + ' — stalled' });
@@ -779,31 +789,23 @@
     var sel = $('statusFilter');
     var keep = sel.value;
     sel.textContent = '';
-    sel.appendChild(el('option', { value: '', text: 'All statuses' }));
-    Object.keys(PMStore.STATUS).forEach(function (k) {
-      sel.appendChild(el('option', { value: k, text: PMStore.STATUS[k].label }));
+    sel.appendChild(el('option', { value: '', text: 'All' }));
+    PMStore.BUCKETS.forEach(function (b) {
+      sel.appendChild(el('option', { value: b.key, text: b.label }));
     });
     sel.value = keep;
+    if (sel.value !== keep) sel.value = '';
   }
 
   function renderStats(all) {
-    var ready = PMStore.allowedFrom(sysCfg.idvMode, false).filter(function (s) { return s !== 'check_failed'; });
-    var c = { awaiting: 0, ready: 0, reports: 0, attention: 0 };
-    all.forEach(function (r) {
-      var g = statusInfo(r.status).group;
-      /* a stalled round or check needs a consultant, not the client (opening it recovers it) */
-      if (isStalled(r)) { c.attention++; return; }
-      /* a running check is ours, not the client's, so it is not "awaiting client" */
-      if (g === 'awaiting' && r.status !== 'check_in_flight') c.awaiting++;
-      if (ready.indexOf(r.status) !== -1) c.ready++;
-      if (g === 'reports') c.reports++;
-      if (g === 'attention') c.attention++;
-    });
+    /* same buckets as the list and the filter — each record counts once */
+    var c = { waiting: 0, ready: 0, report: 0, attention: 0, closed: 0 };
+    all.forEach(function (r) { c[bucketFor(r)]++; });
     var tiles = [
       ['Total submissions', all.length],
-      ['Awaiting client', c.awaiting],
+      ['Waiting on client', c.waiting],
       ['Ready to run', c.ready],
-      ['Reports ready', c.reports, 'via MortgageMAX'],
+      ['Report ready', c.report, 'via MortgageMAX'],
       ['Needs attention', c.attention, null, c.attention ? 'tile-attention' : null]
     ];
     var dl = $('stats');
@@ -832,7 +834,7 @@
     var q = $('search').value.trim().toLowerCase();
     var sf = $('statusFilter').value;
     var rows = all.filter(function (r) {
-      if (sf && r.status !== sf) return false;
+      if (sf && bucketFor(r) !== sf) return false;
       if (!q) return true;
       return (r.firstNames + ' ' + r.surname + ' ' + r.ref + ' ' + (r.idNumber || '') + ' ' + (r.passportNumber || ''))
         .toLowerCase().indexOf(q) !== -1;
@@ -852,7 +854,7 @@
         el('td', { text: fmtDate(r.createdAt) }),
         el('td', { className: 'num', text: rand(r.grossIncome) }),
         el('td', { className: 'score-cell' }, scoreCell(r.reportSummary)),
-        el('td', null, chipEl(r.status, r)),
+        el('td', null, bucketChipEl(r)),
         el('td', null, el('button', { type: 'button', className: 'btn btn-ghost btn-sm', 'data-view': r.ref,
           'aria-label': 'View ' + name + ' (' + r.ref + ')', text: 'View' }))
       ]));
@@ -999,6 +1001,8 @@
     var f = document.createDocumentFragment();
     f.appendChild(h3('Status'));
     f.appendChild(el('p', { id: 'dlgStatusChip' }, chipEl(r.status, r)));
+    var hint = hintEl(r);
+    if (hint) f.appendChild(hint);
 
     var personal = [];
     if (r.idType === 'passport') {
@@ -1936,6 +1940,10 @@
     if (!n) return;
     n.textContent = '';
     n.appendChild(chipEl(r.status, r));
+    var old = $('dlgStatusHint'), hint = hintEl(r);
+    if (old && hint) old.replaceWith(hint);
+    else if (old) old.remove();
+    else if (hint) n.after(hint);
     if (!busy && currentRec && r.status !== currentRec.status) {
       n.appendChild(el('span', { className: 'small',
         text: ' Updated just now — the rest of this record refreshes when you finish or cancel.' }));
