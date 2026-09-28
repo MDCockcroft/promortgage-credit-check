@@ -14,7 +14,9 @@ saving anything non-trivial, and stop on a failure to diagnose rather than retry
 **28 Sep:** everything is committed and pushed; functions deployed in mock mode. Vendor answers
 are in: **IDV is mandatory** (D3's `off` launch is superseded), `clientConsent="Y"`. Live UAT run
 proved consent, `/full` and `getDocument`; IDV questions return `NoQuestionsFound` (asked the
-vendor). Current to-do list: `HANDOVER-2026-09-26.md` rows 4c–6.
+vendor). **Later 28 Sep:** manual identity verification + re-issue link shipped (`40a0b50`,
+`ce34b71`, migration 20260929 applied); `MM_IDV_MODE=required`. Current to-do list:
+`HANDOVER-2026-09-26.md` rows 4c, 5, 6.
 
 | Step | State |
 |---|---|
