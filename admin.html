@@ -201,6 +201,7 @@
   .kv dt { font-size: var(--fs-small); color: var(--ink-muted); }
   .kv dd { margin: 0; font-size: var(--fs-small); font-weight: 600; overflow-wrap: anywhere; }
   .kv dd ul { margin: 0; padding-left: 1.1em; }
+  .kv dd.kv-alert { color: var(--error); }
   .audit { list-style: none; margin: 0; padding: 0; }
   .audit li {
     display: flex; gap: var(--s3);
@@ -552,7 +553,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260927-3"></script>
+<script src="assets/store.js?v=20260928-1"></script>
 <script>
 (function () {
   'use strict';
@@ -672,7 +673,7 @@
     return 'R ' + Number(n || 0).toLocaleString('en-ZA').replace(/,/g, ' ');
   }
   function zar(n) {
-    return 'R ' + Math.round(Number(n)).toLocaleString('en-ZA').replace(/,/g, ' ');
+    return 'R\u00a0' + Math.round(Number(n)).toLocaleString('en-ZA').replace(/[,\s]/g, '\u00a0'); // never wrap mid-amount
   }
   function fmtDate(ts) {
     if (!ts) return '—';
@@ -723,7 +724,7 @@
   function scoreCell(sum) {
     if (!sum || sum.score == null || sum.score === '') return '—';
     return [dotEl(sum), String(sum.score),
-      sum.riskType ? el('span', { className: 'sr-only', text: ' (' + sum.riskType + ' risk)' }) : null];
+      sum.riskType ? el('span', { className: 'sr-only', text: ' (' + (/risk\s*$/i.test(sum.riskType) ? sum.riskType : sum.riskType + ' risk') + ')' }) : null];
   }
   function ragChip(rag) {
     var k = ragKey(rag);
@@ -1444,7 +1445,7 @@
     card.appendChild(el('div', null, [
       el('p', { className: 'score-label', text: 'Credit score' }),
       el('p', { className: 'score-big', text: s.score != null && s.score !== '' ? String(s.score) : '—' }),
-      el('p', { className: 'risk-line' }, [dotEl(s), s.riskType ? s.riskType + ' risk' : 'Risk band not given'])
+      el('p', { className: 'risk-line' }, [dotEl(s), s.riskType ? (/risk\s*$/i.test(s.riskType) ? s.riskType : s.riskType + ' risk') : 'Risk band not given'])
     ]));
 
     var meta = el('div');
@@ -1460,6 +1461,37 @@
       ['Debt review', 'debtReview'], ['Debt review requested', 'debtReviewRequested'], ['Debt review granted', 'debtReviewGranted']
     ].forEach(function (f) { flags.appendChild(el('li', null, flagChip(f[0], fl[f[1]]))); });
     meta.appendChild(flags);
+
+    /* The bureau's own totals. The listings below can be empty while the bureau still records a
+       judgement or arrears (live UAT 2026-09-28), so show these first. Absent on older summaries. */
+    var st = s.standing;
+    if (st) {
+      meta.appendChild(el('p', { className: 'score-label', text: 'Bureau standing' }));
+      var sflags = el('ul', { className: 'chip-row', 'aria-label': 'Bureau standing' });
+      [['Judgements', 'judgements'], ['Adverse', 'adverse'], ['Notices', 'notices']]
+        .forEach(function (f) { sflags.appendChild(el('li', null, flagChip(f[0], st[f[1]]))); });
+      meta.appendChild(sflags);
+      var sdl = el('dl', { className: 'counts' });
+      [['Judgements (5 years)', 'judgementsLast5Years'], ['Adverse judgements (12 months)', 'adverseJudgementsLastYear'],
+        ['Months in arrears', 'monthsInArrears'], ['Overdue balances', 'overdueBalances', true]
+      ].forEach(function (c) {
+        var raw = st[c[1]];
+        var v = Number(raw);
+        var known = raw != null && raw !== '' && isFinite(v);
+        sdl.appendChild(el('div', { className: known && v > 0 ? 'count-alert' : null }, [
+          el('dt', { text: c[0] }),
+          el('dd', null, known ? (c[2] ? zar(v) : String(v)) : [el('span', { 'aria-hidden': 'true', text: '—' }),
+            el('span', { className: 'sr-only', text: 'Not returned by the bureau' })])
+        ]));
+      });
+      meta.appendChild(sdl);
+      var words = function (x) { return x ? String(x).replace(/([a-z])([A-Z])/g, '$1 $2') : null; };
+      meta.appendChild(kv([
+        ['Credit status', words(st.creditStatus), /^bad$/i.test(st.creditStatus || '') ? 'kv-alert' : null],
+        ['Classification', words(st.creditClassification)]
+      ]));
+      meta.appendChild(el('p', { className: 'score-label', text: 'Listed in this report', style: 'margin-top:var(--s3)' }));
+    }
 
     /* a count is null when the bureau did not return that section: "—", never a clean 0 */
     var ct = s.counts || {};

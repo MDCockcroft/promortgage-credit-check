@@ -412,6 +412,7 @@
         declineReasons: [],
         flags: { deceased: 'no', fraud: 'no', dispute: 'no', sequestration: 'no', debtReview: 'no', debtReviewRequested: 'no', debtReviewGranted: 'no' },
         counts: { judgements: 0, adverse: 0, publicDefaults: 0, debtRestructures: 0, notices: 0, collections: 0 },
+        standing: { judgements: 'no', adverse: 'no', notices: 'no', judgementsLast5Years: 0, adverseJudgementsLastYear: 0, monthsInArrears: 0, overdueBalances: 0, creditStatus: null, creditClassification: 'Acceptable' },
         affordability: { present: true, success: true, amount: 1450000, error: null },
         enquiryId: 'DEMO-ENQ-0001'
       },

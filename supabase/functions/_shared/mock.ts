@@ -78,8 +78,9 @@ export const MOCK_REPORT = {
     success: true, error: null, score: "642", amount: "1450000", ragIndicator: "Amber",
     deceased: "N", fraud: "N", dispute: "N", thinFile: "N", sequestration: "N",
     debtReview: "N", debtReviewRequested: "N", debtReviewGranted: "N",
-    judgements: "0", adverse: "0", arrears: "0", notices: "0", monthsInArrears: 0,
+    judgements: "no", adverse: "no", arrears: "0", notices: "no", monthsInArrears: 0, overdueBalances: 0,
     numberAdverseJudgements1Year: 0, numberJudgementsLast5Years: 0, consentWasGiven: true,
+    creditStatusIndicator: null, creditClassification: "Acceptable", // shapes as seen in live UAT 2026-09-28
   },
 };
 

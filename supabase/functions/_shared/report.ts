@@ -29,6 +29,7 @@ export function num(v: unknown): number | null {
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 /** C10: a section the bureau did not return is unknown (null), never a clean "0". */
 const count = (v: unknown): number | null => (Array.isArray(v) ? v.length : null);
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 const o = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 
@@ -56,6 +57,20 @@ export interface ReportSummary {
     debtRestructures: number | null;
     notices: number | null;
     collections: number | null;
+  };
+  // Bureau-wide standing (affordabilityResponseModel). The detail lists behind `counts` can be empty
+  // while the bureau still records a judgement or arrears (live UAT 2026-09-28) — so a clean
+  // "Judgements 0" in counts is never the whole story. null / "unknown" = not returned.
+  standing: {
+    judgements: Flag;
+    adverse: Flag;
+    notices: Flag;
+    judgementsLast5Years: number | null;
+    adverseJudgementsLastYear: number | null;
+    monthsInArrears: number | null;
+    overdueBalances: number | null;
+    creditStatus: string | null;
+    creditClassification: string | null;
   };
   affordability: { present: boolean; success: boolean | null; amount: number | null; error: string | null };
   enquiryId: string | null;
@@ -96,6 +111,17 @@ export function summarise(dto: unknown): ReportSummary {
       debtRestructures: count(res.enqCC_DEBT_RESTRUCT),
       notices: count(res.enqCC_NOTICES),
       collections: count(res.enqCC_COLLECTIONS),
+    },
+    standing: {
+      judgements: flag(aff.judgements),
+      adverse: flag(aff.adverse),
+      notices: flag(aff.notices),
+      judgementsLast5Years: num(aff.numberJudgementsLast5Years),
+      adverseJudgementsLastYear: num(aff.numberAdverseJudgements1Year),
+      monthsInArrears: num(aff.monthsInArrears),
+      overdueBalances: num(aff.overdueBalances),
+      creditStatus: str(aff.creditStatusIndicator),
+      creditClassification: str(aff.creditClassification),
     },
     // Affordability is a separately sold product — may be absent or errored on this subscription.
     affordability: {

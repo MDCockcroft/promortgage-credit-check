@@ -63,3 +63,36 @@ Deno.test("pdf: base64 decode + /Encrypt detection", () => {
   assertEquals(pdfIsEncrypted(plain), false);
   assert(pdfIsEncrypted(new TextEncoder().encode("%PDF-1.4 trailer<</Encrypt 5 0 R>>")));
 });
+
+Deno.test("summarise: bureau standing surfaces a judgement the detail lists omit (live UAT shape)", () => {
+  // Shape of the negative UAT identity (2026-09-28): every detail list empty, yet the bureau's own
+  // totals record a judgement, arrears and overdue balances. Values here are illustrative.
+  const s = summarise({
+    groupId: "G",
+    experianCreditCheckData: { cC_RESULTS: { enqCC_JUDGEMENTS: [], enqCC_ADVERSE: [], enqCC_NOTICES: [] } },
+    affordabilityResponseModel: {
+      success: false, judgements: "yes", adverse: "no", notices: "no",
+      numberJudgementsLast5Years: 1, numberAdverseJudgements1Year: 0, monthsInArrears: 9,
+      overdueBalances: 265840, creditStatusIndicator: "Bad", creditClassification: "DebtRehabilitationRequired",
+    },
+  });
+  assertEquals(s.counts.judgements, 0);
+  assertEquals(s.standing.judgements, "yes");
+  assertEquals(s.standing.judgementsLast5Years, 1);
+  assertEquals(s.standing.adverseJudgementsLastYear, 0);
+  assertEquals(s.standing.monthsInArrears, 9);
+  assertEquals(s.standing.overdueBalances, 265840);
+  assertEquals(s.standing.creditStatus, "Bad");
+  assertEquals(s.standing.creditClassification, "DebtRehabilitationRequired");
+});
+
+Deno.test("summarise: standing is unknown / null when the affordability model is absent", () => {
+  const s = summarise({ groupId: "G", experianCreditCheckData: { cC_RESULTS: {} } });
+  assertEquals(s.standing.judgements, "unknown");
+  assertEquals(s.standing.monthsInArrears, null);
+  assertEquals(s.standing.overdueBalances, null);
+  assertEquals(s.standing.creditStatus, null);
+  // The mock report's clean record reads as a clean record.
+  const m = summarise(MOCK_REPORT).standing;
+  assertEquals([m.judgements, m.judgementsLast5Years, m.monthsInArrears, m.creditClassification], ["no", 0, 0, "Acceptable"]);
+});
