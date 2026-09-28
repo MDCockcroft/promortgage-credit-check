@@ -11,8 +11,10 @@ saving anything non-trivial, and stop on a failure to diagnose rather than retry
 
 ## PROGRESS — 2026-09-26 (read this first)
 
-**Nothing is committed or pushed.** The public site still serves the August form; all of the
-work below lives in the working tree, plus two deployed Edge Functions running in **mock mode**.
+**28 Sep:** everything is committed and pushed; functions deployed in mock mode. Vendor answers
+are in: **IDV is mandatory** (D3's `off` launch is superseded), `clientConsent="Y"`. Live UAT run
+proved consent, `/full` and `getDocument`; IDV questions return `NoQuestionsFound` (asked the
+vendor). Current to-do list: `HANDOVER-2026-09-26.md` rows 4c–6.
 
 | Step | State |
 |---|---|
