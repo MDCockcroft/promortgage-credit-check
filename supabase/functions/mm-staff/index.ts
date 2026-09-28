@@ -10,6 +10,7 @@
 //              | 'delete-record' | 'recover' | 'clear-config-error', reason? }
 // POST { ref, action: 'manual-upload-url', contentType }            → one-time upload URL for the ID copy
 // POST { ref, action: 'manual-verify', path, attestationVersion, attested: true } → manual_verified
+// POST { ref, action: 'reissue-idv-link' }                          → { token, expiresAt } (shown once)
 //
 // Every action with a ref first runs the stale-state recovery (C1, _shared/recover.ts).
 
@@ -25,7 +26,7 @@ import {
   type WithdrawItem,
 } from "../_shared/consents.ts";
 import { type Ctx, idvModeFromEnv, loadConfiguredTypes, type Mode, registerConsent } from "../_shared/register.ts";
-import { logCall, serviceClient, transition } from "../_shared/db.ts";
+import { logCall, serviceClient, sha256Hex, transition } from "../_shared/db.ts";
 import { mockFetch } from "../_shared/mock.ts";
 import { base64ToBytes, num, pdfIsEncrypted, summarise } from "../_shared/report.ts";
 import { recoverStale } from "../_shared/recover.ts";
@@ -57,7 +58,14 @@ const UNCERTAIN_TEXT = "MortgageMAX may still have processed this enquiry — ch
 /** record-withdrawal is refused from these (C8). */
 const NO_WITHDRAWAL_FROM = ["awaiting_otp", "consent_withdrawn", "check_in_flight"];
 
-import { ALL_STATUSES, allowedFrom, configErrorTarget, type IdvMode } from "../_shared/states.ts";
+import {
+  ALL_STATUSES,
+  allowedFrom,
+  configErrorTarget,
+  IDV_LINK_TTL_MS,
+  idvLinkCheck,
+  type IdvMode,
+} from "../_shared/states.ts";
 
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin");
@@ -483,6 +491,33 @@ Deno.serve(async (req) => {
         return fail("invalid_state", "Record changed — reload and try again", origin);
       }
       return ok({ status: "manual_verified", evidenceId }, origin);
+    }
+
+    // ======================================================================================
+    if (action === "reissue-idv-link") {
+      // The client's 30-minute session lapsed before they could answer the identity questions. A
+      // fresh token (only its hash is stored) replaces the old one, so any earlier link stops
+      // working. It is returned once, for the consultant to send; it is never logged or stored.
+      const can = idvLinkCheck(row, idvMode);
+      if (!can.ok) return fail("invalid_state", `idv_link_not_allowed:${can.reason}`, origin);
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
+      const expiresAt = new Date(Date.now() + IDV_LINK_TTL_MS).toISOString();
+      const patch = { idv_token_hash: await sha256Hex(token), idv_token_expires: expiresAt, updated_at: new Date().toISOString() };
+      const upd = await sb.from("credit_check_secrets").update(patch).eq("ref", ref).select("ref");
+      if (upd.error) throw new Error(`server_error: ${upd.error.message}`);
+      if (!upd.data || upd.data.length === 0) {
+        const ins = await sb.from("credit_check_secrets").insert({ ref, ...patch });
+        if (ins.error) throw new Error(`server_error: ${ins.error.message}`);
+      }
+      // Audit line, guarded by the status we checked: if the record moved on meanwhile, withdraw
+      // the token again rather than hand out a link for a record that can no longer use it.
+      const logged = await transition(sb, ref, [row.status], {},
+        `Identity-check link re-issued by ${staffLabel} (valid 24 hours; any earlier link stops working)`);
+      if (!logged) {
+        await sb.from("credit_check_secrets").update({ idv_token_hash: null, idv_token_expires: null }).eq("ref", ref);
+        return fail("invalid_state", "Record changed — reload and try again", origin);
+      }
+      return ok({ token, expiresAt }, origin);
     }
 
     // ======================================================================================

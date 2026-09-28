@@ -342,6 +342,22 @@
     return ['consent_registered', 'idv_waived', 'idv_passed', 'manual_verified'].concat(retry);
   }
 
+  /* May staff re-issue the identity-check link? — identical to _shared/states.ts idvLinkCheck(). */
+  var IDV_LINK_TTL_MS = 24 * 60 * 60 * 1000;
+  function idvLinkCheck(rec, idvMode) {
+    if (idvMode !== 'required') return { ok: false, reason: 'idv_off' };
+    if (rec.idType !== 'said') return { ok: false, reason: 'not_sa_id' };
+    if (rec.consentWithdrawnAt) return { ok: false, reason: 'withdrawn' };
+    if (rec.status === 'consent_registered') return { ok: true };
+    if (rec.status === 'idv_failed' && Number(rec.idvAttempts || 0) < MAX_IDV_ROUNDS) return { ok: true };
+    return { ok: false, reason: 'status_' + String(rec.status || '') };
+  }
+  function randomHex(bytes) {
+    var a = new Uint8Array(bytes);
+    crypto.getRandomValues(a);
+    return Array.prototype.map.call(a, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
   /* May this record be verified manually? — identical to _shared/manual.ts manualVerifyCheck(). */
   var MANUAL_FROM = ['consent_registered', 'idv_failed', 'idv_unavailable', 'idv_waived'];
   function manualVerifyCheck(rec) {
@@ -456,6 +472,7 @@
     STATUS: STATUS,
     allowedFrom: allowedFrom,
     manualVerifyCheck: manualVerifyCheck,
+    idvLinkCheck: idvLinkCheck,
     ATTESTATION: ATTESTATION,
     BUCKETS: BUCKETS,
     bucketOf: bucketOf,
@@ -815,6 +832,21 @@
       }, 'Identity verified manually by demo user (ID copy uploaded + Experian attestation)');
       return Promise.resolve({ status: 'manual_verified' });
     },
+    /* Staff: a fresh identity-check session for a client whose 30-minute session lapsed. The token
+       is shown once (to build the link) and replaces any earlier one. → {token, expiresAt} */
+    reissueIdvLink: function (ref) {
+      if (mode === 'live') return invoke('mm-staff', { action: 'reissue-idv-link', ref: ref });
+      var rec = demoRecover(ref);
+      if (!rec) return demoFail('bad_request', 'No such record');
+      var can = idvLinkCheck(rec, DEMO_IDV);
+      if (!can.ok) return demoFail('invalid_state', 'idv_link_not_allowed:' + can.reason);
+      var token = randomHex(32);
+      setToken(ref, token);
+      demoUpdate(ref, {}, 'Identity-check link re-issued by demo user (valid 24 hours; any earlier link stops working)');
+      return Promise.resolve({ token: token, expiresAt: new Date(Date.now() + IDV_LINK_TTL_MS).toISOString() });
+    },
+    /* Client form: take the session token from a re-issued link (index.html#resume=REF&t=TOKEN). */
+    adoptIdvToken: function (ref, token) { setToken(ref, token); },
     /* The evidence rows for a record, newest first (staff read; written only by the server). */
     manualEvidence: function (rec) {
       if (mode !== 'live') return Promise.resolve(rec && rec.demoEvidence ? [rec.demoEvidence] : []);

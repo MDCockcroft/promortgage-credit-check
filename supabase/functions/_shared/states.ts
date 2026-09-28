@@ -18,6 +18,25 @@ export function allowedFrom(mode: IdvMode): string[] {
   return ["consent_registered", "idv_waived", "idv_passed", "manual_verified", ...retry]; // off
 }
 
+/** Identity-question rounds per application (mm-client enforces it; staff re-issue respects it). */
+export const MAX_IDV_ROUNDS = 2;
+/** A re-issued identity-check link lasts this long: the consultant sends it, the client may open it later. */
+export const IDV_LINK_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * May staff re-issue the identity-check link (a fresh session token for the client form)? Only while
+ * the questions are required and the client still has a round to use — the per-person 24-hour limit
+ * is enforced again by idv-start. Never for passports (no identity questions) or after a withdrawal.
+ */
+export function idvLinkCheck(row: Record<string, unknown>, mode: IdvMode): { ok: true } | { ok: false; reason: string } {
+  if (mode !== "required") return { ok: false, reason: "idv_off" };
+  if (row.id_type !== "said") return { ok: false, reason: "not_sa_id" };
+  if (row.consent_withdrawn_at) return { ok: false, reason: "withdrawn" };
+  if (row.status === "consent_registered") return { ok: true };
+  if (row.status === "idv_failed" && Number(row.idv_attempts ?? 0) < MAX_IDV_ROUNDS) return { ok: true };
+  return { ok: false, reason: `status_${String(row.status ?? "")}` };
+}
+
 /** Every status the DB CHECK constraint allows (latest: migration 20260929_manual_verification.sql). */
 export const ALL_STATUSES = [
   "awaiting_otp", "consent_confirmed", "consent_registered",

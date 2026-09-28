@@ -6,7 +6,9 @@ import {
   allowedFrom,
   configErrorTarget,
   IDV_ANSWER_WINDOW_MS,
+  idvLinkCheck,
   idvModeFrom,
+  MAX_IDV_ROUNDS,
   STALE_IN_FLIGHT_MS,
   staleState,
 } from "./states.ts";
@@ -22,6 +24,8 @@ function loadStore() {
     allowedFrom: (m: string) => string[]; STATUS: Record<string, unknown>; mode: string;
     ATTESTATION: { version: string; text: string };
     manualVerifyCheck: (rec: Record<string, unknown>) => { ok: boolean; reason?: string };
+    idvLinkCheck: (rec: Record<string, unknown>, mode: string) => { ok: boolean; reason?: string };
+    MAX_IDV_ROUNDS: number;
   };
 }
 
@@ -101,6 +105,29 @@ Deno.test("store.js attestation wording and manual-verification rule === server 
           const server = manualVerifyCheck({ status, id_type: idType, consent_registered_at: registered, consent_withdrawn_at: withdrawn });
           const browser = store.manualVerifyCheck({ status, idType, consentRegisteredAt: registered, consentWithdrawnAt: withdrawn });
           assertEquals(browser, server, `${status}/${idType}/${registered}/${withdrawn}`);
+        }
+      }
+    }
+  }
+});
+
+Deno.test("idv link re-issue: required mode only, a round left, SA ID, no withdrawal — and store.js agrees", () => {
+  const store = loadStore();
+  assertEquals(store.MAX_IDV_ROUNDS, MAX_IDV_ROUNDS);
+  const row = (x: Record<string, unknown>) => ({ id_type: "said", status: "consent_registered", ...x });
+  assertEquals(idvLinkCheck(row({}), "required").ok, true);
+  assertEquals(idvLinkCheck(row({}), "off"), { ok: false, reason: "idv_off" });
+  assertEquals(idvLinkCheck(row({ status: "idv_failed", idv_attempts: 1 }), "required").ok, true);
+  assertEquals(idvLinkCheck(row({ status: "idv_failed", idv_attempts: MAX_IDV_ROUNDS }), "required").ok, false);
+  assertEquals(idvLinkCheck(row({ id_type: "passport" }), "required").ok, false);
+  assertEquals(idvLinkCheck(row({ consent_withdrawn_at: "x" }), "required").ok, false);
+  for (const status of [...ALL_STATUSES]) {
+    for (const attempts of [0, 1, 2]) {
+      for (const idType of ["said", "passport"]) {
+        for (const mode of ["off", "required"] as const) {
+          const server = idvLinkCheck({ status, id_type: idType, idv_attempts: attempts }, mode);
+          const browser = store.idvLinkCheck({ status, idType, idvAttempts: attempts }, mode);
+          assertEquals(browser, server, `${status}/${attempts}/${idType}/${mode}`);
         }
       }
     }

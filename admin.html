@@ -347,6 +347,10 @@
     min-width: 0;
   }
   .dsec .verify-set { margin-top: var(--s3); }
+  .link-block { flex-direction: column; align-items: flex-start; margin-top: var(--s3); }
+  .link-block > p { margin: 0; }
+  .link-row { display: flex; gap: var(--s2); width: 100%; flex-wrap: wrap; }
+  .link-url { flex: 1 1 260px; min-width: 0; font-size: var(--fs-micro); padding: var(--s1) var(--s2); }
   .verify-set legend { font-size: var(--fs-small); font-weight: 700; padding: 0 var(--s1); }
   .verify-set .field { margin: var(--s2) 0 0; }
   .verify-set .check-row { align-items: flex-start; margin-top: var(--s2); }
@@ -549,7 +553,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260928-2"></script>
+<script src="assets/store.js?v=20260928-3"></script>
 <script>
 (function () {
   'use strict';
@@ -754,6 +758,13 @@
     var text;
     var special = code === 'invalid_state' && Object.prototype.hasOwnProperty.call(INVALID_STATE_TEXT, m)
       ? INVALID_STATE_TEXT[m] : null;
+    /* any other refusal of these two steps: the record has moved on since it was opened */
+    if (!special && code === 'invalid_state' && /^idv_link_not_allowed:/.test(m)) {
+      special = 'This record can’t get a new identity-check link now — it has moved on. Close and reopen it to see where it stands.';
+    }
+    if (!special && code === 'invalid_state' && /^manual_not_allowed:/.test(m)) {
+      special = 'This record can’t be verified manually now — it has moved on. Close and reopen it to see where it stands.';
+    }
     switch (special ? '_special' : code) {
       case '_special': text = special; break;
       case 'invalid_state':
@@ -1369,6 +1380,8 @@
       }
     }
     s.appendChild(kv(pairs));
+    var link = linkBlock(r, mode);
+    if (link) s.appendChild(link);
     var mv = manualBlock(r, mode);
     if (mv) s.appendChild(mv);
 
@@ -1380,6 +1393,63 @@
     }
     s.appendChild(el('p', { className: 'note', text: 'The client’s answers are never stored.' }));
     return s;
+  }
+
+  /* ---------- b1. re-issue the identity-check link (the client's session lapsed) ---------- */
+  function linkBlock(r, mode) {
+    if (!PMStore.idvLinkCheck(r, mode).ok) return null;
+    var box = el('div', { className: 'dsec-actions link-block', id: 'linkBlock' });
+    box.appendChild(el('p', { className: 'small', id: 'linkHint', text: 'If the client’s session ran out before they answered the identity questions, send them a new link. ' +
+      'It works for 24 hours; any earlier link stops working.' }));
+    var b = btn('Re-issue identity-check link', 'btn btn-ghost btn-sm', onReissueLink, 'linkBtn');
+    b.setAttribute('aria-describedby', 'linkHint');
+    box.appendChild(b);
+    box.appendChild(el('div', { id: 'linkOut' }));
+    box.appendChild(msgRegion('linkMsg'));
+    return box;
+  }
+
+  function onReissueLink(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRec) return;
+    var ref = currentRec.ref;
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Creating link…';
+    setMsg('linkMsg', '');
+    safe(function () { return PMStore.reissueIdvLink(ref); }).then(function (d) {
+      busy = false;
+      if (!dlg.open || currentRef !== ref || !$('linkOut')) return;
+      b.disabled = false;
+      b.textContent = 'Re-issue identity-check link';
+      if (!d || !/^[0-9a-f]{64}$/.test(String(d.token || ''))) throw new Error('The link could not be created');
+      var url = new URL(clientFormHref(), window.location.href);
+      url.hash = 'resume=' + encodeURIComponent(ref) + '&t=' + d.token;
+      var out = $('linkOut');
+      out.textContent = '';
+      var input = el('input', { type: 'text', id: 'linkUrl', readonly: 'readonly', value: url.href, className: 'mono link-url',
+        'aria-label': 'Identity-check link for the client' });
+      var copy = btn('Copy link', 'btn btn-primary btn-sm', function () {
+        input.select();
+        var done = function (okCopy) {
+          setMsg('linkMsg', okCopy ? 'Link copied. Send it to the client by WhatsApp or email.' : 'Select the link and copy it (Ctrl/Cmd + C).', okCopy ? 'ok' : null);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url.href).then(function () { done(true); }, function () { done(false); });
+        else done(false);
+      }, 'linkCopy');
+      out.appendChild(el('div', { className: 'link-row' }, [input, copy]));
+      out.appendChild(el('p', { className: 'small', text: 'Valid until ' + fmtDate(Date.parse(d.expiresAt)) +
+        '. This link is shown only now — if it gets lost, re-issue it.' }));
+      input.focus();
+      input.select();
+      render();
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Re-issue identity-check link';
+      var m = staffError(err, 'link');
+      setMsg('linkMsg', m.text, 'err', m.sub);
+    });
   }
 
   /* ---------- b2. manual identity verification (ID copy + Experian statement) ---------- */
@@ -2063,7 +2133,8 @@
   function isMidInteraction() {
     /* a chosen ID copy or a ticked statement would be lost by a re-render */
     var f = $('manualFile'), c = $('manualChk');
-    return busy || !!pending || withdrawOpen || !!(f && f.files && f.files.length) || !!(c && c.checked);
+    /* ...and so would a freshly re-issued link, which is shown only once */
+    return busy || !!pending || withdrawOpen || !!(f && f.files && f.files.length) || !!(c && c.checked) || !!$('linkUrl');
   }
   function updateStatusChip(r) {
     var n = $('dlgStatusChip');
@@ -2250,7 +2321,12 @@
       p.appendChild(document.createTextNode('Demo mode: records are stored in this browser only, and credit checks return ' +
         'sample data — nothing is sent to MortgageMAX. '));
     }
-    /* in demo, keep the demo switches so the client form stays in demo too */
+    p.appendChild(document.createTextNode('Client form: '));
+    p.appendChild(el('a', { href: clientFormHref(), text: 'index.html' }));
+  }
+
+  /* The client form's address; in demo, keep the demo switches so the form stays in demo too. */
+  function clientFormHref() {
     var href = 'index.html';
     if (PMStore.mode === 'demo') {
       var src = new URLSearchParams(window.location.search);
@@ -2261,8 +2337,7 @@
       var qs = keep.toString();
       if (qs) href += '?' + qs;
     }
-    p.appendChild(document.createTextNode('Client form: '));
-    p.appendChild(el('a', { href: href, text: 'index.html' }));
+    return href;
   }
 
   function loadConfig() {

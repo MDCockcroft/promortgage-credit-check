@@ -5,7 +5,8 @@
 //
 // Authorisation: 'consent-types' is public (the wording is not secret). Every other action needs
 // { ref, idv_token }: confirm_consent minted the token once (32 random bytes); only its sha256 is
-// stored, with a 30-minute expiry, in credit_check_secrets (unreadable by any client role).
+// stored, with a 30-minute expiry, in credit_check_secrets (unreadable by any client role). A
+// consultant can re-issue it (mm-staff 'reissue-idv-link', 24-hour expiry), which replaces the hash.
 // Deploy with --no-verify-jwt: the project's publishable key is not a JWT.
 //
 // 'submit' creates the application and SMSes the consent code (SMS_MODE, _shared/sms.ts); it hands
@@ -24,7 +25,7 @@ import { mockFetch } from "../_shared/mock.ts";
 import { type Ctx, idvModeFromEnv, type Mode, publicConsentTypes, registerConsent } from "../_shared/register.ts";
 import { recoverStale } from "../_shared/recover.ts";
 import { idvIdType, personIdFor } from "../_shared/idnumber.ts";
-import { IDV_ANSWER_WINDOW_MS } from "../_shared/states.ts";
+import { IDV_ANSWER_WINDOW_MS, MAX_IDV_ROUNDS } from "../_shared/states.ts";
 import {
   OTP_COOLDOWN_S, OTP_FAILED_RETRY_S, OTP_MAX_PER_CELL_24H, OTP_MAX_SENDS, otpMessage, sendSms, type SmsConfig, smsConfigFromEnv, smsGuard,
 } from "../_shared/sms.ts";
@@ -32,7 +33,6 @@ import {
 const APP_NAME = "promortgage-credit-check";
 const APP_VERSION = "2026.09.26";
 const SOURCE_SYSTEM = "PMSA-CreditCheck";
-const MAX_IDV_ROUNDS = 2;
 // C5: identity-question rounds per ID number across ALL records, rolling 24 h. Stops anyone from
 // harvesting a person's credit-file facts (or running up IDV calls) by submitting fresh forms.
 const MAX_IDV_ROUNDS_PER_PERSON_24H = 3;

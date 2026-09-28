@@ -236,7 +236,7 @@
   .idv-q .err { display: block; color: var(--error); font-size: var(--fs-small); font-weight: 600; margin: var(--s2) 0 0; }
   .idv-q .err:empty { margin: 0; }
   .retry-box p { margin-bottom: var(--s3); }
-  #idvRetryMsg:focus { outline: none; }
+  #idvRetryMsg:focus, #idvResumeMsg:focus { outline: none; }
   .demo-banner { margin-bottom: var(--s5); }
 
   @media (min-width: 960px) {
@@ -561,6 +561,12 @@
           </div>
           <p class="small" id="idvStatus" role="status" aria-live="polite"></p>
         </form>
+        <div class="callout retry-box" id="idvResumeBox" hidden>
+          <span class="callout-tag">Ready when you are</span>
+          <p id="idvResumeMsg" tabindex="-1">Your consultant sent you this link to finish verifying your identity. When you press Start, the questions appear and the 5 minutes begin, so start when you have a moment to answer them.</p>
+          <button class="btn btn-primary" id="idvResumeStart" type="button" aria-describedby="idvResumeMsg">Start the identity questions</button>
+          <p class="small" id="idvResumeStatus" role="status" aria-live="polite"></p>
+        </div>
         <div class="callout callout-error retry-box" id="idvRetryBox" hidden>
           <span class="callout-tag" id="idvRetryTag">Not verified yet</span>
           <p id="idvRetryMsg" tabindex="-1">We couldn&rsquo;t verify your identity with those answers.</p>
@@ -586,7 +592,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260928-2"></script>
+<script src="assets/store.js?v=20260928-3"></script>
 <script>
 (function () {
   'use strict';
@@ -598,6 +604,7 @@
   var donePanel = document.getElementById('donePanel');
   var PANELS = [formView, otpPanel, workPanel, idvPanel, donePanel];
   var currentRef = null;
+  var resumed = false; /* opened from a consultant's re-issued identity-check link */
 
   /* Demo mode keeps everything in this browser: say so before anyone types real details. */
   document.getElementById('demoBanner').hidden = PMStore.mode !== 'demo';
@@ -923,7 +930,9 @@
     idvTimeout: 'Time’s up. Your consultant will contact you to finish verifying your identity.',
     sessionTimeout: 'Your consent is confirmed. Your session timed out before we could finish; your consultant will complete the next step.',
     stale: 'The consent wording was updated while you were completing the form. Your consultant will contact you.',
-    unreachable: 'Your consent is confirmed. We couldn’t reach MortgageMAX just now — your consultant will complete this step.'
+    unreachable: 'Your consent is confirmed. We couldn’t reach MortgageMAX just now — your consultant will complete this step.',
+    linkExpired: 'This link has expired, or your consultant has sent you a newer one. Please ask your consultant for a new link.',
+    linkUsed: 'This link can’t be used any more — your identity step may already be complete. Your consultant will contact you.'
   };
   function showDone(msg) {
     stopIdvTimer();
@@ -935,6 +944,8 @@
   function doneForError(err) {
     var code = err && err.code;
     console.error('post-consent step failed:', code || 'unknown', err && err.message);
+    if (resumed && code === 'forbidden') return DONE.linkExpired;
+    if (resumed && code === 'invalid_state') return DONE.linkUsed;
     if (code === 'forbidden') return DONE.sessionTimeout;
     if (code === 'invalid_state' && err.message === 'consent_stale') return DONE.stale;
     /* a consultant's retry got there first — the consent is being registered for them */
@@ -1255,6 +1266,7 @@
   }
   function showIdv(questions) {
     if (!renderIdv(questions)) return showDone(DONE.idvUnavailable);
+    idvResumeBox.hidden = true;
     idvRetryBox.hidden = true;
     idvForm.hidden = false;
     idvTimer.hidden = false;
@@ -1277,6 +1289,7 @@
   }
   function showIdvRetry(reason) {
     stopIdvTimer();
+    idvResumeBox.hidden = true;
     idvForm.hidden = true;
     idvTimer.hidden = true;
     idvRetryMsg.textContent = IDV_RETRY_TEXT[reason] || 'We couldn’t verify your identity with those answers.';
@@ -1350,6 +1363,48 @@
     idvBusy = true;
     idvRetry.disabled = true;
     idvRetryStatus.textContent = 'Preparing new questions…';
+    PMStore.idvStart(currentRef).then(function (res) {
+      idvBusy = false;
+      handleIdvStart(res);
+    }).catch(function (err) {
+      idvBusy = false;
+      showDone(doneForError(err));
+    });
+  });
+
+  /* --- a consultant re-issued the identity-check link: index.html#resume=PM-XXXXXX&t=<token> ---
+     The token rides in the fragment, so it never reaches a server log; it is taken out of the
+     address bar at once. Nothing starts until the client presses Start (the 5 minutes begin then). */
+  var idvResumeBox = document.getElementById('idvResumeBox');
+  var idvResumeStart = document.getElementById('idvResumeStart');
+  var idvResumeStatus = document.getElementById('idvResumeStatus');
+  (function () {
+    var h = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    var ref = h.get('resume'), t = h.get('t');
+    if (!ref && !t) return;
+    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* ignore */ }
+    if (!/^PM-[A-Z0-9]{4,12}$/.test(ref || '') || !/^[0-9a-f]{64}$/.test(t || '')) {
+      /* a mangled link says nothing about this person's consent — don't claim it is recorded */
+      currentRef = null;
+      document.getElementById('doneHead').textContent = 'This link doesn’t work';
+      Array.prototype.forEach.call(donePanel.querySelectorAll('p:not(#doneMsg), .done-mark'), function (n) { n.hidden = true; });
+      document.getElementById('doneMsg').textContent = 'The link may have been cut short when it was copied. Please ask your consultant to send it again.';
+      return showPanel(donePanel);
+    }
+    resumed = true;
+    currentRef = ref;
+    PMStore.adoptIdvToken(ref, t);
+    idvForm.hidden = true;
+    idvTimer.hidden = true;
+    idvRetryBox.hidden = true;
+    idvResumeBox.hidden = false;
+    showPanel(idvPanel, document.getElementById('idvResumeMsg'));
+  })();
+  idvResumeStart.addEventListener('click', function () {
+    if (idvBusy || !currentRef) return;
+    idvBusy = true;
+    idvResumeStart.disabled = true;
+    idvResumeStatus.textContent = 'The credit bureau is preparing your questions. This can take up to 30 seconds…';
     PMStore.idvStart(currentRef).then(function (res) {
       idvBusy = false;
       handleIdvStart(res);
