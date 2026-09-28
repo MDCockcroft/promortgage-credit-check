@@ -7,7 +7,9 @@
 //
 // POST { action: 'config' }
 // POST { ref, action: 'run-check' | 'fetch-pdf' | 'refresh-consents' | 'record-withdrawal' | 'register-consent'
-//              | 'delete-record' | 'recover' | 'clear-config-error', force?, reason? }
+//              | 'delete-record' | 'recover' | 'clear-config-error', reason? }
+// POST { ref, action: 'manual-upload-url', contentType }            → one-time upload URL for the ID copy
+// POST { ref, action: 'manual-verify', path, attestationVersion, attested: true } → manual_verified
 //
 // Every action with a ref first runs the stale-state recovery (C1, _shared/recover.ts).
 
@@ -28,6 +30,17 @@ import { mockFetch } from "../_shared/mock.ts";
 import { base64ToBytes, num, pdfIsEncrypted, summarise } from "../_shared/report.ts";
 import { recoverStale } from "../_shared/recover.ts";
 import { personIdFor } from "../_shared/idnumber.ts";
+import {
+  ATTESTATION,
+  ID_DOC_BUCKET,
+  ID_DOC_MAX_BYTES,
+  ID_DOC_TYPES,
+  idDocPath,
+  manualVerifyCheck,
+  sha256HexBytes,
+  sniffDocType,
+  validIdDocPath,
+} from "../_shared/manual.ts";
 
 const APP_NAME = "promortgage-credit-check";
 const APP_VERSION = "2026.09.26";
@@ -68,7 +81,10 @@ Deno.serve(async (req) => {
   if (authErr || !auth?.user) return fail("unauthenticated", "Sign in required", origin);
   const user = auth.user;
 
-  let body: { ref?: string; action?: string; force?: boolean; reason?: string };
+  let body: {
+    ref?: string; action?: string; reason?: string;
+    contentType?: string; path?: string; attestationVersion?: string; attested?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -76,12 +92,15 @@ Deno.serve(async (req) => {
   }
   const { ref, action } = body;
   if (action === "config") {
-    // What admin.html needs to render the right controls (e.g. the IDV override checkbox).
+    // What admin.html needs to render the right controls — including the attestation wording, so
+    // the page shows exactly the text the server will store.
     return ok({
       mode: Deno.env.get("MM_MODE") === "live" ? "live" : "mock",
       idvMode: idvModeFromEnv(),
       env: cfg.env,
       allowPassport: Deno.env.get("ALLOW_PASSPORT") === "true",
+      attestation: ATTESTATION,
+      idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: Object.keys(ID_DOC_TYPES) },
     }, origin);
   }
   if (!ref || !action) return fail("bad_request", "ref and action are required", origin);
@@ -136,8 +155,7 @@ Deno.serve(async (req) => {
     // ======================================================================================
     if (action === "run-check") {
       if (!personId) return fail("bad_request", "No ID number on record", origin);
-      const force = body.force === true && idvMode === "optional";
-      const from = allowedFrom(idvMode, force);
+      const from = allowedFrom(idvMode);
       if (!from.includes(row.status)) {
         return fail("invalid_state", `A credit check cannot run from status ${row.status}`, origin);
       }
@@ -181,8 +199,8 @@ Deno.serve(async (req) => {
         check_error_text: null,
         mm_consents_snapshot: pre.data,
         mm_consents_synced_at: new Date().toISOString(),
-      }, force
-        ? `Credit check requested by ${staffLabel} (identity-check override: ${String(body.reason ?? "no reason given").slice(0, 200)})`
+      }, row.manual_verified_at && !row.idv_passed_at
+        ? `Credit check requested by ${staffLabel} (identity verified manually)`
         : `Credit check requested by ${staffLabel}`);
       if (!claimed) {
         return fail("invalid_state", `A credit check cannot run from status ${row.status}`, origin);
@@ -407,6 +425,67 @@ Deno.serve(async (req) => {
     }
 
     // ======================================================================================
+    if (action === "manual-upload-url") {
+      // Step 1 of manual verification: a one-time signed upload URL for a path WE choose. The
+      // bucket enforces type and size; manual-verify re-checks the bytes before anything counts.
+      const can = manualVerifyCheck(row);
+      if (!can.ok) return fail("invalid_state", `manual_not_allowed:${can.reason}`, origin);
+      const path = idDocPath(ref, String(body.contentType ?? ""));
+      if (!path) return fail("bad_request", "The ID copy must be a PDF, JPG or PNG", origin);
+      const { data: up, error: upErr } = await sb.storage.from(ID_DOC_BUCKET).createSignedUploadUrl(path);
+      if (upErr || !up) return fail("server_error", "Could not prepare the upload", origin);
+      return ok({ path: up.path, token: up.token, maxBytes: ID_DOC_MAX_BYTES }, origin);
+    }
+
+    // ======================================================================================
+    if (action === "manual-verify") {
+      // Step 2: the consultant confirmed the attestation. The stored text is OURS (never the
+      // browser's), the version must match what the page showed, and the file must really be an
+      // ID copy of an accepted type that was uploaded for this ref.
+      if (body.attested !== true) return fail("bad_request", "Confirm the statement first", origin);
+      if (body.attestationVersion !== ATTESTATION.version) {
+        return fail("invalid_state", "manual_attestation_changed", origin);
+      }
+      if (!validIdDocPath(ref, body.path)) return fail("bad_request", "Upload the ID copy first", origin);
+      const can = manualVerifyCheck(row);
+      if (!can.ok) return fail("invalid_state", `manual_not_allowed:${can.reason}`, origin);
+
+      const { data: blob, error: dlErr } = await sb.storage.from(ID_DOC_BUCKET).download(body.path);
+      if (dlErr || !blob) return fail("bad_request", "The ID copy was not uploaded — try the upload again", origin);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const discard = async () => {
+        const rm = await sb.storage.from(ID_DOC_BUCKET).remove([body.path as string]);
+        // Not fatal (delete-record sweeps the ref's folder) but never silent: it is personal data.
+        if (rm.error) console.error(JSON.stringify({ event: "id_doc_discard_failed", ref, message: rm.error.message }));
+      };
+      if (bytes.length === 0 || bytes.length > ID_DOC_MAX_BYTES) {
+        await discard();
+        return fail("bad_request", "The ID copy is empty or larger than 10 MB", origin);
+      }
+      const type = sniffDocType(bytes);
+      if (!type || ID_DOC_TYPES[type] !== body.path.split(".").pop()) {
+        await discard();
+        return fail("bad_request", "The file is not a readable PDF, JPG or PNG", origin);
+      }
+
+      const { data: evidenceId, error: rpcErr } = await sb.rpc("record_manual_verification", {
+        p_ref: ref, p_from: row.status, p_user: user.id, p_label: staffLabel,
+        p_version: ATTESTATION.version, p_text: ATTESTATION.text,
+        p_path: body.path, p_type: type, p_bytes: bytes.length, p_sha256: await sha256HexBytes(bytes),
+      });
+      if (rpcErr) {
+        await discard();
+        throw new Error(`server_error: ${rpcErr.message}`);
+      }
+      if (evidenceId === null || evidenceId === undefined) {
+        // The record moved on while the consultant was working — nothing was recorded.
+        await discard();
+        return fail("invalid_state", "Record changed — reload and try again", origin);
+      }
+      return ok({ status: "manual_verified", evidenceId }, origin);
+    }
+
+    // ======================================================================================
     if (action === "delete-record") {
       // Destroy on request (PCR declaration undertaking): the stored PDF goes with the row, and the
       // vendor response bodies logged for this ref are blanked. consent_events (redacted evidence of
@@ -418,25 +497,52 @@ Deno.serve(async (req) => {
       if (row.pdf_status === "fetching" && !(readyAt && Date.now() - readyAt > PDF_FETCH_STALE_MS)) {
         return fail("invalid_state", "The report PDF is still being fetched — try again shortly", origin);
       }
+      // Every object under the ref's folder, page by page — destroy-on-request must not stop at 100.
+      const listAll = async (bucket: string): Promise<string[] | null> => {
+        const out: string[] = [];
+        for (let offset = 0; ; offset += 100) {
+          const { data, error } = await sb.storage.from(bucket).list(ref, { limit: 100, offset });
+          if (error) return null;
+          for (const o of data ?? []) if (o?.name) out.push(`${ref}/${o.name}`);
+          if (!data || data.length < 100) return out;
+        }
+      };
       const paths = new Set<string>();
       if (row.report_pdf_path) paths.add(String(row.report_pdf_path));
-      const { data: listed } = await sb.storage.from("credit-reports").list(ref, { limit: 100 });
-      for (const o of listed ?? []) if (o?.name) paths.add(`${ref}/${o.name}`);
+      const reportObjects = await listAll("credit-reports");
+      if (reportObjects === null) return fail("server_error", "Could not list the stored report PDFs", origin);
+      for (const pth of reportObjects) paths.add(pth);
       if (paths.size) {
         const rm = await sb.storage.from("credit-reports").remove([...paths]);
         if (rm.error) return fail("server_error", "Could not delete the stored report PDF", origin);
       }
+      // The client's ID copy goes too; the evidence row keeps who attested and the file's hash.
+      const idDocs = await listAll(ID_DOC_BUCKET);
+      if (idDocs === null) return fail("server_error", "Could not list the stored ID copies", origin);
+      if (idDocs.length) {
+        const rm = await sb.storage.from(ID_DOC_BUCKET).remove(idDocs);
+        if (rm.error) return fail("server_error", "Could not delete the stored ID copy", origin);
+      }
       const blank = await sb.from("mm_api_log").update({ body_head: null }).eq("ref", ref);
       if (blank.error) return fail("server_error", "Could not clear the logged vendor responses", origin);
       const del = await sb.from("credit_checks").delete().eq("ref", ref);
-      if (del.error) return fail("server_error", "Could not delete the record", origin);
+      if (del.error) {
+        return fail("server_error", idDocs.length || paths.size
+          ? "The stored files were deleted but the record could not be — use Delete again to finish"
+          : "Could not delete the record", origin);
+      }
+      // Only once the row is gone: a failed delete must not leave live evidence marked as deleted.
+      // The files are already removed, so a failed stamp is logged rather than reported as a failure.
+      const stamped = await sb.from("manual_verifications").update({ document_deleted_at: new Date().toISOString() })
+        .eq("ref", ref).is("document_deleted_at", null);
+      if (stamped.error) console.error(JSON.stringify({ event: "id_doc_stamp_failed", ref, code: stamped.error.code, message: stamped.error.message }));
       // Only after the row is really gone: a failed delete must not leave a "Deleted" marker on a live record.
       const marker = await sb.from("consent_events").insert({ ref, event: "deleted", created_by: staffLabel });
       if (marker.error) {
         // Until the hardening migration widens the event CHECK, the marker cannot be stored.
         console.error(JSON.stringify({ event: "deleted_marker_failed", ref, message: marker.error.message }));
       }
-      console.log(JSON.stringify({ event: "record_deleted", ref, by: user.id, hadReport: !!row.report_json, removedObjects: paths.size }));
+      console.log(JSON.stringify({ event: "record_deleted", ref, by: user.id, hadReport: !!row.report_json, removedObjects: paths.size + idDocs.length }));
       return ok({ deleted: true }, origin);
     }
 

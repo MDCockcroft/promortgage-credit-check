@@ -338,7 +338,7 @@
   .run-hint { margin: 0; }
   .run-hint:empty { display: none; }
   .confirm-q { font-weight: 600; margin: 0 0 var(--s3); flex-basis: 100%; }
-  .override-set {
+  .verify-set {
     border: 1.5px solid var(--gold-deep);
     border-radius: var(--r-s);
     padding: var(--s2) var(--s4) var(--s3);
@@ -346,8 +346,13 @@
     background: var(--gold-tint);
     min-width: 0;
   }
-  .override-set legend { font-size: var(--fs-small); font-weight: 700; padding: 0 var(--s1); }
-  .override-set .field { margin: var(--s2) 0 0; }
+  .dsec .verify-set { margin-top: var(--s3); }
+  .verify-set legend { font-size: var(--fs-small); font-weight: 700; padding: 0 var(--s1); }
+  .verify-set .field { margin: var(--s2) 0 0; }
+  .verify-set .check-row { align-items: flex-start; margin-top: var(--s2); }
+  .verify-set .check-row input { margin-top: 3px; }
+  .attest { margin: var(--s2) 0 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--gold-deep);
+    background: var(--surface); font-size: var(--fs-small); line-height: 1.5; }
   .check-row { display: flex; gap: var(--s2); align-items: center; font-size: var(--fs-small); font-weight: 600; min-height: 36px; }
   .dlg-actions .msg { margin: 0; }
 
@@ -486,15 +491,6 @@
   <div class="dlg-body" id="dlgBody"></div>
   <div class="dlg-actions" id="dlgActions">
     <div id="runBlock">
-      <fieldset class="override-set" id="overrideSet" hidden>
-        <legend>Identity check override</legend>
-        <label class="check-row" for="overrideChk"><input type="checkbox" id="overrideChk"> Override identity check</label>
-        <div class="field" id="overrideField" hidden>
-          <label for="overrideReason">Reason for the override (required, recorded in the audit trail)</label>
-          <textarea id="overrideReason" rows="2" maxlength="200" aria-describedby="overrideErr"></textarea>
-          <span class="err" id="overrideErr"></span>
-        </div>
-      </fieldset>
       <div class="act-row">
         <button class="btn btn-primary" id="dlgRun" type="button" aria-describedby="runHint">Run credit check</button>
         <button class="btn btn-danger btn-sm push" id="dlgDelete" type="button">Delete record</button>
@@ -553,7 +549,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260928-1"></script>
+<script src="assets/store.js?v=20260928-2"></script>
 <script>
 (function () {
   'use strict';
@@ -561,7 +557,7 @@
   /* ================= state ================= */
   /* System settings from PMStore.config(); idvMode drives which statuses may run a check.
      If config() fails we assume 'off' — the server re-applies the real guard on every run. */
-  var sysCfg = { mode: PMStore.mode, idvMode: 'off', env: '', allowPassport: false };
+  var sysCfg = { mode: PMStore.mode, idvMode: 'off', env: '', allowPassport: false, attestation: null };
   var cfgLoaded = false;
   var currentRef = null;      // record open in the detail dialog
   var currentRec = null;
@@ -744,7 +740,11 @@
     consent_never_registered: 'This client’s consent was never registered with MortgageMAX, so there is nothing to read back.',
     registration_in_progress: 'A consent registration for this record is already in progress. Wait a moment, then close and reopen the record.',
     consent_stale: 'The consent wording this client agreed to is no longer current at MortgageMAX, so it can’t be registered. Ask the client to complete the form again.',
-    consent_not_presented: 'No consent wording was recorded for this application, so it can’t be registered. Ask the client to complete the form again.'
+    consent_not_presented: 'No consent wording was recorded for this application, so it can’t be registered. Ask the client to complete the form again.',
+    manual_attestation_changed: 'The Experian statement was updated since this page loaded. Reload the page, read the new statement, and confirm it again.',
+    'manual_not_allowed:not_sa_id': 'Manual verification is for South African ID numbers only — there is no credit check for foreign nationals.',
+    'manual_not_allowed:withdrawn': 'The client withdrew consent, so their identity can’t be verified for a credit check.',
+    'manual_not_allowed:status_manual_verified': 'This record is already verified manually — the evidence is shown in the Identity check section.'
   };
 
   /* err.code → message a consultant can act on. Codes only ever go in the secondary line. */
@@ -915,7 +915,6 @@
          (billable) run on data we know is stale */
       if (currentRec) renderDetail(currentRec, { preserve: true, focus: focusId });
       else applyFlashes();
-      $('overrideSet').hidden = true;
       $('dlgRun').disabled = true;
       $('runHint').textContent = 'Close and reopen this record before running a credit check.';
     });
@@ -929,7 +928,6 @@
     staleDetail = false;
     $('confirmBlock').hidden = true;
     $('runBlock').hidden = false;
-    $('overrideSet').hidden = true;
     $('dlgRun').disabled = true;
     $('dlgDelete').disabled = true;
     $('runHint').textContent = '';
@@ -950,8 +948,6 @@
         if (d.open) openKeys.push(d.getAttribute('data-k'));
       });
       keep = {
-        override: $('overrideChk').checked,
-        reason: $('overrideReason').value,
         withdraw: withdrawOpen && $('withdrawReason') ? $('withdrawReason').value : null,
         pending: pending && !busy ? pending : null
       };
@@ -982,17 +978,12 @@
     if (opts.focus) focusSafe(opts.focus);
   }
 
-  /* Put back an override, a withdrawal reason or an open confirm step that a re-render
+  /* Put back a withdrawal reason or an open confirm step that a re-render
      (e.g. after "Refresh from MortgageMAX") would otherwise wipe — only if still valid. */
   function restoreInputs(k) {
     if (k.withdraw != null && $('withdrawBtn')) {
       openWithdraw();
       $('withdrawReason').value = k.withdraw;
-    }
-    if (!$('overrideSet').hidden) {
-      $('overrideReason').value = k.reason || '';
-      $('overrideChk').checked = !!k.override;
-      syncOverride();
     }
     var p = k.pending;
     if (!p) return;
@@ -1340,8 +1331,7 @@
   /* ---------- b. identity check (never shows answers — they are not stored) ---------- */
   var IDV_MODE_TEXT = {
     off: 'Switched off',
-    optional: 'Optional (a consultant may override)',
-    required: 'Required before a credit check'
+    required: 'Required before a credit check (or manual verification)'
   };
   var POST_CONSENT = ['consent_registered', 'idv_waived', 'check_in_flight', 'report_ready', 'check_failed', 'consent_withdrawn'];
 
@@ -1352,6 +1342,7 @@
     var state;
     if (r.status === 'idv_waived') state = 'Waived by configuration';
     else if (String(r.status).indexOf('idv_') === 0) state = statusInfo(r.status).label;
+    else if (r.manualVerifiedAt) state = 'Verified manually (evidence below)';
     else if (r.idvPassedAt) state = 'Identity verified';
     else if (r.idvAttempts) state = 'Attempted (see audit trail)';
     else state = 'Not started';
@@ -1378,6 +1369,8 @@
       }
     }
     s.appendChild(kv(pairs));
+    var mv = manualBlock(r, mode);
+    if (mv) s.appendChild(mv);
 
     var waived = r.status === 'idv_waived' ||
       (mode === 'off' && !r.idvAttempts && !r.idvPassedAt && POST_CONSENT.indexOf(r.status) !== -1);
@@ -1387,6 +1380,133 @@
     }
     s.appendChild(el('p', { className: 'note', text: 'The client’s answers are never stored.' }));
     return s;
+  }
+
+  /* ---------- b2. manual identity verification (ID copy + Experian statement) ---------- */
+  function manualBlock(r, mode) {
+    if (r.manualVerifiedAt) return evidenceBlock(r);
+    if (!PMStore.manualVerifyCheck(r).ok || PMStore.allowedFrom(mode).indexOf(r.status) !== -1) return null;
+    var att = sysCfg.attestation || PMStore.ATTESTATION;
+    var box = el('fieldset', { className: 'verify-set', id: 'manualSet', 'data-version': att.version });
+    box.appendChild(el('legend', { text: 'Verify identity manually' }));
+    box.appendChild(el('p', { className: 'small', text: 'Use this when the client couldn’t pass the identity questions, or none were available. ' +
+      'Check the client’s ID document or driver’s licence yourself, upload a copy, then confirm the Experian statement. ' +
+      'Both are kept as evidence for MortgageMAX’s audits.' }));
+    box.appendChild(el('div', { className: 'field' }, [
+      el('label', { 'for': 'manualFile', text: 'Copy of the ID document (PDF, JPG or PNG, up to 10 MB)' }),
+      el('input', { type: 'file', id: 'manualFile', accept: 'application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png',
+        'aria-describedby': 'manualErr' })
+    ]));
+    box.appendChild(el('blockquote', { className: 'attest', id: 'manualStatement', text: att.text }));
+    box.appendChild(el('label', { className: 'check-row', 'for': 'manualChk' }, [
+      el('input', { type: 'checkbox', id: 'manualChk', 'aria-describedby': 'manualStatement' }),
+      'I confirm the statement above.'
+    ]));
+    box.appendChild(el('span', { className: 'err', id: 'manualErr' }));
+    box.appendChild(el('div', { className: 'dsec-actions' }, btn('Save manual verification', 'btn btn-primary btn-sm', onManualVerify, 'manualBtn')));
+    box.appendChild(msgRegion('manualMsg'));
+    return box;
+  }
+
+  function evidenceBlock(r) {
+    var wrap = el('div', { className: 'verify-set', id: 'manualEvidence' });
+    wrap.appendChild(el('p', { className: 'score-label', text: 'Verified manually' }));
+    var holder = el('div', null, el('p', { className: 'small', text: 'Loading the evidence…' }));
+    wrap.appendChild(holder);
+    wrap.appendChild(msgRegion('evidenceMsg'));
+    var stale = function () { return !holder.isConnected || currentRef !== r.ref; };
+    safe(function () { return PMStore.manualEvidence(r); }).then(function (rows) {
+      if (stale()) return;
+      holder.textContent = '';
+      var e = rows && rows[0];
+      if (!e) { holder.appendChild(el('p', { className: 'small', text: 'Verified ' + fmtDate(r.manualVerifiedAt) + '. The evidence record could not be found.' })); return; }
+      var type = { 'application/pdf': 'PDF', 'image/jpeg': 'JPG', 'image/png': 'PNG' }[e.document_type] || e.document_type;
+      holder.appendChild(kv([
+        ['Verified by', e.verified_by_label],
+        ['When', fmtDate(Date.parse(e.created_at))],
+        ['ID copy', e.document_deleted_at ? 'Deleted ' + fmtDate(Date.parse(e.document_deleted_at))
+          : type + ', ' + Math.max(1, Math.round(Number(e.document_bytes) / 1024)) + ' KB'],
+        ['Statement version', e.attestation_version, 'mono']
+      ]));
+      holder.appendChild(el('blockquote', { className: 'attest', text: e.attestation_text }));
+      if (e.document_path && !e.document_deleted_at && PMStore.mode === 'live') {
+        holder.appendChild(el('div', { className: 'dsec-actions' },
+          btn('Open ID copy', 'btn btn-ghost btn-sm', function (ev) { onOpenIdCopy(ev, r.ref, e.document_path); }, 'idCopyBtn')));
+      }
+    }).catch(function (err) {
+      if (stale()) return;
+      holder.textContent = '';
+      holder.appendChild(el('p', { className: 'small', text: 'Verified ' + fmtDate(r.manualVerifiedAt) +
+        '. The evidence could not be loaded (' + ((err && err.message) || 'unknown error') + ').' }));
+    });
+    return wrap;
+  }
+
+  function onManualVerify(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRec) return;
+    var ref = currentRec.ref;
+    var f = $('manualFile'), c = $('manualChk'), errN = $('manualErr');
+    var file = f && f.files && f.files[0];
+    var problem = null, target = f;
+    if (!file) problem = 'Choose the copy of the ID document to upload.';
+    else if (['application/pdf', 'image/jpeg', 'image/png'].indexOf(file.type) === -1) problem = 'The ID copy must be a PDF, JPG or PNG.';
+    else if (file.size > 10 * 1024 * 1024) problem = 'The ID copy is larger than 10 MB.';
+    else if (!c.checked) { problem = 'Tick the box to confirm the Experian statement.'; target = c; }
+    if (problem) {
+      errN.textContent = problem;
+      target.focus();
+      return;
+    }
+    errN.textContent = '';
+    var version = $('manualSet').getAttribute('data-version');
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Saving…';
+    setMsg('manualMsg', 'Uploading the ID copy and recording your confirmation…');
+    var here = function () { return dlg.open && currentRef === ref; };
+    safe(function () { return PMStore.manualVerify(ref, file, version); }).then(function () {
+      busy = false;
+      render();
+      if (here()) {
+        pushFlash('dlgMsg', 'Identity verified manually. You can now run the credit check.', 'ok');
+        reloadDetail(ref, 'dlgRun');
+      } else {
+        setMsg('pageMsg', ref + ': identity verified manually.', 'ok');
+      }
+    }).catch(function (err) {
+      busy = false;
+      var m = staffError(err, 'manual');
+      render();
+      if (here()) {
+        /* reload: after a dropped connection the save may still have landed */
+        pushFlash('dlgMsg', m.text, 'err', m.sub);
+        reloadDetail(ref, 'manualFile');
+      } else {
+        setMsg('pageMsg', ref + ': manual verification not saved — ' + m.text, 'err', m.sub);
+      }
+    });
+  }
+
+  function onOpenIdCopy(e, ref, path) {
+    var b = e.currentTarget;
+    if (busy) return;
+    busy = true;
+    b.disabled = true;
+    setMsg('evidenceMsg', 'Preparing a secure link…');
+    safe(function () { return PMStore.idDocumentUrl(ref, path); }).then(function (url) {
+      if (typeof url !== 'string' || !/^https:\/\//i.test(url)) throw new Error('The link was not valid');
+      busy = false;
+      b.disabled = false;
+      window.open(url, '_blank', 'noopener');
+      var n = setMsg('evidenceMsg', 'Opened in a new tab. If nothing opened, use this link (valid for 60 seconds): ', 'ok');
+      if (n) n.firstChild.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener', text: 'open the ID copy' }));
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      var m = staffError(err, 'open');
+      setMsg('evidenceMsg', m.text, 'err', m.sub);
+    });
   }
 
   /* ---------- c. credit report ---------- */
@@ -1735,6 +1855,13 @@
       c.appendChild(msgRegion('configMsg'));
       return c;
     }
+    if (r.status === 'manual_required' && r.idType === 'passport') {
+      return el('div', { className: 'callout callout-demo' }, [
+        el('span', { className: 'callout-tag', text: 'No credit check' }),
+        el('p', { text: 'This applicant gave a passport number. Experian supports South African ID numbers only, so MortgageMAX runs no credit check for foreign nationals. ' +
+          'Handle the application manually, outside this system.' })
+      ]);
+    }
     if (r.status === 'manual_required') {
       return el('div', { className: 'callout callout-demo' }, [
         el('span', { className: 'callout-tag', text: 'Manual handling' }),
@@ -1775,8 +1902,10 @@
     return !!(r && r.status === 'check_in_flight' && r.checkStartedAt &&
       Date.now() - r.checkStartedAt > STALE_IN_FLIGHT_MS + 30 * 1000);
   }
-  function whyNot(st, mode, canForce, r) {
-    if (canForce) return 'The identity check has not been passed. Tick “Override identity check” and give a reason to run it anyway.';
+  function whyNot(st, mode, r) {
+    if (mode === 'required' && r && PMStore.manualVerifyCheck(r).ok) {
+      return 'The client’s identity isn’t verified yet. Verify it manually in the Identity check section above (ID copy + Experian statement), then run the check.';
+    }
     switch (st) {
       case 'check_in_flight':
         return inFlightStale(r)
@@ -1784,19 +1913,14 @@
           : 'A credit check is running for this record.';
       case 'consent_confirmed': return 'Consent has not been registered with MortgageMAX yet. Use “Retry consent registration” above.';
       case 'idv_in_progress': return 'The client is answering identity questions.';
-      case 'manual_required': return 'This record needs manual handling; the automated check cannot run. The audit trail says why.';
+      case 'manual_required':
+        return r && r.idType === 'passport'
+          ? 'No credit check for this applicant: Experian supports South African ID numbers only. Handle the application manually.'
+          : 'This record needs manual handling; the automated check cannot run. The audit trail says why.';
       case 'config_error': return 'A system configuration problem is blocking this record. Once the credentials are fixed, use “Clear system error” above.';
     }
     if (mode === 'required') return 'A verified identity is required before a credit check in the current configuration.';
     return 'This record is not ready for a credit check (' + statusInfo(st).label + ').';
-  }
-
-  function resetOverride() {
-    $('overrideChk').checked = false;
-    $('overrideReason').value = '';
-    $('overrideReason').removeAttribute('aria-invalid');
-    $('overrideErr').textContent = '';
-    $('overrideField').hidden = true;
   }
 
   function renderActions(r) {
@@ -1804,18 +1928,15 @@
     $('confirmBlock').hidden = true;
     $('runBlock').hidden = false;
     setMsg('dlgMsg', '');
-    resetOverride();
 
     var st = r.status;
     var mode = sysCfg.idvMode;
-    var allowed = PMStore.allowedFrom(mode, false).indexOf(st) !== -1;
-    var canForce = mode === 'optional' && !allowed && PMStore.allowedFrom('optional', true).indexOf(st) !== -1;
+    var allowed = PMStore.allowedFrom(mode).indexOf(st) !== -1;
     var run = $('dlgRun');
     run.hidden = NEVER_RUN.indexOf(st) !== -1;
     run.textContent = st === 'check_in_flight' ? 'Credit check running…' : 'Run credit check';
     run.disabled = !allowed;
-    $('overrideSet').hidden = run.hidden || !canForce;
-    $('runHint').textContent = run.hidden ? '' : allowed ? '' : whyNot(st, mode, canForce, r);
+    $('runHint').textContent = run.hidden ? '' : allowed ? '' : whyNot(st, mode, r);
 
     /* mirrors the server's delete guard: not while a check runs, nor while the PDF is being
        stored (unless that fetch has plainly been interrupted) */
@@ -1826,19 +1947,6 @@
     del.title = st === 'check_in_flight' ? 'A credit check is running — try again shortly'
       : pdfBusy ? 'The report PDF is being stored — try again in a few minutes' : '';
   }
-
-  function syncOverride() {
-    var on = $('overrideChk').checked;
-    $('overrideField').hidden = !on;
-    $('dlgRun').disabled = !on;
-    $('runHint').textContent = on ? 'The override and your reason will be recorded in the audit trail.'
-      : whyNot(currentRec ? currentRec.status : '', sysCfg.idvMode, true, currentRec);
-    if (!on) {
-      $('overrideErr').textContent = '';
-      $('overrideReason').removeAttribute('aria-invalid');
-    }
-  }
-  $('overrideChk').addEventListener('change', syncOverride);
 
   function startConfirm(p, question, yesLabel, yesClass) {
     p.q = question;
@@ -1868,26 +1976,12 @@
   $('dlgRun').addEventListener('click', function () {
     if (busy || !currentRec) return;
     var r = currentRec;
-    var opts = {};
-    var override = !$('overrideSet').hidden && $('overrideChk').checked;
-    if (override) {
-      var reason = $('overrideReason').value.trim();
-      if (!reason) {
-        $('overrideErr').textContent = 'Give a reason for overriding the identity check.';
-        $('overrideReason').setAttribute('aria-invalid', 'true');
-        $('overrideReason').focus();
-        return;
-      }
-      $('overrideErr').textContent = '';
-      $('overrideReason').removeAttribute('aria-invalid');
-      opts = { force: true, reason: reason };
-    }
     var name = fullName(r);
     var q = 'This runs a billable credit enquiry with MortgageMAX for ' + name + '. Continue?';
     if (PMStore.mode === 'demo') q += ' (Demo mode: sample data only, nothing is billed.)';
     else if (sysCfg.mode === 'mock') q += ' (MortgageMAX test mode: sample data only.)';
-    if (override) q += ' Your identity-check override and reason will be recorded.';
-    startConfirm({ kind: 'run', ref: r.ref, name: name, opts: opts }, q, 'Yes, run credit check', 'btn btn-primary');
+    if (r.status === 'manual_verified') q += ' The client’s identity was verified manually; that is recorded with the check.';
+    startConfirm({ kind: 'run', ref: r.ref, name: name }, q, 'Yes, run credit check', 'btn btn-primary');
   });
 
   $('dlgDelete').addEventListener('click', function () {
@@ -1915,7 +2009,7 @@
     $('dlgRun').textContent = 'Running…';
     $('dlgDelete').disabled = true;
     setMsg('dlgMsg', 'Running the credit check with MortgageMAX. This can take up to a minute and a half — keep this window open.');
-    safe(function () { return PMStore.runCheck(p.ref, p.opts); }).then(function (res) {
+    safe(function () { return PMStore.runCheck(p.ref); }).then(function (res) {
       busy = false;
       pending = null;
       var text = 'Credit report received for ' + p.name + '.';
@@ -1934,7 +2028,7 @@
       render();
       if (dlg.open && currentRef === p.ref) {
         pushFlash('dlgMsg', m.text, 'err', m.sub);
-        reloadDetail(p.ref, ['dlgRun', 'overrideChk']);
+        reloadDetail(p.ref, ['dlgRun', 'manualFile']);
       } else {
         setMsg('pageMsg', 'Credit check for ' + p.ref + ': ' + m.text, 'err', m.sub);
       }
@@ -1967,7 +2061,9 @@
 
   /* ================= live refresh ================= */
   function isMidInteraction() {
-    return busy || !!pending || withdrawOpen || $('overrideChk').checked || $('overrideReason').value.trim() !== '';
+    /* a chosen ID copy or a ticked statement would be lost by a re-render */
+    var f = $('manualFile'), c = $('manualChk');
+    return busy || !!pending || withdrawOpen || !!(f && f.files && f.files.length) || !!(c && c.checked);
   }
   function updateStatusChip(r) {
     var n = $('dlgStatusChip');
@@ -2037,7 +2133,6 @@
     flashes = [];
     $('confirmBlock').hidden = true;
     $('runBlock').hidden = false;
-    resetOverride();
   });
 
   /* ================= My details ================= */
@@ -2162,7 +2257,7 @@
       var keep = new URLSearchParams();
       if (src.get('demo') === '1') keep.set('demo', '1');
       var idv = src.get('idv');
-      if (idv === 'optional' || idv === 'required') keep.set('idv', idv);
+      if (idv === 'optional' || idv === 'required') keep.set('idv', 'required');
       var qs = keep.toString();
       if (qs) href += '?' + qs;
     }
@@ -2174,7 +2269,8 @@
     return PMStore.config().then(function (c) {
       c = c || {};
       sysCfg.mode = c.mode || PMStore.mode;
-      sysCfg.idvMode = c.idvMode === 'optional' || c.idvMode === 'required' ? c.idvMode : 'off';
+      sysCfg.idvMode = c.idvMode === 'optional' || c.idvMode === 'required' ? 'required' : 'off';
+      sysCfg.attestation = c.attestation && c.attestation.version && c.attestation.text ? c.attestation : null;
       sysCfg.env = c.env ? String(c.env) : '';
       sysCfg.allowPassport = c.allowPassport === true;
       cfgLoaded = true;

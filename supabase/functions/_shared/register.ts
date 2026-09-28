@@ -19,9 +19,10 @@ import {
 import { transition } from "./db.ts";
 import { loaderCache } from "./cache.ts";
 import { idProblem, personIdFor } from "./idnumber.ts";
+import { type IdvMode, idvModeFrom } from "./states.ts";
 import fixtureTypes from "./fixtures/consent-types-active.json" with { type: "json" };
 
-export type IdvMode = "off" | "optional" | "required";
+export type { IdvMode };
 export type Mode = "live" | "mock";
 
 export interface Ctx {
@@ -37,8 +38,7 @@ export type Outcome =
   | { ok: false; code: "invalid_state" | "vendor_error" | "config_error" | "bad_request"; message: string; vendorCode?: string | null; traceId?: string | null };
 
 export function idvModeFromEnv(): IdvMode {
-  const v = Deno.env.get("MM_IDV_MODE");
-  return v === "optional" || v === "required" ? v : "off";
+  return idvModeFrom(Deno.env.get("MM_IDV_MODE"));
 }
 
 // ---------------------------------------------------------------------------------------------

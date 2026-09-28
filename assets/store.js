@@ -33,11 +33,24 @@
     }
   }
 
-  /* Demo-only: which IDV mode to simulate (?idv=optional|required). */
+  /* Demo-only: which IDV mode to simulate (?idv=required). A leftover 'optional' fails safe to
+     'required', exactly like the server (states.ts idvModeFrom). */
   var DEMO_IDV = (function () {
     var v = params.get('idv') || cfg.DEMO_IDV_MODE || 'off';
-    return v === 'optional' || v === 'required' ? v : 'off';
+    return v === 'optional' || v === 'required' ? 'required' : 'off';
   })();
+
+  /* Demo copy of _shared/manual.ts ATTESTATION (parity-tested). In live mode the page shows the
+     wording mm-staff returns from 'config' — the text the server stores. */
+  var ATTESTATION = {
+    version: 'experian-manual-2026-09-28',
+    text: 'I hereby confirm that I have read and understood the Experian Terms and conditions and that I have ' +
+      'verified the customer\'s identity by validating their identity documents / driver\'s licence and uploaded ' +
+      'it to the system. I also presented/read out the Customer Consent for their consideration and acceptance ' +
+      'before requesting their credit information via the Experian System.'
+  };
+  var ID_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+  var ID_DOC_MAX_BYTES = 10 * 1024 * 1024;
 
   var BROAD_CONSENT_ID = '818BB417-0963-4DFF-B7E3-09C66F6D0AF9';
   var MAX_IDV_ROUNDS = 2;
@@ -61,6 +74,7 @@
     'otp_expires, otp_attempts, audit, mm_person_id, consents_presented, consent_registered_at, ' +
     'mm_consents_snapshot, mm_consents_synced_at, consent_withdrawn_at, idv_attempts, ' +
     'idv_started_at, idv_questions, idv_result, idv_passed_at, verification_success_code, ' +
+    'manual_verified_at, manual_verification_id, ' +
     'check_started_at, check_request_id, check_attempt, check_requested_by, check_error_code, ' +
     'check_error_text, group_id, bureau_enquiry_id, report_json, report_summary, ' +
     'affordability_json, report_ready_at, pdf_status, pdf_attempts, report_pdf_path, mm_env';
@@ -195,6 +209,8 @@
       idvQuestionCount: Array.isArray(r.idv_questions) ? r.idv_questions.length : 0,
       idvResult: r.idv_result || null,
       idvPassedAt: ts(r.idv_passed_at),
+      manualVerifiedAt: ts(r.manual_verified_at),
+      manualVerificationId: r.manual_verification_id || null,
       checkStartedAt: ts(r.check_started_at),
       checkAttempt: r.check_attempt || 0,
       checkErrorCode: r.check_error_code || '',
@@ -256,6 +272,7 @@
     idv_waived:         { label: 'Ready for credit check',     chip: 'chip-confirmed', group: 'ready' },
     idv_failed:         { label: 'Identity check failed',      chip: 'chip-attention', group: 'attention' },
     idv_unavailable:    { label: 'Identity check unavailable', chip: 'chip-attention', group: 'attention' },
+    manual_verified:    { label: 'Identity verified manually', chip: 'chip-confirmed', group: 'ready' },
     check_in_flight:    { label: 'Credit check running',       chip: 'chip-requested', group: 'awaiting' },
     report_ready:       { label: 'Report ready',               chip: 'chip-ready',     group: 'reports' },
     check_failed:       { label: 'Credit check failed',        chip: 'chip-failed',    group: 'attention' },
@@ -282,7 +299,7 @@
     if (stalled || ATTENTION.indexOf(status) !== -1) return 'attention';
     if (status === 'report_ready') return 'report';
     if (status === 'consent_withdrawn' || status === 'expired') return 'closed';
-    if (status === 'check_in_flight' || allowedFrom(idvMode, false).indexOf(status) !== -1) return 'ready';
+    if (status === 'check_in_flight' || allowedFrom(idvMode).indexOf(status) !== -1) return 'ready';
     return 'waiting'; /* awaiting_otp, idv_in_progress, consent_registered while identity questions are due */
   }
   function bucketInfo(key) {
@@ -296,8 +313,9 @@
     idv_in_progress: 'The client is answering the identity questions (5-minute limit). Nothing to do.',
     idv_passed: 'The client passed the identity questions. You can run the credit check.',
     idv_waived: 'Consent is registered and identity questions aren’t required. You can run the credit check.',
-    idv_failed: 'The client didn’t pass the identity questions. Verify their identity another way (for example by phone) before any credit check.',
-    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. Verify the client’s identity another way before any credit check.',
+    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: upload a copy of their ID and confirm the Experian statement.',
+    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: upload a copy of their ID and confirm the Experian statement.',
+    manual_verified: 'The client’s identity was verified manually (ID copy + Experian statement, shown below). You can run the credit check.',
     check_in_flight: 'The credit check is running. This usually takes under a minute.',
     report_ready: 'The credit report is ready — see below.',
     check_failed: 'The credit check didn’t complete. See the error below, then run it again.',
@@ -318,15 +336,20 @@
   }
 
   /* Which statuses may start a credit check — identical to mm-staff allowedFrom(). */
-  function allowedFrom(idvMode, force) {
+  function allowedFrom(idvMode) {
     var retry = ['check_failed'];
-    if (idvMode === 'required') return ['idv_passed'].concat(retry);
-    if (idvMode === 'optional') {
-      return force
-        ? ['idv_passed', 'consent_registered', 'idv_failed', 'idv_unavailable', 'idv_waived'].concat(retry)
-        : ['idv_passed'].concat(retry);
-    }
-    return ['consent_registered', 'idv_waived', 'idv_passed'].concat(retry);
+    if (idvMode === 'required') return ['idv_passed', 'manual_verified'].concat(retry);
+    return ['consent_registered', 'idv_waived', 'idv_passed', 'manual_verified'].concat(retry);
+  }
+
+  /* May this record be verified manually? — identical to _shared/manual.ts manualVerifyCheck(). */
+  var MANUAL_FROM = ['consent_registered', 'idv_failed', 'idv_unavailable', 'idv_waived'];
+  function manualVerifyCheck(rec) {
+    if (rec.idType !== 'said') return { ok: false, reason: 'not_sa_id' };
+    if (rec.consentWithdrawnAt) return { ok: false, reason: 'withdrawn' };
+    if (MANUAL_FROM.indexOf(rec.status) !== -1) return { ok: true };
+    if (rec.status === 'manual_required' && rec.consentRegisteredAt) return { ok: true };
+    return { ok: false, reason: 'status_' + rec.status };
   }
 
   /* ---------- consent wording ---------- */
@@ -432,6 +455,8 @@
     mode: mode,
     STATUS: STATUS,
     allowedFrom: allowedFrom,
+    manualVerifyCheck: manualVerifyCheck,
+    ATTESTATION: ATTESTATION,
     BUCKETS: BUCKETS,
     bucketOf: bucketOf,
     bucketInfo: bucketInfo,
@@ -632,7 +657,8 @@
     /* → {mode:'live'|'mock'|'demo', idvMode, env, allowPassport} */
     config: function () {
       if (mode === 'live') return invoke('mm-staff', { action: 'config' });
-      return Promise.resolve({ mode: 'demo', idvMode: DEMO_IDV, env: 'demo', allowPassport: PMStore.allowPassport });
+      return Promise.resolve({ mode: 'demo', idvMode: DEMO_IDV, env: 'demo', allowPassport: PMStore.allowPassport,
+        attestation: ATTESTATION, idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: ID_DOC_TYPES } });
     },
 
     /* The register list: summary columns only (see LIST_COLUMNS). Use get(ref) for a full record. */
@@ -657,15 +683,13 @@
       return Promise.resolve(demoFind(ref));
     },
 
-    /* Run the credit check (billable in production). opts: {force, reason} — force only
-       applies when idvMode is 'optional' (consultant override, audited).
+    /* Run the credit check (billable in production).
        → {status:'report_ready', summary, pdfStatus}. Throws Error{code}. */
-    runCheck: function (ref, opts) {
-      opts = opts || {};
-      if (mode === 'live') return invoke('mm-staff', { action: 'run-check', ref: ref, force: !!opts.force, reason: opts.reason || '' });
+    runCheck: function (ref) {
+      if (mode === 'live') return invoke('mm-staff', { action: 'run-check', ref: ref });
       var rec = demoRecover(ref);
       if (!rec) return demoFail('bad_request', 'No such record');
-      if (allowedFrom(DEMO_IDV, !!opts.force && DEMO_IDV === 'optional').indexOf(rec.status) === -1) {
+      if (allowedFrom(DEMO_IDV).indexOf(rec.status) === -1) {
         return demoFail('invalid_state', 'A credit check cannot run from status ' + rec.status);
       }
       var rep = demoReport();
@@ -673,8 +697,7 @@
         status: 'report_ready', groupId: 'DEMO-GROUP-0001', bureauEnquiryId: rep.summary.enquiryId,
         reportJson: rep.json, reportSummary: rep.summary, affordability: rep.affordability,
         reportReadyAt: Date.now(), checkAttempt: (rec.checkAttempt || 0) + 1, pdfStatus: null
-      }, 'Credit report received (sample data)' +
-        (opts.force ? ' — identity-check override: ' + String(opts.reason || 'no reason given').slice(0, 200) : ''));
+      }, 'Credit report received (sample data)' + (rec.status === 'manual_verified' ? ' — identity verified manually' : ''));
       return Promise.resolve({ status: 'report_ready', summary: rep.summary, pdfStatus: null });
     },
     fetchPdf: function (ref) {
@@ -743,6 +766,7 @@
       }
       else if (!rec.consentRegisteredAt) patch.status = 'consent_confirmed';
       else if (rec.idvPassedAt) patch.status = 'idv_passed';
+      else if (rec.manualVerifiedAt) patch.status = 'manual_verified';
       else if ((rec.idvAttempts || 0) > 0) patch.status = 'idv_failed';
       else patch.status = DEMO_IDV === 'off' ? 'idv_waived' : 'consent_registered';
       demoUpdate(ref, patch, 'System error cleared by demo user');
@@ -758,11 +782,65 @@
         return PMStore.logAccess(rec.ref, 'download_pdf').then(function () { return res.data.signedUrl; });
       });
     },
-    /* action: 'view' | 'download_pdf' | 'view_raw'. Never throws — access logging must not block viewing. */
+    /* Manual identity verification (the only route past failed / unavailable identity questions):
+       upload the ID copy through a one-time URL mm-staff issues, then record the consultant's
+       attestation. attestationVersion must be the one shown. → {status:'manual_verified'}. */
+    manualVerify: function (ref, file, attestationVersion) {
+      if (!file) return demoFail('bad_request', 'Choose the ID copy to upload');
+      if (ID_DOC_TYPES.indexOf(file.type) === -1) return demoFail('bad_request', 'The ID copy must be a PDF, JPG or PNG');
+      if (!file.size || file.size > ID_DOC_MAX_BYTES) return demoFail('bad_request', 'The ID copy is empty or larger than 10 MB');
+      if (mode === 'live') {
+        return invoke('mm-staff', { action: 'manual-upload-url', ref: ref, contentType: file.type }).then(function (u) {
+          return sb.storage.from('id-documents').uploadToSignedUrl(u.path, u.token, file, { contentType: file.type })
+            .then(function (res) {
+              if (res.error) throw mkErr({ code: 'server_error', message: 'The upload failed — try again' });
+              return invoke('mm-staff', {
+                action: 'manual-verify', ref: ref, path: u.path, attestationVersion: attestationVersion, attested: true
+              });
+            });
+        });
+      }
+      var rec = demoRecover(ref);
+      if (!rec) return demoFail('bad_request', 'No such record');
+      if (attestationVersion !== ATTESTATION.version) return demoFail('invalid_state', 'manual_attestation_changed');
+      var can = manualVerifyCheck(rec);
+      if (!can.ok) return demoFail('invalid_state', 'manual_not_allowed:' + can.reason);
+      demoUpdate(ref, {
+        status: 'manual_verified', manualVerifiedAt: Date.now(), manualVerificationId: 1,
+        demoEvidence: {
+          created_at: new Date().toISOString(), verified_by_label: 'demo user', attestation_version: ATTESTATION.version,
+          attestation_text: ATTESTATION.text, document_type: file.type, document_bytes: file.size,
+          document_path: null, document_deleted_at: null
+        }
+      }, 'Identity verified manually by demo user (ID copy uploaded + Experian attestation)');
+      return Promise.resolve({ status: 'manual_verified' });
+    },
+    /* The evidence rows for a record, newest first (staff read; written only by the server). */
+    manualEvidence: function (rec) {
+      if (mode !== 'live') return Promise.resolve(rec && rec.demoEvidence ? [rec.demoEvidence] : []);
+      return sb.from('manual_verifications')
+        .select('id, created_at, verified_by_label, attestation_version, attestation_text, document_path, document_type, document_bytes, document_sha256, document_deleted_at')
+        .eq('ref', rec.ref).order('created_at', { ascending: false }).limit(10)
+        .then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return res.data || [];
+        });
+    },
+    /* Short-lived (60 s) signed URL for a stored ID copy; logs the access. */
+    idDocumentUrl: function (ref, path) {
+      if (mode !== 'live') return demoFail('invalid_state', 'No stored ID copy in demo mode');
+      return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {
+        if (res.error || !res.data) throw mkErr({ code: 'server_error', message: 'Could not open the ID copy' });
+        return PMStore.logAccess(ref, 'view_id_document').then(function () { return res.data.signedUrl; });
+      });
+    },
+    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document'. Never throws — access logging must not block viewing. */
     logAccess: function (ref, action) {
       if (mode !== 'live') return Promise.resolve();
+      /* never blocks viewing — but a broken audit log must not be invisible either */
       return sb.from('report_access_log').insert({ ref: ref, action: action })
-        .then(function () {}, function () {});
+        .then(function (res) { if (res && res.error) console.error('access log failed:', res.error.message); },
+          function (e) { console.error('access log failed:', e && e.message); });
     },
     accessLog: function (ref) {
       if (mode !== 'live') return Promise.resolve([]);

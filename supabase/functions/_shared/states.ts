@@ -1,24 +1,28 @@
 // The credit-check permission rule, shared by mm-staff and checked for parity against
 // assets/store.js (states_test.ts) so the admin buttons can never disagree with the server.
-export type IdvMode = "off" | "optional" | "required";
+export type IdvMode = "off" | "required";
 
-/** Which statuses may start a credit check, per IDV mode (BUILD-PLAN §2). */
-export function allowedFrom(mode: IdvMode, force: boolean): string[] {
-  const retry = ["check_failed"];
-  if (mode === "required") return ["idv_passed", ...retry];
-  if (mode === "optional") {
-    return force
-      ? ["idv_passed", "consent_registered", "idv_failed", "idv_unavailable", "idv_waived", ...retry]
-      : ["idv_passed", ...retry];
-  }
-  return ["consent_registered", "idv_waived", "idv_passed", ...retry]; // off
+/**
+ * MM_IDV_MODE → mode. "optional" (a consultant override with a free-text reason) was removed on
+ * 2026-09-28: MortgageMAX made IDV mandatory and a reason alone is not acceptable evidence, so an
+ * old "optional" setting fails safe to "required". Anything else is "off" (mock / demo only).
+ */
+export function idvModeFrom(v: string | undefined | null): IdvMode {
+  return v === "required" || v === "optional" ? "required" : "off";
 }
 
-/** Every status the DB CHECK constraint allows (migration 20260926_mortgagemax.sql). */
+/** Which statuses may start a credit check, per IDV mode (BUILD-PLAN §2). */
+export function allowedFrom(mode: IdvMode): string[] {
+  const retry = ["check_failed"];
+  if (mode === "required") return ["idv_passed", "manual_verified", ...retry];
+  return ["consent_registered", "idv_waived", "idv_passed", "manual_verified", ...retry]; // off
+}
+
+/** Every status the DB CHECK constraint allows (latest: migration 20260929_manual_verification.sql). */
 export const ALL_STATUSES = [
   "awaiting_otp", "consent_confirmed", "consent_registered",
   "idv_in_progress", "idv_passed", "idv_failed", "idv_unavailable", "idv_waived",
-  "check_in_flight", "report_ready", "check_failed",
+  "manual_verified", "check_in_flight", "report_ready", "check_failed",
   "consent_withdrawn", "manual_required", "expired", "config_error",
   "report_requested",
 ];
@@ -75,6 +79,7 @@ export function configErrorTarget(
   }
   if (!has(row.consent_registered_at)) return { status: "consent_confirmed", patch: {} };
   if (has(row.idv_passed_at)) return { status: "idv_passed", patch: {} };
+  if (has(row.manual_verified_at)) return { status: "manual_verified", patch: {} };
   if (Number(row.idv_attempts ?? 0) > 0) return { status: "idv_failed", patch: {} };
   return { status: idvMode === "off" ? "idv_waived" : "consent_registered", patch: {} };
 }
