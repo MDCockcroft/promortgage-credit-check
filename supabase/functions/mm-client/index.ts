@@ -284,7 +284,7 @@ Deno.serve(async (req) => {
 
       const q = await callVendor(cfg, "credit", "POST", "/Idv/getQuestions", {
         body: {
-          idNumber: personId, idType: idvIdType(row), clientConsent: personId, noOfQuestions: 5,
+          idNumber: personId, idType: idvIdType(row), clientConsent: "Y", noOfQuestions: 5,
           appName: APP_NAME, appVersion: APP_VERSION, extraData: { ref },
         },
         timeoutMs: 25_000, fetchImpl,

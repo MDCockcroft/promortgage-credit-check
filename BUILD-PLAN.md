@@ -180,7 +180,7 @@ Verify after paste: `select column_name from information_schema.columns where ta
 ### Step 5 — `mm-client` (anon) — deploy in mock, then flip `register-consent` to live
 Body `{ref, idv_token, action, answers?}`. Verify `sha256(idv_token) === idv_token_hash` and not expired on every action; rate-limit ≤2 IDV rounds per ref.
 - `register-consent`: require status `consent_confirmed`; POST /Consents; on any 2xx, GET /Consents?PersonId= and store snapshot; write `consent_events`; → `consent_registered`. On 401/403 → `config_error` + audit; never surface to the client.
-- `idv-start` (no-op returning `{skipped:true}` when `MM_IDV_MODE=off`): POST /Idv/getQuestions with `noOfQuestions=5`, `idType="SAID"`, `clientConsent=<personId>`; store `verification_request_number` server-side (never returned to the browser), `idv_questions`; → `idv_in_progress` | `idv_unavailable` (the T3 shape).
+- `idv-start` (no-op returning `{skipped:true}` when `MM_IDV_MODE=off`): POST /Idv/getQuestions with `noOfQuestions=5`, `idType="SAID"`, `clientConsent="Y"` (confirmed by MortgageMAX, Louis Pires, 2026-09-28); store `verification_request_number` server-side (never returned to the browser), `idv_questions`; → `idv_in_progress` | `idv_unavailable` (the T3 shape).
 - `idv-answer`: validate each `answerNumber` ∈ that question's `possibleAnswers`; POST /Idv/checkAnswers; store `idv_result`; → `idv_passed` (store `statusCode` as `verification_success_code`) | `idv_failed`.
 Deploy: `supabase functions deploy mm-client --project-ref mxakigcvckhmyppoiuds`. Then, with Michael watching, set `MM_MODE=live` for a synthetic `personId` like `UAT-PMSA-<date>` and prove one consent lands (P2 already proved the call; this proves the deployed path).
 
