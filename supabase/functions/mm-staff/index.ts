@@ -11,6 +11,13 @@
 // POST { ref, action: 'manual-upload-url', contentType }            → one-time upload URL for the ID copy
 // POST { ref, action: 'manual-verify', path, attestationVersion, attested: true } → manual_verified
 // POST { ref, action: 'reissue-idv-link' }                          → { token, expiresAt } (shown once)
+// Administrators only:
+// POST { ref, action: 'assign', consultantId }                      → { status: 'ok' }
+// POST { action: 'staff-list' }                                     → { staff: [...] }
+// POST { action: 'staff-save', userId, role, active }               → { member }
+//
+// Roles (migration 20260930, _shared/access.ts): a consultant may act only on records assigned to
+// them; a record that is not theirs is answered exactly like one that does not exist.
 //
 // Every action with a ref first runs the stale-state recovery (C1, _shared/recover.ts).
 
@@ -31,6 +38,7 @@ import { mockFetch } from "../_shared/mock.ts";
 import { base64ToBytes, num, pdfIsEncrypted, summarise } from "../_shared/report.ts";
 import { recoverStale } from "../_shared/recover.ts";
 import { personIdFor } from "../_shared/idnumber.ts";
+import { accessFor, isMissingFunction, loadMember, type Member } from "../_shared/access.ts";
 import {
   ATTESTATION,
   ID_DOC_BUCKET,
@@ -92,6 +100,7 @@ Deno.serve(async (req) => {
   let body: {
     ref?: string; action?: string; reason?: string;
     contentType?: string; path?: string; attestationVersion?: string; attested?: boolean;
+    consultantId?: string; userId?: string; role?: string; active?: boolean;
   };
   try {
     body = await req.json();
@@ -99,6 +108,64 @@ Deno.serve(async (req) => {
     return fail("bad_request", "Body must be JSON", origin);
   }
   const { ref, action } = body;
+  if (!action) return fail("bad_request", "action is required", origin);
+
+  // ---- who is this, and may they? ---------------------------------------------------------
+  let member: Member | null;
+  try {
+    member = await loadMember(sb, user.id);
+  } catch (e) {
+    console.error(JSON.stringify({ event: "mm_staff_error", action, message: String(e instanceof Error ? e.message : e) }));
+    return fail("server_error", "Something went wrong", origin);
+  }
+  if (!member) return fail("forbidden", "account_inactive", origin);
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (action === "staff-list" || action === "staff-save") {
+    if (accessFor(member, action, user.id) !== "ok") return fail("forbidden", "admin_only", origin);
+    if (member.legacy) return fail("invalid_state", "roles_not_installed", origin);
+    try {
+      if (action === "staff-save") {
+        if (!UUID.test(String(body.userId ?? "")) || (body.role !== "admin" && body.role !== "consultant") || typeof body.active !== "boolean") {
+          return fail("bad_request", "userId, role and active are required", origin);
+        }
+        const known = await sb.auth.admin.getUserById(body.userId as string);
+        if (known.error || !known.data?.user) return fail("bad_request", "No such login", origin);
+        const up = await sb.rpc("upsert_staff_member", { p_user: body.userId, p_role: body.role, p_active: body.active, p_by: user.id });
+        if (up.error) {
+          if (/last_admin/.test(up.error.message ?? "")) return fail("invalid_state", "last_admin", origin);
+          throw new Error(`server_error: ${up.error.message}`);
+        }
+        console.log(JSON.stringify({ event: "staff_saved", by: user.id, user: body.userId, role: body.role, active: body.active }));
+        const m = up.data as Record<string, unknown>;
+        return ok({ member: { userId: m.user_id, role: m.role, active: m.active, linkCode: m.link_code } }, origin);
+      }
+      // staff-list: every login, with its role if it has one (a login without one can see nothing).
+      const users = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
+      if (users.error) throw new Error(`server_error: ${users.error.message}`);
+      const [members, profiles, owned] = await Promise.all([
+        sb.from("staff_members").select("user_id, role, active, link_code"),
+        sb.from("staff_profiles").select("user_id, full_name"),
+        sb.from("credit_checks").select("consultant_id").not("consultant_id", "is", null),
+      ]);
+      for (const q of [members, profiles, owned]) if (q.error) throw new Error(`server_error: ${q.error.message}`);
+      const by = <T extends { user_id: string }>(rows: T[] | null) => new Map((rows ?? []).map((r) => [r.user_id, r]));
+      const mm = by(members.data as Array<{ user_id: string; role: string; active: boolean; link_code: string | null }>);
+      const pp = by(profiles.data as Array<{ user_id: string; full_name: string }>);
+      const counts = new Map<string, number>();
+      for (const r of (owned.data ?? []) as Array<{ consultant_id: string }>) counts.set(r.consultant_id, (counts.get(r.consultant_id) ?? 0) + 1);
+      const staff = users.data.users.map((u) => ({
+        userId: u.id, email: u.email ?? "", fullName: pp.get(u.id)?.full_name ?? "",
+        role: mm.get(u.id)?.role ?? null, active: mm.get(u.id)?.active ?? false,
+        linkCode: mm.get(u.id)?.link_code ?? null, clients: counts.get(u.id) ?? 0, isMe: u.id === user.id,
+      })).sort((a, b) => (a.fullName || a.email).localeCompare(b.fullName || b.email));
+      return ok({ staff }, origin);
+    } catch (e) {
+      console.error(JSON.stringify({ event: "mm_staff_error", action, message: String(e instanceof Error ? e.message : e) }));
+      return fail("server_error", "Something went wrong", origin);
+    }
+  }
+
   if (action === "config") {
     // What admin.html needs to render the right controls — including the attestation wording, so
     // the page shows exactly the text the server will store.
@@ -109,12 +176,18 @@ Deno.serve(async (req) => {
       allowPassport: Deno.env.get("ALLOW_PASSPORT") === "true",
       attestation: ATTESTATION,
       idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: Object.keys(ID_DOC_TYPES) },
+      // roles: false until migration 20260930 is applied (then everyone behaves as an administrator)
+      me: { userId: user.id, role: member.role, linkCode: member.linkCode, roles: !member.legacy },
     }, origin);
   }
-  if (!ref || !action) return fail("bad_request", "ref and action are required", origin);
+  if (!ref) return fail("bad_request", "ref and action are required", origin);
 
   const { data: row } = await sb.from("credit_checks").select("*").eq("ref", ref).maybeSingle();
   if (!row) return fail("bad_request", "No such record", origin);
+  const access = accessFor(member, action, user.id, row);
+  // A colleague's record is answered exactly like a missing one: its existence is not this user's business.
+  if (access === "not_yours") return fail("bad_request", "No such record", origin);
+  if (access !== "ok") return fail("forbidden", access === "admin_only" ? "admin_only" : "account_inactive", origin);
 
   const mode: Mode = Deno.env.get("MM_MODE") === "live" ? "live" : "mock";
   const idvMode: IdvMode = idvModeFromEnv();
@@ -134,6 +207,21 @@ Deno.serve(async (req) => {
     // the answer window, are recovered before ANY action — never auto-retried (the bureau may
     // already have processed and billed a check).
     await recoverStale(sb, row);
+
+    // ======================================================================================
+    if (action === "assign") {
+      // Administrator only (accessFor). The database function enforces the rule that clients do
+      // not move: only an unassigned record, or one whose consultant is no longer active.
+      if (!UUID.test(String(body.consultantId ?? ""))) return fail("bad_request", "consultantId is required", origin);
+      const a = await sb.rpc("assign_consultant", { p_ref: ref, p_consultant: body.consultantId, p_by: user.id, p_by_label: staffLabel });
+      if (a.error) {
+        if (isMissingFunction(a.error)) return fail("invalid_state", "roles_not_installed", origin);
+        throw new Error(`server_error: ${a.error.message}`);
+      }
+      if (a.data === "ok") return ok({ status: "ok" }, origin);
+      if (a.data === "not_found") return fail("bad_request", "No such record", origin);
+      return fail("invalid_state", `assign_${String(a.data)}`, origin); // assign_not_staff | assign_already_assigned
+    }
 
     // ======================================================================================
     if (action === "recover") return ok({ status: row.status }, origin);

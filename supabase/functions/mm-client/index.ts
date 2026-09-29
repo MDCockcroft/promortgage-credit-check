@@ -13,7 +13,8 @@
 // back a one-time otp_session (sha256 stored) that alone may ask for 'resend-otp'.
 //
 // POST { action: 'consent-types' }
-// POST { action: 'submit', payload }                → { ref, otp_session, sms, demo_otp (not live) }
+// POST { action: 'consultant', code }               → { name } (first name for a personal link, or null)
+// POST { action: 'submit', payload, consultant_code? } → { ref, otp_session, sms, demo_otp (not live) }
 // POST { action: 'resend-otp', ref, otp_session }   → { sent, reason?, retryAfter, sendsLeft }
 // POST { ref, idv_token, action: 'register-consent' | 'idv-start' | 'idv-answer' | 'idv-expire', answers? }
 
@@ -26,6 +27,7 @@ import { type Ctx, idvModeFromEnv, type Mode, publicConsentTypes, registerConsen
 import { recoverStale } from "../_shared/recover.ts";
 import { idvIdType, personIdFor } from "../_shared/idnumber.ts";
 import { IDV_ANSWER_WINDOW_MS, MAX_IDV_ROUNDS } from "../_shared/states.ts";
+import { isMissingFunction, validLinkCode } from "../_shared/access.ts";
 import {
   OTP_COOLDOWN_S, OTP_FAILED_RETRY_S, OTP_MAX_PER_CELL_24H, OTP_MAX_SENDS, otpMessage, sendSms, type SmsConfig, smsConfigFromEnv, smsGuard,
 } from "../_shared/sms.ts";
@@ -90,7 +92,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight(origin);
   if (req.method !== "POST") return fail("bad_request", "POST only", origin);
 
-  let body: { ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown; otp_session?: string };
+  let body: {
+    ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown; otp_session?: string;
+    code?: unknown; consultant_code?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -128,6 +133,17 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ---- public: whose personal link is this? (first name only; null for an unknown code) ------
+  if (action === "consultant") {
+    if (!validLinkCode(body.code)) return ok({ name: null }, origin);
+    const c = await sb.rpc("consultant_by_code", { p_code: body.code });
+    if (c.error) {
+      if (!isMissingFunction(c.error)) console.error(JSON.stringify({ event: "mm_client_error", action, message: c.error.message }));
+      return ok({ name: null }, origin);
+    }
+    return ok({ name: typeof c.data === "string" && c.data ? c.data : null }, origin);
+  }
+
   // ---- the form, and its SMS code ------------------------------------------------------------
   // The browser no longer calls submit_credit_check itself: the code must never reach it (live).
   if (action === "submit" || action === "resend-otp") {
@@ -154,6 +170,15 @@ Deno.serve(async (req) => {
           throw new Error(`server_error: ${m}`);
         }
         const d = sub.data as { ref: string; demo_otp?: string };
+        // Submitted through a consultant's personal link: the record is theirs. Anything else (no
+        // code, an unknown or deactivated one, roles not installed) leaves it unassigned for an
+        // administrator to hand out - never a reason to refuse the client's application.
+        if (validLinkCode(body.consultant_code)) {
+          const at = await sb.rpc("attach_consultant", { p_ref: d.ref, p_code: body.consultant_code });
+          if (at.error && !isMissingFunction(at.error)) {
+            console.error(JSON.stringify({ event: "attach_consultant_failed", ref: d.ref, message: at.error.message }));
+          }
+        }
         const session = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
         const out = await sendCode(sb, sms, d.ref, await sha256Hex(session), false);
         if (out.missing) {
