@@ -16,7 +16,8 @@ grant execute on all functions in schema extensions to anon, authenticated, serv
 alter database postgres set search_path = public, extensions;
 
 create schema auth;
-create table auth.users (id uuid primary key default gen_random_uuid(), email text);
+create table auth.users (id uuid primary key default gen_random_uuid(), email text,
+  email_confirmed_at timestamptz default now(), deleted_at timestamptz, is_anonymous boolean default false, banned_until timestamptz);
 -- The signed-in user, as PostgREST sets it: select set_config('request.jwt.claim.sub', '<uuid>', false)
 create function auth.uid() returns uuid language sql stable
   as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;

@@ -456,7 +456,7 @@
     <button class="btn btn-ghost btn-sm" id="nudgeBtn" type="button">Add my details</button>
   </div>
 
-  <div class="callout callout-error" id="inactiveBox" hidden>
+  <div class="callout callout-error" id="inactiveBox" role="alert" hidden>
     <span class="callout-tag">No access</span>
     <p>Your login is not active on this system. If you think this is a mistake, ask your administrator.</p>
   </div>
@@ -471,8 +471,14 @@
     <p class="msg" id="myLinkMsg" role="status" aria-live="polite"></p>
   </div>
 
+  <div class="callout callout-error" id="staffFailBox" role="alert" hidden>
+    <span class="callout-tag">Staff list not loaded</span>
+    <p>We couldn&rsquo;t load the list of staff, so consultant names and assignment are unavailable. Your clients&rsquo; records are not affected.</p>
+    <button class="btn btn-ghost btn-sm" id="staffRetry" type="button">Try again</button>
+  </div>
+
   <div class="callout callout-demo" id="unassignedBox" hidden>
-    <span class="callout-tag">Not assigned</span>
+    <span class="callout-tag">Needs assigning</span>
     <p id="unassignedText"></p>
     <button class="btn btn-ghost btn-sm" id="unassignedShow" type="button">Show them</button>
   </div>
@@ -494,7 +500,7 @@
     </div>
     <div class="field narrow" id="consultantFilterField" hidden>
       <label for="consultantFilter">Consultant</label>
-      <select id="consultantFilter"><option value="">All</option></select>
+      <select id="consultantFilter"><option value="">All</option><option value="_none">Needs assigning</option></select>
     </div>
   </div>
 
@@ -607,7 +613,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260929-2"></script>
+<script src="assets/store.js?v=20260929-3"></script>
 <script>
 (function () {
   'use strict';
@@ -623,6 +629,7 @@
   var noAccess = false; // signed in, but no active membership
   var staff = [];       // administrators only: every login
   var staffById = {};
+  var staffFailed = false; // the last load failed: the list above is the last good one (or empty)
   function rolesOn() { return sysCfg.me.roles === true; }
   function isAdmin() { return sysCfg.me.role === 'admin'; }
   function adminView() { return rolesOn() && isAdmin(); }
@@ -632,12 +639,13 @@
     if (!m) return id === sysCfg.me.userId ? 'You' : 'Consultant';
     return (m.fullName || m.email || 'Consultant') + (m.active ? '' : ' (no longer active)');
   }
-  function assignable(r) {
-    if (!adminView()) return false;
+  /* Unassigned, or assigned to someone who is no longer active (has left). */
+  function needsAssigning(r) {
     if (!r.consultantId) return true;
     var m = staffById[r.consultantId];
     return !!m && !m.active;
   }
+  function assignable(r) { return adminView() && !staffFailed && needsAssigning(r); }
   var cfgLoaded = false;
   var currentRef = null;      // record open in the detail dialog
   var currentRec = null;
@@ -936,18 +944,19 @@
     var cf = adminView() ? $('consultantFilter').value : '';
     var rows = all.filter(function (r) {
       if (sf && bucketFor(r) !== sf) return false;
-      if (cf === '_none' ? !!r.consultantId : (cf && r.consultantId !== cf)) return false;
+      if (cf === '_none' ? !needsAssigning(r) : (cf && r.consultantId !== cf)) return false;
       if (!q) return true;
       return (r.firstNames + ' ' + r.surname + ' ' + r.ref + ' ' + (r.idNumber || '') + ' ' + (r.passportNumber || ''))
         .toLowerCase().indexOf(q) !== -1;
     });
 
     renderStats(all);
-    var loose = adminView() ? all.filter(function (r) { return !r.consultantId; }).length : 0;
+    var loose = adminView() ? all.filter(needsAssigning).length : 0;
     $('unassignedBox').hidden = !loose;
     if (loose) $('unassignedText').textContent = loose === 1
-      ? '1 application is not assigned to a consultant yet. Only administrators can see it.'
-      : loose + ' applications are not assigned to a consultant yet. Only administrators can see them.';
+      ? '1 application has no active consultant: it is unassigned, or its consultant has left. Only administrators can see it.'
+      : loose + ' applications have no active consultant: they are unassigned, or their consultant has left. Only administrators can see them.';
+    $('staffFailBox').hidden = !(adminView() && staffFailed);
     $('thConsultant').hidden = !adminView();
 
     var body = $('regBody');
@@ -969,7 +978,7 @@
       ]));
     });
     if (all.length && !rows.length) {
-      body.appendChild(el('tr', null, el('td', { colspan: 9 },
+      body.appendChild(el('tr', null, el('td', { colspan: adminView() ? 9 : 8 },
         el('em', { text: 'No submissions match the current search or filter.' }))));
     }
   }
@@ -977,7 +986,8 @@
   /* ================= detail dialog ================= */
   function openDetail(ref) {
     if (busy && dlg.open) return Promise.resolve();
-    return PMStore.get(ref).then(function (r) {
+    /* administrators: a colleague may have changed the staff list since it was loaded */
+    return (adminView() ? loadStaff() : Promise.resolve()).then(function () { return PMStore.get(ref); }).then(function (r) {
       if (!r) {
         setMsg('pageMsg', 'That record no longer exists.', 'err');
         render();
@@ -1499,6 +1509,10 @@
       ['Assigned to', consultantLabel(r.consultantId)],
       r.assignedAt ? ['Since', fmtDate(r.assignedAt)] : null
     ]));
+    if (staffFailed) {
+      s.appendChild(el('p', { className: 'note', text: 'The staff list could not be loaded, so this record cannot be assigned right now. Close it and use “Try again” at the top of the page.' }));
+      return s;
+    }
     if (!assignable(r)) {
       s.appendChild(el('p', { className: 'note', text: 'Clients stay with their consultant. A record can be reassigned only once its consultant is no longer active.' }));
       return s;
@@ -1542,8 +1556,12 @@
       b.disabled = false;
       b.textContent = label;
       var m = staffError(err, 'assign');
-      if (dlg.open && currentRef === ref && $('assignMsg')) setMsg('assignMsg', m.text, 'err', m.sub);
-      else setMsg('pageMsg', ref + ': ' + m.text, 'err', m.sub);
+      var moved = err && (err.code === 'invalid_state' || err.code === 'forbidden' || err.code === 'bad_request');
+      if ($('assignTo') && moved) $('assignTo').value = ''; /* or the open form would block every refresh */
+      if (dlg.open && currentRef === ref) {
+        if (moved) { pushFlash('dlgMsg', m.text, 'err', m.sub); loadStaff().then(function () { reloadDetail(ref, 'dlgTitle'); }); }
+        else if ($('assignMsg')) setMsg('assignMsg', m.text, 'err', m.sub);
+      } else setMsg('pageMsg', ref + ': ' + m.text, 'err', m.sub);
     });
   }
 
@@ -2380,7 +2398,7 @@
     $('pfCell').value = p.cell || '';
     $('pfBranch').value = p.branch_name || '';
   }
-  function updateNudge() { $('profileNudge').hidden = !!(profile && profile.full_name); }
+  function updateNudge() { $('profileNudge').hidden = noAccess || !!(profile && profile.full_name); }
   function loadProfile() {
     return PMStore.myProfile().then(function (p) {
       profile = p || null;
@@ -2489,7 +2507,7 @@
   function showInactive() {
     noAccess = true;
     $('regBody').textContent = '';
-    ['configWarn', 'profileNudge', 'myLinkBox', 'unassignedBox'].forEach(function (id) { $(id).hidden = true; });
+    ['configWarn', 'profileNudge', 'myLinkBox', 'unassignedBox', 'staffFailBox'].forEach(function (id) { $(id).hidden = true; });
     ['stats', 'regTable'].forEach(function (id) { $(id).hidden = true; });
     document.querySelector('.controls').hidden = true;
     $('emptyState').hidden = true;
@@ -2533,19 +2551,35 @@
       staffById = {};
       staff.forEach(function (m) { staffById[m.userId] = m; });
       var sel = $('consultantFilter'), keep = sel.value;
+      staffFailed = false;
       sel.textContent = '';
       sel.appendChild(el('option', { value: '', text: 'All' }));
-      sel.appendChild(el('option', { value: '_none', text: 'Unassigned' }));
+      sel.appendChild(el('option', { value: '_none', text: 'Needs assigning' }));
       staff.filter(function (m) { return m.role; }).forEach(function (m) {
         sel.appendChild(el('option', { value: m.userId, text: consultantLabel(m.userId) }));
       });
       sel.value = keep;
       if (sel.value !== keep) sel.value = '';
+      return true;
     }).catch(function (err) {
+      /* keep the last good list: wiping it would show every client as "Consultant" and hide why */
       console.error('staff list failed:', err);
-      staff = []; staffById = {};
+      staffFailed = true;
+      return false;
+    }).then(function (okLoad) {
+      $('staffFailBox').hidden = !(adminView() && staffFailed);
+      return okLoad;
     });
   }
+  $('staffRetry').addEventListener('click', function () {
+    var b = $('staffRetry');
+    b.disabled = true;
+    loadStaff().then(function (okLoad) {
+      b.disabled = false;
+      render();
+      setMsg('pageMsg', okLoad ? 'Staff list loaded.' : 'The staff list still could not be loaded. Check your connection and try again.', okLoad ? 'ok' : 'err');
+    });
+  });
   function personalLink(code) {
     var url = new URL(clientFormHref(), window.location.href);
     url.searchParams.set('c', code);
@@ -2554,16 +2588,23 @@
   function renderStaff() {
     var box = $('staffList');
     box.textContent = '';
+    if (staffFailed) {
+      box.appendChild(el('p', { className: 'small', text: 'The staff list could not be loaded. Close this window and try again in a moment.' }));
+      if (!staff.length) return;
+      box.appendChild(el('p', { className: 'small', text: 'Showing the list as it was when it last loaded:' }));
+    }
     if (!staff.length) { box.appendChild(el('p', { className: 'small', text: 'No logins found.' })); return; }
     staff.forEach(function (m, i) {
+      var who = m.fullName || m.email;
       var role = el('select', { id: 'stRole' + i, 'aria-label': 'Role for ' + (m.fullName || m.email) }, [
         m.role ? null : el('option', { value: '', text: 'No access yet' }),
         el('option', { value: 'consultant', text: 'Consultant' }),
         el('option', { value: 'admin', text: 'Administrator' })
       ]);
       role.value = m.role || '';
-      var active = el('input', { type: 'checkbox', id: 'stActive' + i });
-      active.checked = !!m.active;
+      var active = el('input', { type: 'checkbox', id: 'stActive' + i, 'aria-label': 'Active: ' + who });
+      /* a login being given its first role should be able to sign in: ticked unless unticked */
+      active.checked = m.role ? !!m.active : true;
       var save = btn('Save', 'btn btn-ghost btn-sm', function () { onStaffSave(m, role, active, save); }, 'stSave' + i);
       save.setAttribute('aria-label', 'Save ' + (m.fullName || m.email));
       var meta = [m.clients === 1 ? '1 client' : m.clients + ' clients'];
@@ -2577,7 +2618,11 @@
         el('div', { className: 'meta' }, [
           el('div', { text: meta.join(' · ') }),
           m.linkCode && m.role && m.active
-            ? btn('Copy their link', 'btn btn-ghost btn-sm', function () { copyText(personalLink(m.linkCode), 'staffMsg', 'Link for ' + (m.fullName || m.email) + ' copied.'); })
+            ? (function () {
+                var cb = btn('Copy their link', 'btn btn-ghost btn-sm', function () { copyText(personalLink(m.linkCode), 'staffMsg', 'Link for ' + who + ' copied.'); });
+                cb.setAttribute('aria-label', 'Copy the personal link of ' + who);
+                return cb;
+              })()
             : null
         ]),
         save
@@ -2598,8 +2643,12 @@
     b.textContent = 'Saving…';
     setMsg('staffMsg', '');
     var id = b.id;
+    var mine = m.isMe || m.userId === sysCfg.me.userId;
+    var selfChange = mine && (roleSel.value !== m.role || activeChk.checked !== !!m.active);
     safe(function () { return PMStore.staffSave(m.userId, roleSel.value, activeChk.checked); }).then(function () {
       busy = false;
+      /* my own role or access changed: what this page may show has changed with it */
+      if (selfChange) { window.location.reload(); return null; }
       return loadStaff().then(function () {
         renderStaff();
         var left = !activeChk.checked && m.clients > 0;
@@ -2616,6 +2665,7 @@
       b.textContent = 'Save';
       var e2 = staffError(err, 'staff');
       setMsg('staffMsg', e2.text, 'err', e2.sub);
+      b.focus();
     });
   }
   $('staffBtn').addEventListener('click', function () {
@@ -2665,6 +2715,7 @@
       if (err && err.code === 'forbidden') { showInactive(); return; }
       $('configWarn').hidden = false;
     }).then(function () {
+      if (rolesOn()) PMStore.rolesAreOn(); /* read the ownership columns again if an earlier read went without */
       applyRoleUi();
       return adminView() ? loadStaff() : null;
     }).then(function () {

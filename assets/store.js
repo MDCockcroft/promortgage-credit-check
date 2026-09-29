@@ -25,7 +25,7 @@
      The code is not a secret (it only says whose client this is). Kept for the tab's session so
      it survives a reload; a code that is present but malformed is ignored rather than replaced by
      an older one. Same alphabet as the server (new_link_code / _shared/access.ts). */
-  var LINK_CODE_RE = /^[a-hj-km-np-z2-9]{6}$/;
+  var LINK_CODE_RE = /^[a-hj-km-np-z2-9]{8}$/;
   function validLinkCode(v) { return typeof v === 'string' && LINK_CODE_RE.test(v); }
   var consultantCode = (function () {
     var given = params.get('c');
@@ -59,7 +59,7 @@
 
   /* Demo-only: which role to simulate. ?role=consultant | none (a login that is not active);
      default administrator. ?roles=off simulates the system before migration 20260930. */
-  var DEMO_ROLE = { consultant: 'consultant', none: 'none' }[params.get('role')] || 'admin';
+  var DEMO_ROLE = params.get('role') === 'consultant' ? 'consultant' : params.get('role') === 'none' ? 'none' : 'admin';
   var DEMO_ROLES_ON = params.get('roles') !== 'off';
   var DEMO_ME = 'demo-me';
   var STAFF_KEY = 'pm_demo_staff_v1';
@@ -68,9 +68,9 @@
     try { list = JSON.parse(localStorage.getItem(STAFF_KEY)); } catch (e) { list = null; }
     if (!Array.isArray(list)) {
       list = [
-        { userId: DEMO_ME, email: 'you@example.com', fullName: 'Demo User', role: 'admin', active: true, linkCode: 'demx22' },
-        { userId: 'demo-c1', email: 'thandi@example.com', fullName: 'Thandi Mokoena', role: 'consultant', active: true, linkCode: 'thand2' },
-        { userId: 'demo-c2', email: 'pieter@example.com', fullName: 'Pieter Botha', role: 'consultant', active: false, linkCode: 'pjb234' },
+        { userId: DEMO_ME, email: 'you@example.com', fullName: 'Demo User', role: 'admin', active: true, linkCode: 'demx22zz' },
+        { userId: 'demo-c1', email: 'thandi@example.com', fullName: 'Thandi Mokoena', role: 'consultant', active: true, linkCode: 'thand2zz' },
+        { userId: 'demo-c2', email: 'pieter@example.com', fullName: 'Pieter Botha', role: 'consultant', active: false, linkCode: 'pjb234zz' },
         { userId: 'demo-new', email: 'new.login@example.com', fullName: '', role: null, active: false, linkCode: null }
       ];
     }
@@ -127,10 +127,14 @@
      database answers 42703: read without them from then on, so this page works either side of it. */
   var ROLE_COLUMNS = ', consultant_id, assigned_at';
   var roleColumns = true;
+  var rolesConfirmed = false; /* the server has said roles are installed: the columns must exist */
   function selectChecks(columns, build) {
     function run(withRoles) { return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : ''))); }
     return run(roleColumns).then(function (res) {
-      if (res.error && roleColumns && res.error.code === '42703') { roleColumns = false; return run(false); }
+      /* Only for OUR two columns, and never once roles are confirmed: then a missing column is a
+         real fault, and reading without ownership would show every record as unassigned. */
+      var ours = res.error && res.error.code === '42703' && /consultant_id|assigned_at/.test(String(res.error.message || ''));
+      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false); }
       return res;
     });
   }
@@ -787,6 +791,10 @@
       return Promise.resolve(found && demoCanSee(found) ? found : null);
     },
 
+    /* The server reports that roles are installed (config → me.roles): read ownership from now on,
+       even if an earlier read on this page went without it. */
+    rolesAreOn: function () { rolesConfirmed = true; roleColumns = true; },
+
     /* ===== roles (migration 20260930): administrators only ===== */
 
     /* Every login with its role, personal link code and number of clients.
@@ -810,7 +818,7 @@
       var otherAdmins = list.filter(function (x) { return x.userId !== userId && x.role === 'admin' && x.active; }).length;
       if (m.role === 'admin' && m.active && (role !== 'admin' || !active) && !otherAdmins) return demoFail('invalid_state', 'last_admin');
       m.role = role; m.active = !!active;
-      if (!m.linkCode) m.linkCode = 'dm' + Math.random().toString(36).replace(/[^a-hj-km-np-z2-9]/g, '').slice(0, 4).padEnd(4, 'x');
+      if (!m.linkCode) m.linkCode = 'dm' + Math.random().toString(36).replace(/[^a-hj-km-np-z2-9]/g, '').slice(0, 6).padEnd(6, 'x');
       saveDemoStaff(list);
       return Promise.resolve({ member: { userId: m.userId, role: m.role, active: m.active, linkCode: m.linkCode } });
     },

@@ -138,7 +138,9 @@ Deno.serve(async (req) => {
     if (!validLinkCode(body.code)) return ok({ name: null }, origin);
     const c = await sb.rpc("consultant_by_code", { p_code: body.code });
     if (c.error) {
-      if (!isMissingFunction(c.error)) console.error(JSON.stringify({ event: "mm_client_error", action, message: c.error.message }));
+      console.error(JSON.stringify({
+        event: "consultant_lookup_failed", message: isMissingFunction(c.error) ? "roles_not_installed" : c.error.message,
+      }));
       return ok({ name: null }, origin);
     }
     return ok({ name: typeof c.data === "string" && c.data ? c.data : null }, origin);
@@ -175,8 +177,15 @@ Deno.serve(async (req) => {
         // administrator to hand out - never a reason to refuse the client's application.
         if (validLinkCode(body.consultant_code)) {
           const at = await sb.rpc("attach_consultant", { p_ref: d.ref, p_code: body.consultant_code });
-          if (at.error && !isMissingFunction(at.error)) {
-            console.error(JSON.stringify({ event: "attach_consultant_failed", ref: d.ref, message: at.error.message }));
+          // Never silent: every application that arrives through a link but lands unassigned is
+          // logged (the database also notes an inactive link on the record itself).
+          if (at.error) {
+            console.error(JSON.stringify({
+              event: "attach_consultant_failed", ref: d.ref,
+              message: isMissingFunction(at.error) ? "roles_not_installed" : at.error.message,
+            }));
+          } else if (at.data !== true) {
+            console.error(JSON.stringify({ event: "attach_consultant_not_attached", ref: d.ref }));
           }
         }
         const session = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");

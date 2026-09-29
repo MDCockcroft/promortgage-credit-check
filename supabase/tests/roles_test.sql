@@ -13,16 +13,18 @@ do $$
 declare m record;
 begin
   select * into m from staff_members where user_id = '00000000-0000-0000-0000-00000000000a';
-  if m.role is distinct from 'admin' or not m.active or m.link_code !~ '^[a-hj-km-np-z2-9]{6}$' then
+  if m.role is distinct from 'admin' or not m.active or m.link_code !~ '^[a-hj-km-np-z2-9]{8}$' then
     raise exception 'T0 FAIL: existing login not seeded as admin: %', m; end if;
   if exists (select 1 from staff_members where user_id = '00000000-0000-0000-0000-00000000000e') then
     raise exception 'T0 FAIL: a re-run promoted a login created later'; end if;
+  if (select count(*) from staff_members) <> 1 then
+    raise exception 'T0 FAIL: the seed took an unconfirmed, anonymous or banned login: %', (select count(*) from staff_members); end if;
   if exists (select 1 from pg_policies where tablename = 'credit_checks' and policyname = 'staff_all') then
     raise exception 'T0 FAIL: staff_all still exists'; end if;
   if exists (select 1 from pg_policies where schemaname in ('public', 'storage') and roles @> '{authenticated}'
                and qual = 'true') then
     raise exception 'T0 FAIL: a policy still lets every signed-in user read'; end if;
-  raise notice 'T0 ok: seed made the existing login an admin; re-run promoted nobody; no open policy left';
+  raise notice 'T0 ok: seed took only the confirmed login; re-run promoted nobody; no open policy left';
 end $$;
 
 -- ---------- fixtures ----------
@@ -170,13 +172,16 @@ begin
   if attach_consultant('PM-R5', upper(b_code)) or attach_consultant('PM-R5', b_code || 'x') or attach_consultant('PM-R5', null)
      or attach_consultant('PM-R5', d_code) or attach_consultant('PM-NOPE', b_code) then
     raise exception 'T7 FAIL: a bad, inactive or unknown link attached'; end if;
+  select audit -> -1 ->> 'event' into ev from credit_checks where ref = 'PM-R5';
+  if ev is distinct from 'Arrived through a personal link that is not active (' || d_code || ') - not assigned to anyone' then
+    raise exception 'T7 FAIL: an inactive link left no trace on the record: %', ev; end if;
   if not attach_consultant('PM-R5', b_code) then raise exception 'T7 FAIL: a good link did not attach'; end if;
   if attach_consultant('PM-R5', c_code) then raise exception 'T7 FAIL: a second link took an assigned record'; end if;
   select audit -> -1 ->> 'event' into ev from credit_checks where ref = 'PM-R5' and consultant_id = '00000000-0000-0000-0000-00000000000b';
   if ev is distinct from 'Received through the personal link of Bongi Dlamini' then raise exception 'T7 FAIL: audit %', ev; end if;
-  if consultant_by_code(b_code) <> 'Bongi' or consultant_by_code('zzzzzz') is not null or consultant_by_code(d_code) is not null
+  if consultant_by_code(b_code) <> 'Bongi' or consultant_by_code('zzzzzzzz') is not null or consultant_by_code(d_code) is not null
      or consultant_by_code('x') is not null then raise exception 'T7 FAIL: consultant_by_code'; end if;
-  raise notice 'T7 ok: a personal link attaches an unassigned record once; bad, inactive and second links do nothing';
+  raise notice 'T7 ok: a personal link attaches an unassigned record once; an inactive link is noted on the record; bad and second links do nothing';
 
   -- T8 assignment by an administrator
   if assign_consultant('PM-NOPE', '00000000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-00000000000a', 'Ada') <> 'not_found'
@@ -222,3 +227,23 @@ do $$ declare n int; begin
   raise notice 'T10 ok: the owner gets the delete signal; evidence of a deleted record is for administrators only';
 end $$;
 reset role;
+
+-- ---------- T11: no route leaves the system without an administrator, or a client without a trace ----------
+-- (after T9: B is the only administrator; A is a consultant with two clients, C has one)
+do $$ begin
+  begin delete from staff_members where user_id = '00000000-0000-0000-0000-00000000000b';
+    raise exception 'T11 FAIL: deleted the last administrator in SQL'; exception when sqlstate '22023' then null; end;
+  begin update staff_members set active = false where role = 'admin';
+    raise exception 'T11 FAIL: deactivated every administrator in SQL'; exception when sqlstate '22023' then null; end;
+  begin delete from staff_members;
+    raise exception 'T11 FAIL: emptied staff_members'; exception when sqlstate '22023' then null; end;
+  begin delete from auth.users where id = '00000000-0000-0000-0000-00000000000b';
+    raise exception 'T11 FAIL: deleted the last administrator''s login'; exception when sqlstate '22023' or foreign_key_violation then null; end;
+  begin delete from auth.users where id = '00000000-0000-0000-0000-00000000000c';
+    raise exception 'T11 FAIL: deleted a login that still has clients'; exception when foreign_key_violation then null; end;
+  -- a login with no clients and no administrator role can go
+  delete from auth.users where id = '00000000-0000-0000-0000-00000000000d';
+  if exists (select 1 from staff_members where user_id = '00000000-0000-0000-0000-00000000000d') then
+    raise exception 'T11 FAIL: membership outlived its login'; end if;
+  raise notice 'T11 ok: the last administrator cannot be removed by any route; a login with clients cannot be deleted';
+end $$;

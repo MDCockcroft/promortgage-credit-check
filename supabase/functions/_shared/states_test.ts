@@ -140,7 +140,7 @@ Deno.test("idv link re-issue: required mode only, a round left, SA ID, no withdr
 Deno.test("store.js link-code rule === server (access.ts); no code without a link", () => {
   const store = loadStore();
   assertEquals(store.consultantCode, null);
-  for (const v of ["k7m2pq", "abcdef", "234567", "K7M2PQ", "k7m2p", "k7m2pqx", "k7m2p0", "k7m2p1", "k7m2pl", "k7m2po", "k7m2pi", "", " k7m2pq", null, 123456]) {
+  for (const v of ["k7m2pq3x", "abcdefgh", "23456789", "K7M2PQ3X", "k7m2pq", "k7m2pq3xy", "k7m2pq30", "k7m2pq31", "k7m2pq3l", "k7m2pq3o", "k7m2pq3i", "", " k7m2pq3x", null, 12345678]) {
     assertEquals(store.validLinkCode(v), validLinkCode(v), String(v));
   }
 });

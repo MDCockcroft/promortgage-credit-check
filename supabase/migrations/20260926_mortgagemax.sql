@@ -1,6 +1,6 @@
 -- ============================================================
 -- Pro Mortgage credit-check — MortgageMax integration migration
--- Run AFTER supabase-setup.sql. Idempotent: safe to re-run.
+-- Run AFTER supabase-setup.sql. Safe to re-run ONLY until 20260930_consultant_roles.sql is applied (it then refuses).
 -- Paste into: Supabase dashboard → SQL Editor → New query → Run
 -- See BUILD-PLAN.md §1 (decisions) and §2 (flow + status machine).
 -- ============================================================
@@ -22,6 +22,15 @@
 -- working (it updated status from the browser). That is intended — it is
 -- replaced by the mm-staff Edge Function in BUILD-PLAN Step 7/9.
 -- ============================================================
+
+-- GUARD (added 2026-09-29): this file recreates "any signed-in user may read" rules. Once consultant
+-- roles exist (20260930), running it again would let every consultant see every client, so it refuses.
+do $$
+begin
+  if to_regclass('public.staff_members') is not null then
+    raise exception 'STOP: % is older than this database. It must not be run after 20260930_consultant_roles.sql - it would reopen every client record to every consultant.', '20260926_mortgagemax.sql';
+  end if;
+end $$;
 
 create extension if not exists pgcrypto;
 

@@ -8,9 +8,11 @@
 -- (confirmed 2026-09-29; quotation ARB-Q-2026-002 s2.1: Administrator + Consultant "own clients
 -- only"). Until now every signed-in user could read every record, report and ID copy.
 --
--- DEPLOY ORDER: safe to apply FIRST, on its own. On the first run every existing login becomes an
--- administrator (today that is one account), and administrators see everything — so nothing
--- changes for anyone until consultant accounts are created. The Edge Functions use the service
+-- DEPLOY ORDER: safe to apply FIRST, on its own. On the first run every confirmed, usable login
+-- that already exists becomes an administrator (today that is one account), and administrators
+-- see everything — so nothing changes for anyone until consultant accounts are created.
+-- CHECK FIRST: Authentication -> Users must show only the logins you expect.
+-- After this file, every OLDER .sql file refuses to run (they would reopen access). The Edge Functions use the service
 -- role and are NOT restricted by these rules; their own ownership checks ship next (stage 2) and
 -- must be live before the first consultant account is created.
 -- ============================================================
@@ -31,6 +33,10 @@
 
 begin;
 
+-- Is this the very first run? Decided BEFORE the table is created, and kept for this transaction
+-- only. An empty table is not "first run": it can become empty later, and must never re-seed.
+select set_config('pm.roles_first_run', case when to_regclass('public.staff_members') is null then '1' else '0' end, true);
+
 -- ------------------------------------------------------------
 -- 1. Staff membership
 -- ------------------------------------------------------------
@@ -47,10 +53,11 @@ alter table public.staff_members enable row level security;
 revoke all on table public.staff_members from anon;
 revoke insert, update, delete on table public.staff_members from authenticated;
 
--- Link codes: 6 characters, no look-alikes (0/o, 1/l/i), not guessable from a name.
+-- Link codes: 8 characters, no look-alikes (0/o, 1/l/i), not guessable from a name. 31^8 is about
+-- 850 billion, so guessing a live one through the public name lookup is not practical.
 create or replace function public.new_link_code()
 returns text
-language plpgsql security definer set search_path = public, extensions
+language plpgsql security definer set search_path = public, extensions, pg_temp
 as $$
 declare
   alphabet constant text := 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -58,9 +65,9 @@ declare
   b bytea;
 begin
   loop
-    b := gen_random_bytes(6);
+    b := gen_random_bytes(8);
     v := '';
-    for i in 0..5 loop
+    for i in 0..7 loop
       v := v || substr(alphabet, (get_byte(b, i) % length(alphabet)) + 1, 1);
     end loop;
     exit when not exists (select 1 from staff_members where link_code = v);
@@ -68,23 +75,53 @@ begin
   return v;
 end $$;
 
--- First run only: every existing login becomes an administrator, so applying this file changes
--- nothing for the people already using the system. Never on a re-run (a login created later must
--- be given its role deliberately, through upsert_staff_member).
+-- FIRST RUN ONLY: the logins that already use the system become administrators, so applying this
+-- file changes nothing for them. Only real, confirmed, usable logins - never an anonymous, banned,
+-- deleted or unconfirmed one. Never on a re-run, even if the table has been emptied since: a
+-- login created later is given its role deliberately, through upsert_staff_member.
+-- BEFORE APPLYING: check Authentication -> Users shows only the logins you expect.
 do $$
 begin
-  if not exists (select 1 from public.staff_members) then
+  if current_setting('pm.roles_first_run', true) = '1' then
     insert into public.staff_members (user_id, role, link_code)
-    select id, 'admin', public.new_link_code() from auth.users;
+    select u.id, 'admin', public.new_link_code()
+      from auth.users u
+     where u.email_confirmed_at is not null
+       and u.deleted_at is null
+       and coalesce(u.is_anonymous, false) = false
+       and (u.banned_until is null or u.banned_until < now());
+    -- Nobody to make an administrator: stop, rather than install rules that lock everyone out.
+    if not exists (select 1 from public.staff_members) then
+      raise exception 'STOP: no confirmed login exists to become the administrator. Create the first staff login, then run this file again.';
+    end if;
   end if;
 end $$;
+
+-- There is always at least one active administrator - whatever the route (the functions below,
+-- the SQL editor, or deleting a login in the dashboard, which cascades to this table).
+create or replace function public.staff_members_keep_admin()
+returns trigger
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+begin
+  if not exists (select 1 from staff_members where role = 'admin' and active) then
+    raise exception 'last_admin' using errcode = '22023',
+      hint = 'The system must keep one active administrator. Make someone else an administrator first.';
+  end if;
+  return null;
+end $$;
+drop trigger if exists staff_members_keep_admin on public.staff_members;
+create trigger staff_members_keep_admin
+  after update or delete on public.staff_members
+  for each statement execute function public.staff_members_keep_admin();
 
 -- ------------------------------------------------------------
 -- 2. Ownership of a record (the column comes first: the functions below are checked against it
 --    when they are created)
 -- ------------------------------------------------------------
 alter table public.credit_checks
-  add column if not exists consultant_id uuid references auth.users(id) on delete set null,
+  -- restrict: a login that still has clients cannot be deleted (deactivate it, reassign, then delete)
+  add column if not exists consultant_id uuid references auth.users(id) on delete restrict,
   add column if not exists assigned_at   timestamptz,
   add column if not exists assigned_by   uuid;
 create index if not exists credit_checks_consultant_idx on public.credit_checks (consultant_id, created_at desc);
@@ -95,21 +132,21 @@ create index if not exists credit_checks_consultant_idx on public.credit_checks 
 -- ------------------------------------------------------------
 create or replace function public.my_staff_role()
 returns text
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = public, pg_temp
 as $$
   select role from staff_members where user_id = auth.uid() and active
 $$;
 
 create or replace function public.is_staff()
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = public, pg_temp
 as $$
   select exists (select 1 from staff_members where user_id = auth.uid() and active)
 $$;
 
 create or replace function public.is_admin()
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = public, pg_temp
 as $$
   select exists (select 1 from staff_members where user_id = auth.uid() and active and role = 'admin')
 $$;
@@ -118,7 +155,7 @@ $$;
 -- ones whose record was deleted. Consultants: only a living record assigned to them.
 create or replace function public.can_see_ref(p_ref text)
 returns boolean
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = public, pg_temp
 as $$
   select public.is_admin()
       or (p_ref is not null and public.is_staff() and exists (
@@ -177,7 +214,7 @@ alter table public.credit_check_signals add column if not exists consultant_id u
 
 create or replace function public.signal_credit_check_change()
 returns trigger
-language plpgsql security definer set search_path = public
+language plpgsql security definer set search_path = public, pg_temp
 as $$
 begin
   insert into credit_check_signals (ref, status, op, consultant_id)
@@ -210,18 +247,25 @@ create policy "id-documents staff read" on storage.objects
 -- record, only to an ACTIVE member. Returns true when attached.
 create or replace function public.attach_consultant(p_ref text, p_code text)
 returns boolean
-language plpgsql security definer set search_path = public
+language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare
   v_user uuid;
   v_name text;
   n int;
 begin
-  if p_code is null or p_code !~ '^[a-z0-9]{6}$' then return false; end if;
+  if p_code is null or p_code !~ '^[a-z0-9]{8}$' then return false; end if;
   select m.user_id, p.full_name into v_user, v_name
     from staff_members m left join staff_profiles p on p.user_id = m.user_id
    where m.link_code = p_code and m.active;
-  if v_user is null then return false; end if;
+  if v_user is null then
+    -- Say so on the record: otherwise it just turns up unassigned and nobody knows why.
+    update credit_checks set audit = audit || jsonb_build_object(
+        'at', (extract(epoch from now()) * 1000)::bigint,
+        'event', 'Arrived through a personal link that is not active (' || p_code || ') - not assigned to anyone')
+     where ref = p_ref and consultant_id is null;
+    return false;
+  end if;
 
   update credit_checks set
     consultant_id = v_user,
@@ -239,7 +283,7 @@ end $$;
 -- Returns 'ok' | 'not_found' | 'not_staff' | 'already_assigned'.
 create or replace function public.assign_consultant(p_ref text, p_consultant uuid, p_by uuid, p_by_label text)
 returns text
-language plpgsql security definer set search_path = public
+language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare
   v_current uuid;
@@ -274,7 +318,7 @@ end $$;
 -- administrator. Returns the member, or raises 'last_admin'.
 create or replace function public.upsert_staff_member(p_user uuid, p_role text, p_active boolean, p_by uuid)
 returns jsonb
-language plpgsql security definer set search_path = public
+language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare
   r staff_members%rowtype;
@@ -302,11 +346,11 @@ end $$;
 -- The name the form shows for a personal link. First name only; null for an unknown or inactive code.
 create or replace function public.consultant_by_code(p_code text)
 returns text
-language sql stable security definer set search_path = public
+language sql stable security definer set search_path = public, pg_temp
 as $$
   select coalesce(nullif(split_part(btrim(p.full_name), ' ', 1), ''), 'your consultant')
     from staff_members m left join staff_profiles p on p.user_id = m.user_id
-   where p_code ~ '^[a-z0-9]{6}$' and m.link_code = p_code and m.active
+   where p_code ~ '^[a-z0-9]{8}$' and m.link_code = p_code and m.active
 $$;
 
 -- ------------------------------------------------------------
@@ -321,6 +365,7 @@ grant execute on function public.is_staff() to authenticated, service_role;
 grant execute on function public.is_admin() to authenticated, service_role;
 grant execute on function public.can_see_ref(text) to authenticated, service_role;
 
+revoke all on function public.staff_members_keep_admin() from public, anon, authenticated;
 revoke all on function public.new_link_code() from public, anon, authenticated;
 revoke all on function public.signal_credit_check_change() from public, anon, authenticated;
 revoke all on function public.attach_consultant(text, text) from public, anon, authenticated;

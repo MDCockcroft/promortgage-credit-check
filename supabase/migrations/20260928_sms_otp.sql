@@ -1,6 +1,6 @@
 -- ============================================================
 -- Pro Mortgage credit-check — SMS consent code (apply AFTER 20260927_hardening.sql)
--- Idempotent: safe to re-run. Paste into Supabase → SQL Editor → Run.
+-- Safe to re-run ONLY until 20260930_consultant_roles.sql is applied (it then refuses). Paste into Supabase → SQL Editor → Run.
 -- The whole file runs in ONE transaction: if any statement fails, nothing changes.
 -- ============================================================
 -- DEPLOY ORDER (front end before migration):
@@ -31,6 +31,16 @@
 -- ============================================================
 
 begin;
+-- GUARD (added 2026-09-29): this file recreates "any signed-in user may read" rules. Once consultant
+-- roles exist (20260930), running it again would let every consultant see every client, so it refuses.
+do $$
+begin
+  if to_regclass('public.staff_members') is not null then
+    raise exception 'STOP: % is older than this database. It must not be run after 20260930_consultant_roles.sql - it would reopen every client record to every consultant.', '20260928_sms_otp.sql';
+  end if;
+end $$;
+
+
 
 create extension if not exists pgcrypto;
 

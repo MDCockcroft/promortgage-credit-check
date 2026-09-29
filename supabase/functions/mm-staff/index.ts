@@ -115,15 +115,18 @@ Deno.serve(async (req) => {
   try {
     member = await loadMember(sb, user.id);
   } catch (e) {
-    console.error(JSON.stringify({ event: "mm_staff_error", action, message: String(e instanceof Error ? e.message : e) }));
-    return fail("server_error", "Something went wrong", origin);
+    // Fails closed: without a readable membership nobody is let in (see loadMember).
+    const msg = String(e instanceof Error ? e.message : e);
+    console.error(JSON.stringify({ event: "membership_unreadable", action, message: msg }));
+    return msg.startsWith("roles_not_installed")
+      ? fail("config_error", "roles_not_installed", origin)
+      : fail("server_error", "Something went wrong", origin);
   }
   if (!member) return fail("forbidden", "account_inactive", origin);
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   if (action === "staff-list" || action === "staff-save") {
     if (accessFor(member, action, user.id) !== "ok") return fail("forbidden", "admin_only", origin);
-    if (member.legacy) return fail("invalid_state", "roles_not_installed", origin);
     try {
       if (action === "staff-save") {
         if (!UUID.test(String(body.userId ?? "")) || (body.role !== "admin" && body.role !== "consultant") || typeof body.active !== "boolean") {
@@ -176,13 +179,18 @@ Deno.serve(async (req) => {
       allowPassport: Deno.env.get("ALLOW_PASSPORT") === "true",
       attestation: ATTESTATION,
       idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: Object.keys(ID_DOC_TYPES) },
-      // roles: false until migration 20260930 is applied (then everyone behaves as an administrator)
-      me: { userId: user.id, role: member.role, linkCode: member.linkCode, roles: !member.legacy },
+      // An older mm-staff sends no `me`; the page then hides everything to do with roles.
+      me: { userId: user.id, role: member.role, linkCode: member.linkCode, roles: true },
     }, origin);
   }
   if (!ref) return fail("bad_request", "ref and action are required", origin);
 
-  const { data: row } = await sb.from("credit_checks").select("*").eq("ref", ref).maybeSingle();
+  const { data: row, error: rowErr } = await sb.from("credit_checks").select("*").eq("ref", ref).maybeSingle();
+  if (rowErr) {
+    // Never let a database error pass for "No such record" - that answer has a meaning of its own.
+    console.error(JSON.stringify({ event: "mm_staff_error", action, message: rowErr.message }));
+    return fail("server_error", "Something went wrong", origin);
+  }
   if (!row) return fail("bad_request", "No such record", origin);
   const access = accessFor(member, action, user.id, row);
   // A colleague's record is answered exactly like a missing one: its existence is not this user's business.

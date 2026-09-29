@@ -1,10 +1,10 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { accessFor, ADMIN_ONLY_ACTIONS, isMissingFunction, isMissingTable, type Member, validLinkCode } from "./access.ts";
+import { accessFor, ADMIN_ONLY_ACTIONS, CONSULTANT_ACTIONS, isMissingFunction, isMissingTable, type Member, validLinkCode } from "./access.ts";
 
 const ME = "00000000-0000-0000-0000-00000000000b";
 const OTHER = "00000000-0000-0000-0000-00000000000c";
-const admin: Member = { role: "admin", linkCode: "abc234" };
-const consultant: Member = { role: "consultant", linkCode: "def567" };
+const admin: Member = { role: "admin", linkCode: "abc23456" };
+const consultant: Member = { role: "consultant", linkCode: "def56789" };
 // Every action mm-staff knows that works on a record.
 const RECORD_ACTIONS = ["recover", "clear-config-error", "register-consent", "run-check", "fetch-pdf", "refresh-consents",
   "record-withdrawal", "manual-upload-url", "manual-verify", "reissue-idv-link"];
@@ -33,13 +33,24 @@ Deno.test("consultant: own records only; never a colleague's, never an unassigne
   assertEquals(accessFor(consultant, "config", ME), "ok");
 });
 
-Deno.test("consultant: administrator-only actions are refused even on their own record", () => {
-  for (const a of ADMIN_ONLY_ACTIONS) assertEquals(accessFor(consultant, a, ME, { consultant_id: ME }), "admin_only", a);
+Deno.test("consultant: administrator-only actions are refused on their own record", () => {
+  for (const a of ["delete-record", "assign"]) assertEquals(accessFor(consultant, a, ME, { consultant_id: ME }), "admin_only", a);
+  for (const a of ["staff-list", "staff-save"]) assertEquals(accessFor(consultant, a, ME), "admin_only", a);
   assertEquals(ADMIN_ONLY_ACTIONS.includes("delete-record"), true); // deleting destroys audit evidence
 });
 
-Deno.test("an unknown action on a record is never allowed through by default", () => {
-  assertEquals(accessFor(consultant, "something-new", ME, { consultant_id: OTHER }), "not_yours");
+Deno.test("no action tells a consultant whether someone else's reference exists", () => {
+  // Same answer for a colleague's record and an unassigned one, administrator-only action or not.
+  for (const a of [...RECORD_ACTIONS, "delete-record", "assign", "something-new"]) {
+    assertEquals(accessFor(consultant, a, ME, { consultant_id: OTHER }), "not_yours", a);
+    assertEquals(accessFor(consultant, a, ME, { consultant_id: null }), "not_yours", a);
+  }
+});
+
+Deno.test("a consultant may do only what is listed; a new action is closed by default", () => {
+  assertEquals([...CONSULTANT_ACTIONS].sort(), ["config", ...RECORD_ACTIONS].sort());
+  assertEquals(accessFor(consultant, "something-new", ME, { consultant_id: ME }), "admin_only");
+  for (const a of ADMIN_ONLY_ACTIONS) assertEquals(CONSULTANT_ACTIONS.includes(a), false, a);
 });
 
 Deno.test("missing table / function: exact codes only", () => {
@@ -51,9 +62,9 @@ Deno.test("missing table / function: exact codes only", () => {
   assertEquals(isMissingFunction({ code: "42883" }), false);
 });
 
-Deno.test("link codes: six characters from the issued alphabet", () => {
-  assertEquals(validLinkCode("k7m2pq"), true);
-  for (const bad of ["K7M2PQ", "k7m2p", "k7m2pqx", "k7m2p0", "k7m2pl", "k7m2p1", "k7m2po", "k7m2pi", "", null, 123456]) {
+Deno.test("link codes: eight characters from the issued alphabet", () => {
+  assertEquals(validLinkCode("k7m2pq3x"), true);
+  for (const bad of ["K7M2PQ3X", "k7m2pq3", "k7m2pq3xy", "k7m2pq", "k7m2pq30", "k7m2pq3l", "k7m2pq31", "k7m2pq3o", "k7m2pq3i", "", null, 12345678]) {
     assertEquals(validLinkCode(bad), false, String(bad));
   }
 });
