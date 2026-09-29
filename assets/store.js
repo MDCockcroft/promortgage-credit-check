@@ -57,6 +57,33 @@
     return v === 'optional' || v === 'required' ? 'required' : 'off';
   })();
 
+  /* Demo-only: which role to simulate. ?role=consultant | none (a login that is not active);
+     default administrator. ?roles=off simulates the system before migration 20260930. */
+  var DEMO_ROLE = { consultant: 'consultant', none: 'none' }[params.get('role')] || 'admin';
+  var DEMO_ROLES_ON = params.get('roles') !== 'off';
+  var DEMO_ME = 'demo-me';
+  var STAFF_KEY = 'pm_demo_staff_v1';
+  function demoStaff() {
+    var list = null;
+    try { list = JSON.parse(localStorage.getItem(STAFF_KEY)); } catch (e) { list = null; }
+    if (!Array.isArray(list)) {
+      list = [
+        { userId: DEMO_ME, email: 'you@example.com', fullName: 'Demo User', role: 'admin', active: true, linkCode: 'demx22' },
+        { userId: 'demo-c1', email: 'thandi@example.com', fullName: 'Thandi Mokoena', role: 'consultant', active: true, linkCode: 'thand2' },
+        { userId: 'demo-c2', email: 'pieter@example.com', fullName: 'Pieter Botha', role: 'consultant', active: false, linkCode: 'pjb234' },
+        { userId: 'demo-new', email: 'new.login@example.com', fullName: '', role: null, active: false, linkCode: null }
+      ];
+    }
+    list.forEach(function (m) { if (m.userId === DEMO_ME) { m.role = DEMO_ROLE; m.isMe = true; } });
+    return list;
+  }
+  function saveDemoStaff(list) { try { localStorage.setItem(STAFF_KEY, JSON.stringify(list)); } catch (e) { /* private mode */ } }
+  function demoMember(userId) { return demoStaff().filter(function (m) { return m.userId === userId; })[0] || null; }
+  function demoCanSee(rec) {
+    if (!DEMO_ROLES_ON) return true;
+    return DEMO_ROLE === 'admin' || (DEMO_ROLE === 'consultant' && !!rec && rec.consultantId === DEMO_ME);
+  }
+
   /* Demo copy of _shared/manual.ts ATTESTATION (parity-tested). In live mode the page shows the
      wording mm-staff returns from 'config' — the text the server stores. */
   var ATTESTATION = {
@@ -95,6 +122,18 @@
     'check_started_at, check_request_id, check_attempt, check_requested_by, check_error_code, ' +
     'check_error_text, group_id, bureau_enquiry_id, report_json, report_summary, ' +
     'affordability_json, report_ready_at, pdf_status, pdf_attempts, report_pdf_path, mm_env';
+
+  /* Ownership columns (migration 20260930). Until it is applied the columns do not exist and the
+     database answers 42703: read without them from then on, so this page works either side of it. */
+  var ROLE_COLUMNS = ', consultant_id, assigned_at';
+  var roleColumns = true;
+  function selectChecks(columns, build) {
+    function run(withRoles) { return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : ''))); }
+    return run(roleColumns).then(function (res) {
+      if (res.error && roleColumns && res.error.code === '42703') { roleColumns = false; return run(false); }
+      return res;
+    });
+  }
 
   /* ---------- errors ---------- */
   function mkErr(e) {
@@ -225,6 +264,8 @@
       idvStartedAt: ts(r.idv_started_at),
       idvQuestionCount: Array.isArray(r.idv_questions) ? r.idv_questions.length : 0,
       idvResult: r.idv_result || null,
+      consultantId: r.consultant_id || null,
+      assignedAt: ts(r.assigned_at),
       idvPassedAt: ts(r.idv_passed_at),
       manualVerifiedAt: ts(r.manual_verified_at),
       manualVerificationId: r.manual_verification_id || null,
@@ -518,7 +559,10 @@
     validLinkCode: validLinkCode,
     consultant: function () {
       if (!consultantCode) return Promise.resolve({ name: null });
-      if (mode !== 'live') return Promise.resolve({ name: 'Thandi (demo)' });
+      if (mode !== 'live') {
+        var dm = demoStaff().filter(function (m) { return m.linkCode === consultantCode && m.active && m.role; })[0];
+        return Promise.resolve({ name: dm ? String(dm.fullName).split(' ')[0] : null });
+      }
       return invoke('mm-client', { action: 'consultant', code: consultantCode })
         .then(function (d) { return { name: d && typeof d.name === 'string' && d.name ? d.name : null }; },
           function () { return { name: null }; });
@@ -546,10 +590,14 @@
         otpSends: 1,
         otpSentAt: Date.now(),
         idvAttempts: 0,
-        consultantCode: consultantCode || null,
         audit: [auditEntry('Form submitted by client'), auditEntry('Consent code sent by SMS [demo mode]')]
-          .concat(consultantCode ? [auditEntry('Received through the personal link of a demo consultant')] : [])
       });
+      var via = consultantCode ? demoStaff().filter(function (m) { return m.linkCode === consultantCode && m.active && m.role; })[0] : null;
+      if (via) {
+        rec.consultantId = via.userId;
+        rec.assignedAt = Date.now();
+        rec.audit.push(auditEntry('Received through the personal link of ' + via.fullName));
+      }
       var list = readAll();
       list.push(rec);
       writeAll(list);
@@ -708,30 +756,78 @@
     /* → {mode:'live'|'mock'|'demo', idvMode, env, allowPassport} */
     config: function () {
       if (mode === 'live') return invoke('mm-staff', { action: 'config' });
+      if (DEMO_ROLES_ON && DEMO_ROLE === 'none') return demoFail('forbidden', 'account_inactive');
       return Promise.resolve({ mode: 'demo', idvMode: DEMO_IDV, env: 'demo', allowPassport: PMStore.allowPassport,
-        attestation: ATTESTATION, idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: ID_DOC_TYPES } });
+        attestation: ATTESTATION, idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: ID_DOC_TYPES },
+        me: DEMO_ROLES_ON
+          ? { userId: DEMO_ME, role: DEMO_ROLE, linkCode: demoMember(DEMO_ME).linkCode, roles: true }
+          : { userId: DEMO_ME, role: 'admin', linkCode: null, roles: false } });
     },
 
     /* The register list: summary columns only (see LIST_COLUMNS). Use get(ref) for a full record. */
     all: function () {
       if (mode === 'live') {
-        return sb.from('credit_checks').select(LIST_COLUMNS).order('created_at', { ascending: false })
+        return selectChecks(LIST_COLUMNS, function (q) { return q.order('created_at', { ascending: false }); })
           .then(function (res) {
             if (res.error) throw new Error(res.error.message);
             return res.data.map(fromRow);
           });
       }
-      return Promise.resolve(readAll().sort(function (a, b) { return b.createdAt - a.createdAt; }));
+      return Promise.resolve(readAll().filter(demoCanSee).sort(function (a, b) { return b.createdAt - a.createdAt; }));
     },
     get: function (ref) {
       if (mode === 'live') {
-        return sb.from('credit_checks').select(DETAIL_COLUMNS).eq('ref', ref).maybeSingle()
+        return selectChecks(DETAIL_COLUMNS, function (q) { return q.eq('ref', ref).maybeSingle(); })
           .then(function (res) {
             if (res.error) throw new Error(res.error.message);
             return res.data ? fromRow(res.data) : null;
           });
       }
-      return Promise.resolve(demoFind(ref));
+      var found = demoFind(ref);
+      return Promise.resolve(found && demoCanSee(found) ? found : null);
+    },
+
+    /* ===== roles (migration 20260930): administrators only ===== */
+
+    /* Every login with its role, personal link code and number of clients.
+       → [{userId, email, fullName, role|null, active, linkCode, clients, isMe}] */
+    staffList: function () {
+      if (mode === 'live') return invoke('mm-staff', { action: 'staff-list' }).then(function (d) { return (d && d.staff) || []; });
+      if (DEMO_ROLE !== 'admin') return demoFail('forbidden', 'admin_only');
+      var all = readAll();
+      return Promise.resolve(demoStaff().map(function (m) {
+        return Object.assign({}, m, { clients: all.filter(function (r) { return r.consultantId === m.userId; }).length });
+      }));
+    },
+    /* Give a login a role, change it, or deactivate it. The last administrator cannot be removed. */
+    staffSave: function (userId, role, active) {
+      if (mode === 'live') return invoke('mm-staff', { action: 'staff-save', userId: userId, role: role, active: !!active });
+      if (DEMO_ROLE !== 'admin') return demoFail('forbidden', 'admin_only');
+      if (role !== 'admin' && role !== 'consultant') return demoFail('bad_request', 'userId, role and active are required');
+      var list = demoStaff();
+      var m = list.filter(function (x) { return x.userId === userId; })[0];
+      if (!m) return demoFail('bad_request', 'No such login');
+      var otherAdmins = list.filter(function (x) { return x.userId !== userId && x.role === 'admin' && x.active; }).length;
+      if (m.role === 'admin' && m.active && (role !== 'admin' || !active) && !otherAdmins) return demoFail('invalid_state', 'last_admin');
+      m.role = role; m.active = !!active;
+      if (!m.linkCode) m.linkCode = 'dm' + Math.random().toString(36).replace(/[^a-hj-km-np-z2-9]/g, '').slice(0, 4).padEnd(4, 'x');
+      saveDemoStaff(list);
+      return Promise.resolve({ member: { userId: m.userId, role: m.role, active: m.active, linkCode: m.linkCode } });
+    },
+    /* Assign a record to a consultant. Clients do not move: only an unassigned record, or one whose
+       consultant is no longer active. */
+    assign: function (ref, consultantId) {
+      if (mode === 'live') return invoke('mm-staff', { action: 'assign', ref: ref, consultantId: consultantId });
+      if (DEMO_ROLE !== 'admin') return demoFail('forbidden', 'admin_only');
+      var rec = demoFind(ref);
+      if (!rec) return demoFail('bad_request', 'No such record');
+      var to = demoMember(consultantId);
+      if (!to || !to.active || !to.role) return demoFail('invalid_state', 'assign_not_staff');
+      var cur = rec.consultantId ? demoMember(rec.consultantId) : null;
+      if (rec.consultantId && rec.consultantId !== consultantId && cur && cur.active) return demoFail('invalid_state', 'assign_already_assigned');
+      demoUpdate(ref, { consultantId: consultantId, assignedAt: Date.now() },
+        (rec.consultantId ? 'Reassigned (previous consultant no longer active) to ' : 'Assigned to ') + to.fullName + ' by demo user');
+      return Promise.resolve({ status: 'ok' });
     },
 
     /* Run the credit check (billable in production).
@@ -1015,7 +1111,7 @@
           employmentStatus: 'Full-time employed', maritalStatus: 'Married out of community',
           referral: 'Estate agent referral',
           grossIncome: 52000, totalDeductions: 11400, monthlyExpenses: 18500, housingPayment: 9800,
-          _age: 3 * 864e5, _status: 'report_ready'
+          _age: 3 * 864e5, _status: 'report_ready', _consultant: DEMO_ME
         },
         {
           firstNames: 'Pieter', surname: 'van der Merwe', idType: 'said',
@@ -1025,7 +1121,7 @@
           employmentStatus: 'Self-employed', maritalStatus: 'Married in community of property',
           referral: 'Returning client',
           grossIncome: 88000, totalDeductions: 24100, monthlyExpenses: 31000, housingPayment: 15600,
-          _age: 1 * 864e5, _status: 'idv_waived'
+          _age: 1 * 864e5, _status: 'idv_waived', _consultant: 'demo-c2' /* a consultant who has left */
         },
         {
           firstNames: 'Ayesha', surname: 'Patel', idType: 'said',
@@ -1040,11 +1136,12 @@
       ];
       var list = readAll();
       rows.forEach(function (row) {
-        var status = row._status, age = row._age;
-        delete row._status; delete row._age;
+        var status = row._status, age = row._age, owner = row._consultant || null;
+        delete row._status; delete row._age; delete row._consultant;
         var rec = Object.assign({}, row, {
           ref: makeRef(), createdAt: now - age, status: 'awaiting_otp',
           otp: makeOtp(), otpExpires: now - age + 10 * 60000, otpAttempts: 0, idvAttempts: 0, demo: true,
+          consultantId: owner, assignedAt: owner ? now - age : null,
           audit: [{ at: now - age, event: 'Form submitted by client (sample data)' }]
         });
         if (status !== 'awaiting_otp') {
