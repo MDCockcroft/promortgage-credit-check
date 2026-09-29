@@ -59,6 +59,9 @@
   .doc { max-width: 640px; margin: 0 auto; }
   .doc-head { border-bottom: 2px solid var(--border-strong); padding-bottom: var(--s5); margin-bottom: var(--s6); }
   .doc-head .lede { color: var(--ink-muted); max-width: 54ch; margin-top: var(--s3); }
+  .consultant-line { margin: var(--s4) 0 0; padding-left: var(--s3); border-left: 3px solid var(--gold);
+    font-size: var(--fs-small); color: var(--ink-muted); }
+  .consultant-line strong { color: var(--ink); }
   .doc-meta { font-size: var(--fs-micro); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); margin: 0; }
 
   fieldset { border: 0; padding: 0; margin: 0 0 var(--s6); }
@@ -285,6 +288,7 @@
           <p class="doc-meta">Pro Mortgage SA &middot; Form PM&#8209;CC1</p>
           <h1 id="formHead" tabindex="-1">Credit check authorisation</h1>
           <p class="lede">This form authorises Pro Mortgages SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
+          <p class="consultant-line" id="consultantLine" hidden>Your consultant: <strong id="consultantName"></strong></p>
         </header>
 
         <form id="ccForm" novalidate>
@@ -592,7 +596,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260928-3"></script>
+<script src="assets/store.js?v=20260929-1"></script>
 <script>
 (function () {
   'use strict';
@@ -605,6 +609,14 @@
   var PANELS = [formView, otpPanel, workPanel, idvPanel, donePanel];
   var currentRef = null;
   var resumed = false; /* opened from a consultant's re-issued identity-check link */
+
+  /* Opened through a consultant's personal link: say whose, so the client knows it is the right
+     one. An unknown code shows nothing; the application is then assigned by an administrator. */
+  PMStore.consultant().then(function (c) {
+    if (!c || !c.name) return;
+    document.getElementById('consultantName').textContent = c.name;
+    document.getElementById('consultantLine').hidden = false;
+  });
 
   /* Demo mode keeps everything in this browser: say so before anyone types real details. */
   document.getElementById('demoBanner').hidden = PMStore.mode !== 'demo';

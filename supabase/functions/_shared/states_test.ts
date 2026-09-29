@@ -13,6 +13,7 @@ import {
   staleState,
 } from "./states.ts";
 import { ATTESTATION, manualVerifyCheck } from "./manual.ts";
+import { validLinkCode } from "./access.ts";
 
 function loadStore() {
   const src = Deno.readTextFileSync(new URL("../../../assets/store.js", import.meta.url));
@@ -26,6 +27,8 @@ function loadStore() {
     manualVerifyCheck: (rec: Record<string, unknown>) => { ok: boolean; reason?: string };
     idvLinkCheck: (rec: Record<string, unknown>, mode: string) => { ok: boolean; reason?: string };
     MAX_IDV_ROUNDS: number;
+    validLinkCode: (v: unknown) => boolean;
+    consultantCode: string | null;
   };
 }
 
@@ -131,5 +134,13 @@ Deno.test("idv link re-issue: required mode only, a round left, SA ID, no withdr
         }
       }
     }
+  }
+});
+
+Deno.test("store.js link-code rule === server (access.ts); no code without a link", () => {
+  const store = loadStore();
+  assertEquals(store.consultantCode, null);
+  for (const v of ["k7m2pq", "abcdef", "234567", "K7M2PQ", "k7m2p", "k7m2pqx", "k7m2p0", "k7m2p1", "k7m2pl", "k7m2po", "k7m2pi", "", " k7m2pq", null, 123456]) {
+    assertEquals(store.validLinkCode(v), validLinkCode(v), String(v));
   }
 });

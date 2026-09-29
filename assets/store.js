@@ -20,6 +20,23 @@
   var host = (window.location && window.location.hostname) || '';
   var localHost = host === 'localhost' || host === '127.0.0.1';
   var forceDemo = localHost && params.get('demo') === '1';
+
+  /* ---------- a consultant's personal link: index.html?c=<code> ----------
+     The code is not a secret (it only says whose client this is). Kept for the tab's session so
+     it survives a reload; a code that is present but malformed is ignored rather than replaced by
+     an older one. Same alphabet as the server (new_link_code / _shared/access.ts). */
+  var LINK_CODE_RE = /^[a-hj-km-np-z2-9]{6}$/;
+  function validLinkCode(v) { return typeof v === 'string' && LINK_CODE_RE.test(v); }
+  var consultantCode = (function () {
+    var given = params.get('c');
+    if (given !== null) {
+      var v = String(given).trim().toLowerCase();
+      if (!validLinkCode(v)) return null;
+      try { sessionStorage.setItem('pm_consultant', v); } catch (e) { /* private mode */ }
+      return v;
+    }
+    try { var kept = sessionStorage.getItem('pm_consultant'); return validLinkCode(kept) ? kept : null; } catch (e) { return null; }
+  })();
   var live = !forceDemo && !!(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY);
   var sb = null;
   var mode = 'demo';
@@ -494,12 +511,27 @@
       return demoConsentTypes();
     },
 
+    /* The consultant whose personal link the client opened: → {name} (first name) or {name: null}
+       for no link, an unknown code or a deactivated consultant. Never throws — the form must work
+       without it, and the application is then handed out by an administrator. */
+    consultantCode: consultantCode,
+    validLinkCode: validLinkCode,
+    consultant: function () {
+      if (!consultantCode) return Promise.resolve({ name: null });
+      if (mode !== 'live') return Promise.resolve({ name: 'Thandi (demo)' });
+      return invoke('mm-client', { action: 'consultant', code: consultantCode })
+        .then(function (d) { return { name: d && typeof d.name === 'string' && d.name ? d.name : null }; },
+          function () { return { name: null }; });
+    },
+
     /* returns {ref, demo_otp, sms: {sent, reason?, uncertain, retryAfter, sendsLeft, canResend}}.
        demo_otp is null when the code really went by SMS (SMS_MODE=live). Refusals throw an Error
        whose message is the code (invalid_id_number, invalid_cell, too_many_submissions, …). */
     submit: function (data) {
       if (mode === 'live') {
-        return invoke('mm-client', { action: 'submit', payload: data }).then(function (d) {
+        var body = { action: 'submit', payload: data };
+        if (consultantCode) body.consultant_code = consultantCode;
+        return invoke('mm-client', body).then(function (d) {
           if (d.otp_session) setOtpSession(d.ref, d.otp_session);
           return d;
         });
@@ -514,7 +546,9 @@
         otpSends: 1,
         otpSentAt: Date.now(),
         idvAttempts: 0,
+        consultantCode: consultantCode || null,
         audit: [auditEntry('Form submitted by client'), auditEntry('Consent code sent by SMS [demo mode]')]
+          .concat(consultantCode ? [auditEntry('Received through the personal link of a demo consultant')] : [])
       });
       var list = readAll();
       list.push(rec);
