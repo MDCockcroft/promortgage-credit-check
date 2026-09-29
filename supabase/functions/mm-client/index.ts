@@ -426,13 +426,18 @@ Deno.serve(async (req) => {
       if (succeeded.checkAnswers(res)) {
         const passed = await transition(sb, ref, ["idv_in_progress"], {
           status: "idv_passed", idv_result: idvResult, idv_passed_at: new Date().toISOString(),
-          verification_success_code: (d.statusCode as string) ?? null, // best inference; vendor to confirm
+          // Vendor-confirmed (2026-09-29): /CreditCheck/full's verificationSuccessCode is the
+          // verificationRequestNumber of the PASSED session. It is spent (consumed above), so it can
+          // no longer answer questions; it lives on the staff-only record for the credit check.
+          verification_success_code: vrn,
         }, "Identity verified");
         if (!passed) return fail("invalid_state", "Record changed during the identity check", origin);
         return ok({ status: "idv_passed" }, origin);
       }
-      // C3: 'mismatch' only when the vendor actually scored the answers and said no.
-      const reason = res.http === 200 && d.success === false && !res.vendorCode ? "mismatch" : "error";
+      // C3: 'mismatch' only when the vendor actually scored the answers and said no — an explicit
+      // success:false, or a status other than the pass status.
+      const scored = d.success === false || (typeof d.statusCode === "string" && d.statusCode.trim() !== "");
+      const reason = res.http === 200 && scored && !res.vendorCode ? "mismatch" : "error";
       const failedRound = await transition(sb, ref, ["idv_in_progress"], { status: "idv_failed", idv_result: idvResult },
         reason === "mismatch" ? "Identity check not passed" : `Identity check could not be completed (${res.vendorCode ?? res.http})`);
       if (!failedRound) return fail("invalid_state", "Record changed during the identity check", origin);

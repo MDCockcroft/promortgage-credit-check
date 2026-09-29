@@ -45,7 +45,7 @@ Deno.test("idProblem: SA ID must be valid and equal mm_person_id; passport needs
   assert(idProblem({ id_type: "unknown" }));
 });
 
-Deno.test("idvIdType: SAID for SA ID rows, PASSPORT for passport rows", () => {
-  assertEquals(idvIdType({ id_type: "said" }), "SAID");
+Deno.test("idvIdType: SID for SA ID rows (vendor-confirmed), PASSPORT for passport rows", () => {
+  assertEquals(idvIdType({ id_type: "said" }), "SID");
   assertEquals(idvIdType({ id_type: "passport" }), "PASSPORT");
 });

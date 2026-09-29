@@ -2057,8 +2057,13 @@
   $('dlgDelete').addEventListener('click', function () {
     if (busy || !currentRec) return;
     var name = fullName(currentRec);
+    /* MortgageMAX (2026-09-29): ID copies must be producible on request for an Experian or POPIA
+       audit — deleting the record destroys the copy, so say so before it happens. */
+    var evidence = currentRec.manualVerifiedAt
+      ? ' This also destroys the ID copy kept as evidence of the manual identity check, which MortgageMAX or Experian may ask for in an audit. Only delete if the client has asked for their information to be destroyed.'
+      : '';
     startConfirm({ kind: 'delete', ref: currentRec.ref, name: name },
-      'Delete ' + name + '’s record permanently? Any stored report PDF is deleted too. This cannot be undone.',
+      'Delete ' + name + '’s record permanently? Any stored report PDF is deleted too.' + evidence + ' This cannot be undone.',
       'Yes, delete record', 'btn btn-danger');
   });
 

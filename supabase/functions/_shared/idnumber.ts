@@ -53,7 +53,11 @@ export function idProblem(row: Record<string, unknown>): string | null {
   return "ID number could not be validated";
 }
 
-/** C15: the IDV idType the bureau expects for this row. */
-export function idvIdType(row: Record<string, unknown>): "SAID" | "PASSPORT" {
-  return row.id_type === "passport" ? "PASSPORT" : "SAID";
+/**
+ * C15: the IDV idType for this row. "SID" is MortgageMAX's answer (Louis Pires, 2026-09-29): the value
+ * goes straight to Experian as the identity type, and Experian does not recognise "SAID". The passport
+ * value is unconfirmed — passports never reach IDV (Experian supports SA IDs only).
+ */
+export function idvIdType(row: Record<string, unknown>): "SID" | "PASSPORT" {
+  return row.id_type === "passport" ? "PASSPORT" : "SID";
 }

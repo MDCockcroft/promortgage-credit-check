@@ -169,6 +169,8 @@ export function usableQuestions(questions: unknown): boolean {
   });
 }
 
+export const IDV_PASS_STATUS = "TSCR";
+
 export const succeeded = {
   consentPost: (r: VendorResult) => r.http >= 200 && r.http < 300,
   /** C4: "usable" = a session reference AND every question fully renderable and answerable. */
@@ -176,7 +178,15 @@ export const succeeded = {
     const d = obj(r.data);
     return r.http === 200 && !!d && !blank(d.verificationRequestNumber) && usableQuestions(d.questions);
   },
-  checkAnswers: (r: VendorResult) => r.http === 200 && obj(r.data)?.success === true,
+  /**
+   * Passed ONLY when statusCode is "TSCR" (MortgageMAX, Louis Pires, 2026-09-29); any other status
+   * means the client did not pass and the manual path applies. A contradicting success:false is
+   * treated as not passed.
+   */
+  checkAnswers: (r: VendorResult) => {
+    const d = obj(r.data);
+    return r.http === 200 && !!d && d.statusCode === IDV_PASS_STATUS && d.success !== false;
+  },
   creditFull: (r: VendorResult) => {
     const d = obj(r.data);
     return r.http === 200 && !!d && blank(d.errorCode) && !blank(d.groupId) &&

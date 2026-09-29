@@ -129,7 +129,7 @@ export const mockFetch: typeof fetch = (input, init) => {
     const allFour = Array.isArray(body.answers) && body.answers.every((a: { answerNumber: string }) => a.answerNumber === "4");
     return Promise.resolve(reply(200, allFour
       ? { success: false, statusCode: "F", statusCodeDescription: "Verification failed", finalScore: "1" }
-      : { success: true, statusCode: "P", statusCodeDescription: "Verified", finalScore: "3", responseStatus: "Success" }));
+      : { success: true, statusCode: "TSCR", statusCodeDescription: "Verified", finalScore: "3", responseStatus: "Success" }));
   }
   if (method === "POST" && p === "/CreditCheck/full") return Promise.resolve(reply(200, MOCK_REPORT));
   if (method === "GET" && p.startsWith("/CreditCheck/getDocument/")) {

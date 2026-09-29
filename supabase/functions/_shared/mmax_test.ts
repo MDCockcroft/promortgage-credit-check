@@ -130,8 +130,14 @@ Deno.test("success: IDV questions need a request number AND at least one usable 
   assertEquals(succeeded.getQuestions(body([q()], "")), false);
   // Only an HTTP 200 counts.
   assertEquals(succeeded.getQuestions(result(500, JSON.stringify({ verificationRequestNumber: "V1", questions: [q()] }))), false);
+  // Passed only on statusCode "TSCR" (vendor-confirmed 2026-09-29) — never on success:true alone.
+  assert(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR"}')));
+  assert(succeeded.checkAnswers(result(200, '{"statusCode":"TSCR"}')));
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"P"}')), false);
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":true}')), false);
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":false,"statusCode":"TSCR"}')), false);
   assertEquals(succeeded.checkAnswers(result(200, '{"success":false,"statusCode":"F"}')), false);
-  assert(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"P"}')));
+  assertEquals(succeeded.checkAnswers(result(500, '{"success":true,"statusCode":"TSCR"}')), false);
 });
 
 // --- allow-list ----------------------------------------------------------------
