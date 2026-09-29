@@ -128,8 +128,11 @@ export const mockFetch: typeof fetch = (input, init) => {
     // Mock rule: answering "4" to every question fails; anything else passes.
     const allFour = Array.isArray(body.answers) && body.answers.every((a: { answerNumber: string }) => a.answerNumber === "4");
     return Promise.resolve(reply(200, allFour
-      ? { success: false, statusCode: "F", statusCodeDescription: "Verification failed", finalScore: "1" }
-      : { success: true, statusCode: "TSCR", statusCodeDescription: "Verified", finalScore: "3", responseStatus: "Success" }));
+      // Shapes as seen in live UAT (2026-09-29): a failed check ALSO says success/TSCR — only the score differs.
+      ? { success: true, errorCode: null, errorCodeDescription: null, responseStatus: "Success", statusCode: "TSCR",
+        statusCodeDescription: "Transaction Status Completed with Results", finalScoreSpecified: true, finalScore: "20.00" }
+      : { success: true, errorCode: null, errorCodeDescription: null, responseStatus: "Success", statusCode: "TSCR",
+        statusCodeDescription: "Transaction Status Completed with Results", finalScoreSpecified: true, finalScore: "100.00" }));
   }
   if (method === "POST" && p === "/CreditCheck/full") return Promise.resolve(reply(200, MOCK_REPORT));
   if (method === "GET" && p.startsWith("/CreditCheck/getDocument/")) {

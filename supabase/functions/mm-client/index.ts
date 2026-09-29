@@ -19,7 +19,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { fail, ok, preflight } from "../_shared/http.ts";
-import { callVendor, configFromEnv, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
+import { callVendor, configFromEnv, idvPassScore, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
 import { logCall, serviceClient, sha256Hex, transition } from "../_shared/db.ts";
 import { mockFetch } from "../_shared/mock.ts";
 import { type Ctx, idvModeFromEnv, type Mode, publicConsentTypes, registerConsent } from "../_shared/register.ts";
@@ -423,7 +423,7 @@ Deno.serve(async (req) => {
         finalScore: d.finalScore ?? null, errorCode: d.errorCode ?? null, vendorCode: res.vendorCode,
         http: res.http,
       };
-      if (succeeded.checkAnswers(res)) {
+      if (succeeded.checkAnswers(res, idvPassScore(Deno.env.get("MM_IDV_PASS_SCORE")))) {
         const passed = await transition(sb, ref, ["idv_in_progress"], {
           status: "idv_passed", idv_result: idvResult, idv_passed_at: new Date().toISOString(),
           // Vendor-confirmed (2026-09-29): /CreditCheck/full's verificationSuccessCode is the
@@ -436,6 +436,7 @@ Deno.serve(async (req) => {
       }
       // C3: 'mismatch' only when the vendor actually scored the answers and said no — an explicit
       // success:false, or a status other than the pass status.
+      // (A scored check that fell short of the pass mark arrives as success:true + "TSCR" + a low score.)
       const scored = d.success === false || (typeof d.statusCode === "string" && d.statusCode.trim() !== "");
       const reason = res.http === 200 && scored && !res.vendorCode ? "mismatch" : "error";
       const failedRound = await transition(sb, ref, ["idv_in_progress"], { status: "idv_failed", idv_result: idvResult },

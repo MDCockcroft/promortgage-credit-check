@@ -169,7 +169,28 @@ export function usableQuestions(questions: unknown): boolean {
   });
 }
 
+/** "Transaction Status Completed with Results" — the check was SCORED. It does not mean passed. */
 export const IDV_PASS_STATUS = "TSCR";
+/**
+ * Minimum finalScore (0-100) that counts as a pass. Live UAT, 2026-09-29: all five answers right
+ * gave TSCR + finalScore "100.00"; deliberately wrong answers ALSO gave TSCR + success:true, with
+ * finalScore "20.00". The vendor has not yet confirmed the pass mark, so the default is the
+ * strictest one; set MM_IDV_PASS_SCORE once they do. Anyone below it goes to a second round or
+ * manual verification — the safe direction.
+ */
+export const IDV_PASS_SCORE_DEFAULT = 100;
+export function idvPassScore(raw: string | undefined | null): number {
+  const n = raw === undefined || raw === null || String(raw).trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : IDV_PASS_SCORE_DEFAULT;
+}
+/** finalScore arrives as a string like "100.00". Blank or unparseable = no score. */
+export function idvScore(data: unknown): number | null {
+  const v = obj(data)?.finalScore;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string" || v.trim() === "") return null;
+  const n = Number(v.trim());
+  return Number.isFinite(n) ? n : null;
+}
 
 export const succeeded = {
   consentPost: (r: VendorResult) => r.http >= 200 && r.http < 300,
@@ -179,13 +200,14 @@ export const succeeded = {
     return r.http === 200 && !!d && !blank(d.verificationRequestNumber) && usableQuestions(d.questions);
   },
   /**
-   * Passed ONLY when statusCode is "TSCR" (MortgageMAX, Louis Pires, 2026-09-29); any other status
-   * means the client did not pass and the manual path applies. A contradicting success:false is
-   * treated as not passed.
+   * Passed ONLY when the check was scored (statusCode "TSCR", success not false) AND the score
+   * reaches the pass mark. TSCR alone is NOT a pass: wrong answers return it too (see above).
    */
-  checkAnswers: (r: VendorResult) => {
+  checkAnswers: (r: VendorResult, passScore: number = IDV_PASS_SCORE_DEFAULT) => {
     const d = obj(r.data);
-    return r.http === 200 && !!d && d.statusCode === IDV_PASS_STATUS && d.success !== false;
+    const score = idvScore(d);
+    return r.http === 200 && !!d && d.statusCode === IDV_PASS_STATUS && d.success !== false &&
+      score !== null && score >= passScore;
   },
   creditFull: (r: VendorResult) => {
     const d = obj(r.data);
@@ -227,7 +249,9 @@ export function logBodyHead(api: Api, r: VendorResult, secrets: Array<string | n
 // Optional Entra bearer (D1). Two scope-keyed cached tokens. Inactive unless configured.
 // ---------------------------------------------------------------------------
 const SCOPES: Record<Api, string> = {
-  credit: "api://CreditCheckManagment/.default", // vendor's spelling — verbatim
+  // Correct spelling. The misspelt "CreditCheckManagment" from the vendor's notes is NOT a registered
+  // resource (Entra: AADSTS500011) — verified against the live tenant 2026-09-29.
+  credit: "api://CreditCheckManagement/.default",
   consent: "api://ConsentManagement/.default",
 };
 const tokenCache = new Map<Api, { token: string; expiresAt: number }>();

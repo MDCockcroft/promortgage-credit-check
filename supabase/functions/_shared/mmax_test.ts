@@ -11,6 +11,7 @@ import {
   redact,
   succeeded,
   type VendorResult,
+  idvPassScore,
 } from "./mmax.ts";
 import {
   buildCreateConsents,
@@ -130,14 +131,24 @@ Deno.test("success: IDV questions need a request number AND at least one usable 
   assertEquals(succeeded.getQuestions(body([q()], "")), false);
   // Only an HTTP 200 counts.
   assertEquals(succeeded.getQuestions(result(500, JSON.stringify({ verificationRequestNumber: "V1", questions: [q()] }))), false);
-  // Passed only on statusCode "TSCR" (vendor-confirmed 2026-09-29) — never on success:true alone.
-  assert(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR"}')));
-  assert(succeeded.checkAnswers(result(200, '{"statusCode":"TSCR"}')));
-  assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"P"}')), false);
-  assertEquals(succeeded.checkAnswers(result(200, '{"success":true}')), false);
-  assertEquals(succeeded.checkAnswers(result(200, '{"success":false,"statusCode":"TSCR"}')), false);
-  assertEquals(succeeded.checkAnswers(result(200, '{"success":false,"statusCode":"F"}')), false);
-  assertEquals(succeeded.checkAnswers(result(500, '{"success":true,"statusCode":"TSCR"}')), false);
+  // Real UAT bodies, 2026-09-29. TSCR = "completed with results": BOTH of these carry it.
+  const PASS = '{"success":true,"errorCode":null,"responseStatus":"Success","statusCode":"TSCR","statusCodeDescription":"Transaction Status Completed with Results","finalScoreSpecified":true,"finalScore":"100.00"}';
+  const WRONG = '{"success":true,"errorCode":null,"responseStatus":"Success","statusCode":"TSCR","statusCodeDescription":"Transaction Status Completed with Results","finalScoreSpecified":true,"finalScore":"20.00"}';
+  assert(succeeded.checkAnswers(result(200, PASS)));
+  assertEquals(succeeded.checkAnswers(result(200, WRONG)), false);
+  // The pass mark is configurable; the default is the strictest.
+  const at = (score: string) => result(200, `{"success":true,"statusCode":"TSCR","finalScore":"${score}"}`);
+  assertEquals(succeeded.checkAnswers(at("80.00")), false);
+  assert(succeeded.checkAnswers(at("80.00"), 80));
+  assertEquals(succeeded.checkAnswers(at("60.00"), 80), false);
+  // No score, no pass — whatever else the body says.
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR"}')), false);
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR","finalScore":""}')), false);
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR","finalScore":"abc"}')), false);
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"P","finalScore":"100.00"}')), false);
+  assertEquals(succeeded.checkAnswers(result(200, '{"success":false,"statusCode":"TSCR","finalScore":"100.00"}')), false);
+  assertEquals(succeeded.checkAnswers(result(500, PASS)), false);
+  assertEquals([idvPassScore(undefined), idvPassScore(""), idvPassScore("80"), idvPassScore("0"), idvPassScore("101"), idvPassScore("x")], [100, 100, 80, 100, 100, 100]);
 });
 
 // --- allow-list ----------------------------------------------------------------
