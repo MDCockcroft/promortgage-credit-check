@@ -95,6 +95,12 @@ function reply(status: number, body: unknown, contentType = "application/json"):
 /** Behaves like the vendor for the nine allow-listed paths. */
 export const mockFetch: typeof fetch = (input, init) => {
   const url = new URL(String(input));
+  // The Entra token request (when MMAX_OAUTH_* are set) comes here too in mock mode. Its body is
+  // form-encoded, not JSON, so answer it before parsing. expires_in 60 means the token is never
+  // reused from the cache, so a mock token can never reach the real vendor after a switch to live.
+  if (url.hostname === "login.microsoftonline.com") {
+    return Promise.resolve(reply(200, { token_type: "Bearer", expires_in: 60, access_token: "mock-token" }));
+  }
   const method = (init?.method ?? "GET").toUpperCase();
   const p = url.pathname.replace(/^\/(CreditManagement\/v1|ConsentManagement\/v3)/, "");
   const body = init?.body ? JSON.parse(String(init.body)) : {};

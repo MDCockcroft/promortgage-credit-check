@@ -182,6 +182,18 @@ Deno.test("callVendor: header auth only, never the query key; parses the real P7
   assertEquals(new URL(calls[0].url).searchParams.get("subscription-key"), null);
 });
 
+Deno.test("callVendor: mock mode works with the Entra bearer configured (live, 2026-09-30)", async () => {
+  // Every vendor step failed in mock mode once MMAX_OAUTH_* were loaded: the token request went to
+  // mockFetch, which parsed its form-encoded body as JSON and threw.
+  const { mockFetch } = await import("./mock.ts");
+  const cfg: MmConfig = { ...CFG, oauth: { tenantId: "t", clientId: "c", clientSecret: "s" } };
+  const r = await callVendor(cfg, "credit", "POST", "/Idv/getQuestions", {
+    body: { idNumber: "0000000000000", idType: "SID" }, timeoutMs: 1000, fetchImpl: mockFetch,
+  });
+  assertEquals(r.http, 200);
+  assert(succeeded.getQuestions(r));
+});
+
 Deno.test("callVendor: refuses anything not allow-listed", async () => {
   const { f } = stub(200, "{}");
   await assertRejects(
