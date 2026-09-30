@@ -172,6 +172,13 @@ export function usableQuestions(questions: unknown): boolean {
 /** "Transaction Status Completed with Results" — the check was SCORED. It does not mean passed. */
 export const IDV_PASS_STATUS = "TSCR";
 /**
+ * /Idv/getQuestions at MortgageMAX's limit: questions: [] plus responseCode "QuestionsLimitReached"
+ * ("Questions may only be retrieved twice per 24 hours"). The limit is GLOBAL per ID number, across
+ * all MortgageMAX systems (Louis Pires, 2026-09-30), so a client can reach it before our own count
+ * does. Never a transient failure, whatever HTTP status it arrives with.
+ */
+export const IDV_LIMIT_CODE = "QuestionsLimitReached";
+/**
  * Minimum finalScore (0-100) that counts as a pass. Live UAT, 2026-09-29: all five answers right
  * gave TSCR + finalScore "100.00"; deliberately wrong answers ALSO gave TSCR + success:true, with
  * finalScore "20.00". MortgageMAX confirmed (Louis Pires, 2026-09-30) that the API gives no pass or

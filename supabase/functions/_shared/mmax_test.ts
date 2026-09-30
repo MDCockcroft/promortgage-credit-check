@@ -12,6 +12,7 @@ import {
   succeeded,
   type VendorResult,
   idvPassScore,
+  IDV_LIMIT_CODE,
 } from "./mmax.ts";
 import {
   buildCreateConsents,
@@ -180,6 +181,21 @@ Deno.test("callVendor: header auth only, never the query key; parses the real P7
   assertEquals(h["Ocp-Apim-Subscription-Key"], "test-key");
   assertEquals(h["Authorization"], undefined);
   assertEquals(new URL(calls[0].url).searchParams.get("subscription-key"), null);
+});
+
+Deno.test("idv: MortgageMAX's global question limit is recognised at any HTTP status (Louis Pires, 2026-09-30)", () => {
+  // The body Louis sent (session number replaced). Our code must never read this as "try again".
+  const body = JSON.stringify({
+    verificationRequestNumber: "V-LIMIT", questions: [],
+    responseMessage: "No questions could be returned. Questions may only be retrieved twice per 24 hours.",
+    responseCode: "QuestionsLimitReached",
+  });
+  for (const http of [200, 429]) {
+    const r = result(http, body);
+    assertEquals(r.vendorCode, IDV_LIMIT_CODE);
+    assertEquals(r.vendorMessage, "No questions could be returned. Questions may only be retrieved twice per 24 hours.");
+    assertEquals(succeeded.getQuestions(r), false);
+  }
 });
 
 Deno.test("callVendor: mock mode works with the Entra bearer configured (live, 2026-09-30)", async () => {

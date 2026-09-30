@@ -20,7 +20,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { fail, ok, preflight } from "../_shared/http.ts";
-import { callVendor, configFromEnv, idvPassScore, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
+import { callVendor, configFromEnv, IDV_LIMIT_CODE, idvPassScore, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
 import { logCall, serviceClient, sha256Hex, transition } from "../_shared/db.ts";
 import { mockFetch } from "../_shared/mock.ts";
 import { type Ctx, idvModeFromEnv, type Mode, publicConsentTypes, registerConsent } from "../_shared/register.ts";
@@ -354,6 +354,16 @@ Deno.serve(async (req) => {
       });
       await log("credit", "POST", "/Idv/getQuestions", q);
       if (q.http === 401 || q.http === 403) return await configFailure(q, ["idv_in_progress"], beforeClaim);
+
+      // MortgageMAX's global limit (twice per 24 hours per ID number, across all its systems). Checked
+      // before the transient test: if it ever comes as a 429, "try again" would only loop the client.
+      // The round stays counted; the consultant verifies manually (idv_unavailable).
+      if (q.vendorCode === IDV_LIMIT_CODE) {
+        await transition(sb, ref, ["idv_in_progress"], {
+          status: "idv_unavailable", idv_result: { vendorCode: q.vendorCode, vendorMessage: q.vendorMessage },
+        }, "Identity questions refused: MortgageMAX allows them twice per 24 hours per ID number, across all its systems");
+        return ok({ status: "idv_unavailable" }, origin);
+      }
 
       const transient = q.http === 0 || q.http === 408 || q.http === 429 || q.http >= 500;
       if (q.http !== 200 && !transient) {
