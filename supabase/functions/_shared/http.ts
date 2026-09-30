@@ -4,6 +4,9 @@
 const PAGES_ORIGIN = "https://mdcockcroft.github.io";
 const ALLOW_ORIGINS = new Set([
   PAGES_ORIGIN,
+  // Pro Mortgages SA's own address (handover row 7). Allowed before the switch, so the pages keep
+  // working the moment GitHub Pages starts serving it.
+  "https://check.promortgagesa.co.za",
   "http://localhost:8461",
   "http://127.0.0.1:8461",
 ]);

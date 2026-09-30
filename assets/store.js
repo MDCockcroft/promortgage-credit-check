@@ -636,12 +636,18 @@
        On success the one-time IDV session token is kept in this tab (sessionStorage). */
     confirmConsent: function (ref, otp) {
       if (mode === 'live') {
-        return sb.rpc('confirm_consent', { p_ref: ref, p_otp: otp }).then(function (res) {
-          if (res.error) throw new Error(res.error.message);
-          var d = res.data || {};
-          if (d.ok && d.idv_token) setToken(ref, d.idv_token);
-          return { ok: !!d.ok, ref: d.ref, error: d.error };
-        });
+        /* Through mm-client, with the session token only this tab holds: a reference on its own
+           can no longer try codes (or learn that it exists). A lost session reads as not_found,
+           whose message sends the client back to submit the form again. */
+        return invoke('mm-client', { action: 'confirm', ref: ref, otp: otp, otp_session: getOtpSession(ref) || '' })
+          .then(function (d) {
+            d = d || {};
+            if (d.ok && d.idv_token) setToken(ref, d.idv_token);
+            return { ok: !!d.ok, ref: d.ref, error: d.error };
+          }, function (err) {
+            if (err && err.code === 'forbidden') return { ok: false, error: 'not_found' };
+            throw err;
+          });
       }
       var rec = demoFind(ref);
       if (!rec) return Promise.resolve({ ok: false, error: 'not_found' });

@@ -596,7 +596,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260929-3"></script>
+<script src="assets/store.js?v=20260930-1"></script>
 <script>
 (function () {
   'use strict';
@@ -614,8 +614,15 @@
      one. An unknown code shows nothing; the application is then assigned by an administrator. */
   PMStore.consultant().then(function (c) {
     if (!c || !c.name) return;
-    document.getElementById('consultantName').textContent = c.name;
-    document.getElementById('consultantLine').hidden = false;
+    var line = document.getElementById('consultantLine');
+    if (c.name === 'your consultant') {
+      /* consultant_by_code's stand-in when the consultant has not saved a name yet: avoid
+         "Your consultant: your consultant". */
+      line.textContent = 'This application goes straight to your consultant.';
+    } else {
+      document.getElementById('consultantName').textContent = c.name;
+    }
+    line.hidden = false;
   });
 
   /* Demo mode keeps everything in this browser: say so before anyone types real details. */

@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
   let body: {
     ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown; otp_session?: string;
-    code?: unknown; consultant_code?: unknown;
+    code?: unknown; consultant_code?: unknown; otp?: unknown;
   };
   try {
     body = await req.json();
@@ -187,7 +187,8 @@ Deno.serve(async (req) => {
               message: isMissingFunction(at.error) ? "roles_not_installed" : at.error.message,
             }));
           } else if (at.data !== true) {
-            console.error(JSON.stringify({ event: "attach_consultant_not_attached", ref: d.ref }));
+            // A mistyped, old or deactivated link: worth seeing, not an error.
+            console.warn(JSON.stringify({ event: "attach_consultant_not_attached", ref: d.ref }));
           }
         }
         const session = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -222,6 +223,32 @@ Deno.serve(async (req) => {
         sent: out.sent, reason: out.reason, uncertain: out.uncertain ?? false, retryAfter: out.retryAfter ?? 0,
         sendsLeft: out.sendsLeft, demo_otp: out.demoCode ?? null, mode: sms.mode,
       }, origin);
+    } catch (e) {
+      console.error(JSON.stringify({ event: "mm_client_error", action, message: String(e instanceof Error ? e.message : e) }));
+      return fail("server_error", "Something went wrong", origin);
+    }
+  }
+
+  // ---- the SMS code: only the browser that submitted may try it --------------------------------
+  // confirm_consent used to be callable by anyone with a reference: it said whether the reference
+  // existed and let a stranger use up the client's five attempts. Now the code is checked only
+  // behind the session token that submit gave the submitting browser (the proof resend-otp needs).
+  // A wrong token and an unknown reference get the same answer.
+  if (action === "confirm") {
+    const session = body.otp_session;
+    if (!ref || typeof session !== "string" || session.length < 32) return fail("forbidden", "Invalid or expired session", origin);
+    try {
+      const { data: sec, error: secErr } = await sb.from("credit_check_secrets")
+        .select("otp_session_hash").eq("ref", ref).maybeSingle();
+      if (secErr) throw new Error(`server_error: ${secErr.message}`);
+      if (!sec?.otp_session_hash || sec.otp_session_hash !== await sha256Hex(session)) {
+        return fail("forbidden", "Invalid or expired session", origin);
+      }
+      const c = await sb.rpc("confirm_consent", { p_ref: ref, p_otp: typeof body.otp === "string" ? body.otp : "" });
+      if (c.error) throw new Error(`server_error: ${c.error.message}`);
+      const d = (c.data ?? {}) as { ok?: boolean; ref?: string; error?: string; idv_token?: string };
+      // The one-time IDV token goes back to this browser only, exactly as confirm_consent minted it.
+      return ok({ ok: !!d.ok, ref: d.ref ?? ref, error: d.error ?? null, idv_token: d.ok ? d.idv_token ?? null : null }, origin);
     } catch (e) {
       console.error(JSON.stringify({ event: "mm_client_error", action, message: String(e instanceof Error ? e.message : e) }));
       return fail("server_error", "Something went wrong", origin);

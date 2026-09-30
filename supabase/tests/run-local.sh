@@ -27,10 +27,12 @@ run() {
 run "$HERE/standins.sql"
 run "$ROOT/supabase-setup.sql"
 MIGS=("$ROOT"/supabase/migrations/*.sql)
-LAST="${MIGS[${#MIGS[@]}-1]}"
+# The roles migration seeds the first administrators and makes every OLDER file refuse to run.
+# Files after it must simply be idempotent.
+ROLES="$ROOT/supabase/migrations/20260930_consultant_roles.sql"
 for f in "${MIGS[@]}"; do
-  if [ "$f" = "$LAST" ]; then
-    # A login that exists BEFORE the newest migration (the one the seed makes an administrator)...
+  if [ "$f" = "$ROLES" ]; then
+    # A login that exists BEFORE the roles migration (the one the seed makes an administrator)...
     "${PSQL[@]}" -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000a', 'admin@test')"
     # ...and three that exist but must NOT be seeded: unconfirmed, anonymous, banned.
     "${PSQL[@]}" -c "insert into auth.users (id, email, email_confirmed_at, is_anonymous, banned_until) values
@@ -41,6 +43,8 @@ for f in "${MIGS[@]}"; do
     # ...and one created AFTER it, to prove a re-run promotes nobody.
     "${PSQL[@]}" -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000e', 'nobody@test')"
     echo "-- again (must be idempotent)"; run "$f"
+  elif [[ "$f" > "$ROLES" ]]; then
+    run "$f"; echo "-- again (must be idempotent)"; run "$f"
   else
     run "$f"
   fi
@@ -55,7 +59,7 @@ done
 # Every older file must now REFUSE to run: each recreates an "any signed-in user may read" rule.
 echo "== GUARDS: older files refuse to run once roles exist"
 for f in "$ROOT/supabase-setup.sql" "${MIGS[@]}"; do
-  [ "$f" = "$LAST" ] && continue
+  [[ "$f" < "$ROLES" ]] || continue
   if out="$("${PSQL[@]}" -f "$f" 2>&1)"; then echo "FAIL: $(basename "$f") ran again"; FAIL=1
   elif ! echo "$out" | grep -q "STOP: .* is older than this database"; then echo "FAIL: $(basename "$f") failed for another reason:"; echo "$out" | tail -3; FAIL=1
   else echo "ok: $(basename "$f") refused"; fi
