@@ -141,6 +141,10 @@ Deno.test("success: IDV questions need a request number AND at least one usable 
   assertEquals(succeeded.checkAnswers(at("80.00")), false);
   assert(succeeded.checkAnswers(at("80.00"), 80));
   assertEquals(succeeded.checkAnswers(at("60.00"), 80), false);
+  // Production mark (vendor practice, 2026-09-30): 60 passes, 59.99 and 40 do not.
+  assert(succeeded.checkAnswers(at("60.00"), idvPassScore("60")));
+  assertEquals(succeeded.checkAnswers(at("59.99"), idvPassScore("60")), false);
+  assertEquals(succeeded.checkAnswers(at("40.00"), idvPassScore("60")), false);
   // No score, no pass — whatever else the body says.
   assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR"}')), false);
   assertEquals(succeeded.checkAnswers(result(200, '{"success":true,"statusCode":"TSCR","finalScore":""}')), false);

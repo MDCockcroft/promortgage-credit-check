@@ -37,7 +37,9 @@ const APP_VERSION = "2026.09.26";
 const SOURCE_SYSTEM = "PMSA-CreditCheck";
 // C5: identity-question rounds per ID number across ALL records, rolling 24 h. Stops anyone from
 // harvesting a person's credit-file facts (or running up IDV calls) by submitting fresh forms.
-const MAX_IDV_ROUNDS_PER_PERSON_24H = 3;
+// 2 = MortgageMAX's production cooldown (Louis Pires, 2026-09-30): identity questions at most twice
+// per 24 hours. A third round would only be refused by the vendor, so hand over to manual first.
+const MAX_IDV_ROUNDS_PER_PERSON_24H = 2;
 // submit_credit_check's own refusals — safe to pass to the form as codes (it maps them to copy).
 const SUBMIT_REFUSALS = new Set([
   "invalid_id_number", "invalid_passport_number", "invalid_id_type", "invalid_cell", "too_many_submissions",

@@ -174,9 +174,10 @@ export const IDV_PASS_STATUS = "TSCR";
 /**
  * Minimum finalScore (0-100) that counts as a pass. Live UAT, 2026-09-29: all five answers right
  * gave TSCR + finalScore "100.00"; deliberately wrong answers ALSO gave TSCR + success:true, with
- * finalScore "20.00". The vendor has not yet confirmed the pass mark, so the default is the
- * strictest one; set MM_IDV_PASS_SCORE once they do. Anyone below it goes to a second round or
- * manual verification — the safe direction.
+ * finalScore "20.00". MortgageMAX confirmed (Louis Pires, 2026-09-30) that the API gives no pass or
+ * fail — the consuming service decides — and that they usually pass at 60 and above. Production
+ * sets MM_IDV_PASS_SCORE=60. The default stays the strictest, so a missing or invalid setting sends
+ * people to a second round or manual verification — the safe direction.
  */
 export const IDV_PASS_SCORE_DEFAULT = 100;
 export function idvPassScore(raw: string | undefined | null): number {

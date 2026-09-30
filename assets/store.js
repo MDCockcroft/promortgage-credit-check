@@ -101,7 +101,7 @@
   /* Server timings mirrored by the demo (mm-staff / mm-client stale-state recovery). */
   var STALE_IN_FLIGHT_MS = 5 * 60 * 1000;     // a check still "running" after this was killed mid-call
   var IDV_ANSWER_WINDOW_MS = 6 * 60 * 1000;   // the client's 5:00 countdown plus a minute of slack
-  var PERSON_IDV_LIMIT = 3;                   // identity-question rounds per ID number per 24 hours
+  var PERSON_IDV_LIMIT = 2;                   // identity-question rounds per ID number per 24 hours (MortgageMAX's production cooldown)
 
   /* The register list needs only these columns. The full record (credit report, affordability,
      identity questions, MortgageMAX read-back) is fetched by get(ref) when a record is opened —
