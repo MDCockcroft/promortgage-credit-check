@@ -167,6 +167,14 @@ Deno.serve(async (req) => {
       if (action === "submit") {
         const p = body.payload;
         if (!p || typeof p !== "object" || Array.isArray(p)) return fail("bad_request", "payload is required", origin);
+        // Applications arrive only through an active consultant's personal link (Michael, 2026-10-01):
+        // the bare address is the staff sign-in, and there is no general form any more. Checked BEFORE
+        // the record is made, so a stale or made-up code leaves nothing behind. (The page hides the
+        // form in the same cases; this is the control.)
+        if (!validLinkCode(body.consultant_code)) return fail("bad_request", "consultant_link_required", origin);
+        const who = await sb.rpc("consultant_by_code", { p_code: body.consultant_code });
+        if (who.error) throw new Error(`server_error: ${who.error.message}`);
+        if (typeof who.data !== "string" || !who.data) return fail("bad_request", "consultant_link_required", origin);
         const sub = await sb.rpc("submit_credit_check", { payload: p });
         if (sub.error) {
           const m = sub.error.message ?? "";
@@ -174,9 +182,8 @@ Deno.serve(async (req) => {
           throw new Error(`server_error: ${m}`);
         }
         const d = sub.data as { ref: string; demo_otp?: string };
-        // Submitted through a consultant's personal link: the record is theirs. Anything else (no
-        // code, an unknown or deactivated one, roles not installed) leaves it unassigned for an
-        // administrator to hand out - never a reason to refuse the client's application.
+        // The record belongs to that consultant. If they were deactivated in the instant since the
+        // check above, it stays unassigned for an administrator to hand out (and is logged below).
         if (validLinkCode(body.consultant_code)) {
           const at = await sb.rpc("attach_consultant", { p_ref: d.ref, p_code: body.consultant_code });
           // Never silent: every application that arrives through a link but lands unassigned is

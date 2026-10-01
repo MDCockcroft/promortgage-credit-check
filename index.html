@@ -249,6 +249,32 @@
     main { padding: var(--s8) var(--s7); }
   }
 </style>
+<style>
+  /* the form stays hidden until the consultant's link has been checked (see the link gate) */
+  html[data-gate="checking"] #formView { display: none; }
+</style>
+<script>
+/* Who may open this page - decided before anything is drawn:
+   - a consultant's personal link (?c=<code>): the code is checked with the server further down;
+   - a re-issued identity-check link (#resume=...), or a tab already part-way through a form;
+   - anything else: the bare address belongs to staff, so go to the sign-in page.
+   Local demo (?demo=1 on localhost) is left alone. */
+(function () {
+  try {
+    var q = new URLSearchParams(window.location.search);
+    if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname) && q.get('demo') === '1') return;
+    if (/(^#|&)resume=/.test(String(window.location.hash || ''))) return;
+    var inFlow = false;
+    try {
+      for (var i = 0; i < window.sessionStorage.length; i++) {
+        if (/^pm_/.test(window.sessionStorage.key(i) || '')) { inFlow = true; break; }
+      }
+    } catch (e) { /* private mode: no stored session */ }
+    if (q.get('c') === null && !inFlow) { window.location.replace('admin.html'); return; }
+    document.documentElement.setAttribute('data-gate', 'checking');
+  } catch (e) { /* never block the page on this */ }
+})();
+</script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to form</a>
@@ -596,7 +622,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260930-1"></script>
+<script src="assets/store.js?v=20261001-1"></script>
 <script>
 (function () {
   'use strict';
@@ -611,8 +637,8 @@
   var resumed = false; /* opened from a consultant's re-issued identity-check link */
 
   /* Opened through a consultant's personal link: say whose, so the client knows it is the right
-     one. An unknown code shows nothing; the application is then assigned by an administrator. */
-  PMStore.consultant().then(function (c) {
+     one. Called by the link gate near the end of this script. */
+  function showConsultant(c) {
     if (!c || !c.name) return;
     var line = document.getElementById('consultantLine');
     if (c.name === 'your consultant') {
@@ -623,7 +649,15 @@
       document.getElementById('consultantName').textContent = c.name;
     }
     line.hidden = false;
-  });
+  }
+  /* A link that cannot be used: one plain message, no form, and nothing about anyone's consent. */
+  function showLinkProblem(msg) {
+    currentRef = null;
+    document.getElementById('doneHead').textContent = 'This link doesn\u2019t work';
+    Array.prototype.forEach.call(donePanel.querySelectorAll('p:not(#doneMsg), .done-mark'), function (n) { n.hidden = true; });
+    document.getElementById('doneMsg').textContent = msg;
+    showPanel(donePanel);
+  }
 
   /* Demo mode keeps everything in this browser: say so before anyone types real details. */
   document.getElementById('demoBanner').hidden = PMStore.mode !== 'demo';
@@ -924,6 +958,9 @@
         setErr('cell', 'Enter a valid SA cellphone number, e.g. 0821234567.');
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'Please check your cellphone number — your SMS code goes to it.';
+      } else if (/consultant_link_required/.test(m)) {
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'This form must be opened from your consultant\u2019s personal link. Please ask your consultant for their link, then fill in the form again.';
       } else if (/too_many_submissions/.test(m)) {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'This ID number has already been used several times today. Please contact your consultant directly.';
@@ -1391,6 +1428,37 @@
     });
   });
 
+  /* --- link gate: the form opens only through a consultant's personal link --------------------
+     The script in <head> already sent the bare address to the staff sign-in and hid the form. Here
+     the code is checked with the server: an active consultant's link shows the form (and says
+     whose); a malformed, unknown or deactivated one shows a message instead. The server refuses
+     such applications too (mm-client submit), so this is courtesy, not the control. If the check
+     itself cannot be made (network), the form is shown and the server decides at submit.
+     A re-issued identity-check link (#resume=...) is not gated: it is handled just below. */
+  (function () {
+    var gated = document.documentElement.getAttribute('data-gate') === 'checking';
+    var openGate = function () { document.documentElement.removeAttribute('data-gate'); };
+    if (PMStore.mode !== 'live' || !gated) {
+      openGate();
+      PMStore.consultant().then(showConsultant);
+      return;
+    }
+    if (!PMStore.hasConsultantCode) {
+      openGate();
+      return showLinkProblem('This form opens from your consultant\u2019s personal link. Please ask your consultant to send you their link.');
+    }
+    setWork('Credit check authorisation', 'Checking your link', 'One moment\u2026');
+    showPanel(workPanel);
+    PMStore.consultant().then(function (c) {
+      openGate();
+      if (c && c.known === false) {
+        return showLinkProblem('This link is no longer in use. Please ask your consultant to send you their current link.');
+      }
+      showConsultant(c);
+      showPanel(formView, document.getElementById('formHead'));
+    });
+  })();
+
   /* --- a consultant re-issued the identity-check link: index.html#resume=PM-XXXXXX&t=<token> ---
      The token rides in the fragment, so it never reaches a server log; it is taken out of the
      address bar at once. Nothing starts until the client presses Start (the 5 minutes begin then). */
@@ -1404,11 +1472,7 @@
     try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* ignore */ }
     if (!/^PM-[A-Z0-9]{4,12}$/.test(ref || '') || !/^[0-9a-f]{64}$/.test(t || '')) {
       /* a mangled link says nothing about this person's consent — don't claim it is recorded */
-      currentRef = null;
-      document.getElementById('doneHead').textContent = 'This link doesn’t work';
-      Array.prototype.forEach.call(donePanel.querySelectorAll('p:not(#doneMsg), .done-mark'), function (n) { n.hidden = true; });
-      document.getElementById('doneMsg').textContent = 'The link may have been cut short when it was copied. Please ask your consultant to send it again.';
-      return showPanel(donePanel);
+      return showLinkProblem('The link may have been cut short when it was copied. Please ask your consultant to send it again.');
     }
     resumed = true;
     currentRef = ref;

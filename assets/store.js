@@ -531,6 +531,8 @@
 
   var PMStore = {
     mode: mode,
+    /* true when this tab was opened through a consultant's personal link (a well-formed ?c= code) */
+    hasConsultantCode: !!consultantCode,
     STATUS: STATUS,
     allowedFrom: allowedFrom,
     manualVerifyCheck: manualVerifyCheck,
@@ -561,15 +563,20 @@
        without it, and the application is then handed out by an administrator. */
     consultantCode: consultantCode,
     validLinkCode: validLinkCode,
+    /* → {name, known}: known is true when the link belongs to an active consultant, false when the
+       server says it does not (or there is no code), and null when the lookup itself failed — the
+       form must not call a link bad just because the network hiccupped. */
     consultant: function () {
-      if (!consultantCode) return Promise.resolve({ name: null });
+      if (!consultantCode) return Promise.resolve({ name: null, known: false });
       if (mode !== 'live') {
         var dm = demoStaff().filter(function (m) { return m.linkCode === consultantCode && m.active && m.role; })[0];
-        return Promise.resolve({ name: dm ? String(dm.fullName).split(' ')[0] : null });
+        return Promise.resolve({ name: dm ? String(dm.fullName).split(' ')[0] : null, known: !!dm });
       }
       return invoke('mm-client', { action: 'consultant', code: consultantCode })
-        .then(function (d) { return { name: d && typeof d.name === 'string' && d.name ? d.name : null }; },
-          function () { return { name: null }; });
+        .then(function (d) {
+          var n = d && typeof d.name === 'string' && d.name ? d.name : null;
+          return { name: n, known: !!n };
+        }, function () { return { name: null, known: null }; });
     },
 
     /* returns {ref, demo_otp, sms: {sent, reason?, uncertain, retryAfter, sendsLeft, canResend}}.

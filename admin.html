@@ -613,7 +613,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20260930-1"></script>
+<script src="assets/store.js?v=20261001-1"></script>
 <script>
 (function () {
   'use strict';
@@ -2499,8 +2499,12 @@
       p.appendChild(document.createTextNode('Demo mode: records are stored in this browser only, and credit checks return ' +
         'sample data — nothing is sent to MortgageMAX. '));
     }
-    p.appendChild(document.createTextNode('Client form: '));
-    p.appendChild(el('a', { href: clientFormHref(), text: 'index.html' }));
+    /* Live: the form opens only through a consultant's personal link (shown above), so there is
+       no general form link to offer. The demo keeps its shortcut. */
+    if (PMStore.mode !== 'live') {
+      p.appendChild(document.createTextNode('Client form: '));
+      p.appendChild(el('a', { href: clientFormHref(), text: 'index.html' }));
+    }
   }
 
   /* A login that is signed in but has no active membership: say so, and show nothing else. */
