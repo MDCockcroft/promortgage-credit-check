@@ -12,7 +12,7 @@ import {
   STALE_IN_FLIGHT_MS,
   staleState,
 } from "./states.ts";
-import { ATTESTATION, manualVerifyCheck } from "./manual.ts";
+import { ATTESTATION, CONSENT_FORM, manualVerifyCheck } from "./manual.ts";
 import { validLinkCode } from "./access.ts";
 
 function loadStore() {
@@ -24,6 +24,7 @@ function loadStore() {
   return win.PMStore as {
     allowedFrom: (m: string) => string[]; STATUS: Record<string, unknown>; mode: string;
     ATTESTATION: { version: string; text: string };
+    CONSENT_FORM: { version: string; href: string };
     manualVerifyCheck: (rec: Record<string, unknown>) => { ok: boolean; reason?: string };
     idvLinkCheck: (rec: Record<string, unknown>, mode: string) => { ok: boolean; reason?: string };
     MAX_IDV_ROUNDS: number;
@@ -101,6 +102,9 @@ Deno.test("configErrorTarget: derived from the row's own data, only into existin
 Deno.test("store.js attestation wording and manual-verification rule === server (manual.ts)", () => {
   const store = loadStore();
   assertEquals(store.ATTESTATION, { ...ATTESTATION });
+  // The consent-form edition the page offers is the one the server stores; the blank form is in the site.
+  assertEquals(store.CONSENT_FORM.version, CONSENT_FORM.version);
+  assertEquals(Deno.statSync(new URL(`../../../${store.CONSENT_FORM.href}`, import.meta.url)).isFile, true);
   for (const status of [...ALL_STATUSES]) {
     for (const idType of ["said", "passport"]) {
       for (const registered of [null, "2026-09-28T10:00:00Z"]) {

@@ -93,6 +93,10 @@
       'it to the system. I also presented/read out the Customer Consent for their consideration and acceptance ' +
       'before requesting their credit information via the Experian System.'
   };
+  /* The client's SIGNED MortgageMAX Consent Form is required before the identity questions can be
+     bypassed (MortgageMAX, 2026-10-01). version mirrors the server (manual.ts, parity-tested); href
+     is the blank form a consultant sends to the client. */
+  var CONSENT_FORM = { version: 'mmax-consent-form-2025-11', href: 'assets/docs/MortgageMAX-Consent-Form.pdf' };
   var ID_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
   var ID_DOC_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -375,9 +379,9 @@
     idv_in_progress: 'The client is answering the identity questions (5-minute limit). Nothing to do.',
     idv_passed: 'The client passed the identity questions. You can run the credit check.',
     idv_waived: 'Consent is registered and identity questions aren’t required. You can run the credit check.',
-    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: upload a copy of their ID and confirm the Experian statement.',
-    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: upload a copy of their ID and confirm the Experian statement.',
-    manual_verified: 'The client’s identity was verified manually (ID copy + Experian statement, shown below). You can run the credit check.',
+    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a copy of their ID and confirm the Experian statement.',
+    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a copy of their ID and confirm the Experian statement.',
+    manual_verified: 'The client’s identity was verified manually (signed consent form, ID copy and Experian statement, shown below). You can run the credit check.',
     check_in_flight: 'The credit check is running. This usually takes under a minute.',
     report_ready: 'The credit report is ready — see below.',
     check_failed: 'The credit check didn’t complete. See the error below, then run it again.',
@@ -538,6 +542,7 @@
     manualVerifyCheck: manualVerifyCheck,
     idvLinkCheck: idvLinkCheck,
     ATTESTATION: ATTESTATION,
+    CONSENT_FORM: CONSENT_FORM,
     BUCKETS: BUCKETS,
     bucketOf: bucketOf,
     bucketInfo: bucketInfo,
@@ -953,34 +958,52 @@
     /* Manual identity verification (the only route past failed / unavailable identity questions):
        upload the ID copy through a one-time URL mm-staff issues, then record the consultant's
        attestation. attestationVersion must be the one shown. → {status:'manual_verified'}. */
-    manualVerify: function (ref, file, attestationVersion) {
-      if (!file) return demoFail('bad_request', 'Choose the ID copy to upload');
-      if (ID_DOC_TYPES.indexOf(file.type) === -1) return demoFail('bad_request', 'The ID copy must be a PDF, JPG or PNG');
-      if (!file.size || file.size > ID_DOC_MAX_BYTES) return demoFail('bad_request', 'The ID copy is empty or larger than 10 MB');
+    /* Manual verification: the signed consent form AND the ID copy are uploaded (each to a path the
+       server chose), then the consultant's confirmation is recorded. Both files are required. */
+    manualVerify: function (ref, idFile, formFile, attestationVersion, consentFormVersion) {
+      var check = function (file, what) {
+        if (!file) return 'Choose the ' + what + ' to upload';
+        if (ID_DOC_TYPES.indexOf(file.type) === -1) return 'The ' + what + ' must be a PDF, JPG or PNG';
+        if (!file.size || file.size > ID_DOC_MAX_BYTES) return 'The ' + what + ' is empty or larger than 10 MB';
+        return null;
+      };
+      var problem = check(formFile, 'signed consent form') || check(idFile, 'ID copy');
+      if (problem) return demoFail('bad_request', problem);
       if (mode === 'live') {
-        return invoke('mm-staff', { action: 'manual-upload-url', ref: ref, contentType: file.type }).then(function (u) {
-          return sb.storage.from('id-documents').uploadToSignedUrl(u.path, u.token, file, { contentType: file.type })
-            .then(function (res) {
-              if (res.error) throw mkErr({ code: 'server_error', message: 'The upload failed — try again' });
-              return invoke('mm-staff', {
-                action: 'manual-verify', ref: ref, path: u.path, attestationVersion: attestationVersion, attested: true
+        var upload = function (file, kind) {
+          return invoke('mm-staff', { action: 'manual-upload-url', ref: ref, contentType: file.type, kind: kind }).then(function (u) {
+            return sb.storage.from('id-documents').uploadToSignedUrl(u.path, u.token, file, { contentType: file.type })
+              .then(function (res) {
+                if (res.error) throw mkErr({ code: 'server_error', message: 'The upload failed — try again' });
+                return u.path;
               });
+          });
+        };
+        return upload(formFile, 'consent').then(function (formPath) {
+          return upload(idFile, 'id').then(function (idPath) {
+            return invoke('mm-staff', {
+              action: 'manual-verify', ref: ref, path: idPath, consentFormPath: formPath,
+              attestationVersion: attestationVersion, consentFormVersion: consentFormVersion, attested: true
             });
+          });
         });
       }
       var rec = demoRecover(ref);
       if (!rec) return demoFail('bad_request', 'No such record');
       if (attestationVersion !== ATTESTATION.version) return demoFail('invalid_state', 'manual_attestation_changed');
+      if (consentFormVersion !== CONSENT_FORM.version) return demoFail('invalid_state', 'manual_consent_form_changed');
       var can = manualVerifyCheck(rec);
       if (!can.ok) return demoFail('invalid_state', 'manual_not_allowed:' + can.reason);
       demoUpdate(ref, {
         status: 'manual_verified', manualVerifiedAt: Date.now(), manualVerificationId: 1,
         demoEvidence: {
           created_at: new Date().toISOString(), verified_by_label: 'demo user', attestation_version: ATTESTATION.version,
-          attestation_text: ATTESTATION.text, document_type: file.type, document_bytes: file.size,
-          document_path: null, document_deleted_at: null
+          attestation_text: ATTESTATION.text, document_type: idFile.type, document_bytes: idFile.size,
+          document_path: null, document_deleted_at: null,
+          consent_form_version: CONSENT_FORM.version, consent_form_type: formFile.type, consent_form_bytes: formFile.size,
+          consent_form_path: null, consent_form_deleted_at: null
         }
-      }, 'Identity verified manually by demo user (ID copy uploaded + Experian attestation)');
+      }, 'Identity verified manually by demo user (signed consent form + ID copy uploaded + Experian attestation)');
       return Promise.resolve({ status: 'manual_verified' });
     },
     /* Staff: a fresh identity-check session for a client whose 30-minute session lapsed. The token
@@ -1002,7 +1025,8 @@
     manualEvidence: function (rec) {
       if (mode !== 'live') return Promise.resolve(rec && rec.demoEvidence ? [rec.demoEvidence] : []);
       return sb.from('manual_verifications')
-        .select('id, created_at, verified_by_label, attestation_version, attestation_text, document_path, document_type, document_bytes, document_sha256, document_deleted_at')
+        .select('id, created_at, verified_by_label, attestation_version, attestation_text, document_path, document_type, document_bytes, document_sha256, document_deleted_at, ' +
+          'consent_form_version, consent_form_path, consent_form_type, consent_form_bytes, consent_form_deleted_at')
         .eq('ref', rec.ref).order('created_at', { ascending: false }).limit(10)
         .then(function (res) {
           if (res.error) throw new Error(res.error.message);
@@ -1017,7 +1041,16 @@
         return PMStore.logAccess(ref, 'view_id_document').then(function () { return res.data.signedUrl; });
       });
     },
-    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document'. Never throws — access logging must not block viewing. */
+    /* The same for a stored signed consent form (same private store, same access rule). */
+    consentFormUrl: function (ref, path) {
+      if (mode !== 'live') return demoFail('invalid_state', 'No stored consent form in demo mode');
+      return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {
+        if (res.error || !res.data) throw mkErr({ code: 'server_error', message: 'Could not open the signed consent form' });
+        return PMStore.logAccess(ref, 'view_signed_consent_form').then(function () { return res.data.signedUrl; });
+      });
+    },
+    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document' | 'view_signed_consent_form'.
+       Never throws — access logging must not block viewing. */
     logAccess: function (ref, action) {
       if (mode !== 'live') return Promise.resolve();
       /* never blocks viewing — but a broken audit log must not be invisible either */

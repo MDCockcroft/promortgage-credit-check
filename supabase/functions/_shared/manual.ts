@@ -14,6 +14,14 @@ export const ATTESTATION = {
     "before requesting their credit information via the Experian System.",
 } as const;
 
+/**
+ * The manual route needs the client's SIGNED MortgageMAX Consent Form first (Bennie Vermeulen,
+ * 2026-10-01): the consultant sends the form, the client signs page 1, and only then may the identity
+ * questions be bypassed. The signed copy is evidence, stored with the ID copy. The version names the
+ * edition the page offers (the form's own footer date); change it whenever MortgageMAX reissues it.
+ */
+export const CONSENT_FORM = { version: "mmax-consent-form-2025-11" } as const;
+
 export const ID_DOC_BUCKET = "id-documents";
 export const ID_DOC_MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's file_size_limit
 export const ID_DOC_TYPES: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png" };
@@ -46,6 +54,21 @@ export function idDocPath(ref: string, contentType: string, id: string = crypto.
 export function validIdDocPath(ref: string, path: unknown): path is string {
   if (typeof path !== "string" || !path.startsWith(`${ref}/`)) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png)$/.test(path.slice(ref.length + 1));
+}
+
+/**
+ * The signed consent form lives in the same folder under its own name, so an upload made as one
+ * kind can never be passed off as the other.
+ */
+export function consentFormPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
+  const ext = ID_DOC_TYPES[contentType];
+  return ext ? `${ref}/consent-${id}.${ext}` : null;
+}
+
+/** The path must be one consentFormPath() could have issued for THIS ref. */
+export function validConsentFormPath(ref: string, path: unknown): path is string {
+  if (typeof path !== "string" || !path.startsWith(`${ref}/`)) return false;
+  return /^consent-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png)$/.test(path.slice(ref.length + 1));
 }
 
 /** Content type from the file's first bytes — the upload's declared type is not trusted. */

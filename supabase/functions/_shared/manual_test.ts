@@ -1,5 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { ATTESTATION, idDocPath, manualVerifyCheck, sha256HexBytes, sniffDocType, validIdDocPath } from "./manual.ts";
+import {
+  ATTESTATION, CONSENT_FORM, consentFormPath, idDocPath, manualVerifyCheck, sha256HexBytes, sniffDocType,
+  validConsentFormPath, validIdDocPath,
+} from "./manual.ts";
 
 const said = (extra: Record<string, unknown>) => ({ id_type: "said", consent_registered_at: "2026-09-28T10:00:00Z", ...extra });
 
@@ -35,6 +38,22 @@ Deno.test("ID copy paths: server-chosen, bound to the ref, accepted types only",
   assertEquals(validIdDocPath("PM-ABC123", "PM-ABC123/../PM-X/a.pdf"), false);
   assertEquals(validIdDocPath("PM-ABC123", "PM-ABC123/not-a-uuid.pdf"), false);
   assertEquals(validIdDocPath("PM-ABC123", 42), false);
+});
+
+Deno.test("signed consent form: its own path, never interchangeable with the ID copy", () => {
+  // MortgageMAX, 2026-10-01: the manual route needs the client's signed Consent Form as well.
+  assertEquals(CONSENT_FORM.version, "mmax-consent-form-2025-11");
+  const form = consentFormPath("PM-ABC123", "application/pdf")!;
+  const id = idDocPath("PM-ABC123", "application/pdf")!;
+  assertEquals(validConsentFormPath("PM-ABC123", form), true);
+  assertEquals(validConsentFormPath("PM-OTHER1", form), false);
+  // An upload made as one kind cannot be passed off as the other.
+  assertEquals(validConsentFormPath("PM-ABC123", id), false);
+  assertEquals(validIdDocPath("PM-ABC123", form), false);
+  assertEquals(consentFormPath("PM-ABC123", "image/gif"), null);
+  assertEquals(validConsentFormPath("PM-ABC123", "PM-ABC123/consent-not-a-uuid.pdf"), false);
+  assertEquals(validConsentFormPath("PM-ABC123", "PM-ABC123/../PM-X/consent-a.pdf"), false);
+  assertEquals(validConsentFormPath("PM-ABC123", null), false);
 });
 
 Deno.test("sniffDocType: magic bytes, not the declared type", async () => {

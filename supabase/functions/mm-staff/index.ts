@@ -43,11 +43,14 @@ import {
   ATTESTATION,
   ID_DOC_BUCKET,
   ID_DOC_MAX_BYTES,
+  CONSENT_FORM,
+  consentFormPath,
   ID_DOC_TYPES,
   idDocPath,
   manualVerifyCheck,
   sha256HexBytes,
   sniffDocType,
+  validConsentFormPath,
   validIdDocPath,
 } from "../_shared/manual.ts";
 
@@ -100,6 +103,7 @@ Deno.serve(async (req) => {
   let body: {
     ref?: string; action?: string; reason?: string;
     contentType?: string; path?: string; attestationVersion?: string; attested?: boolean;
+    kind?: string; consentFormPath?: string; consentFormVersion?: string;
     consultantId?: string; userId?: string; role?: string; active?: boolean;
   };
   try {
@@ -178,6 +182,7 @@ Deno.serve(async (req) => {
       env: cfg.env,
       allowPassport: Deno.env.get("ALLOW_PASSPORT") === "true",
       attestation: ATTESTATION,
+      consentForm: CONSENT_FORM,
       idDocument: { maxBytes: ID_DOC_MAX_BYTES, types: Object.keys(ID_DOC_TYPES) },
       // An older mm-staff sends no `me`; the page then hides everything to do with roles.
       me: { userId: user.id, role: member.role, linkCode: member.linkCode, roles: true },
@@ -530,12 +535,14 @@ Deno.serve(async (req) => {
 
     // ======================================================================================
     if (action === "manual-upload-url") {
-      // Step 1 of manual verification: a one-time signed upload URL for a path WE choose. The
-      // bucket enforces type and size; manual-verify re-checks the bytes before anything counts.
+      // Step 1 of manual verification, once per file: a one-time signed upload URL for a path WE
+      // choose - the signed consent form (kind "consent") or the ID copy. The bucket enforces type
+      // and size; manual-verify re-checks the bytes of both before anything counts.
       const can = manualVerifyCheck(row);
       if (!can.ok) return fail("invalid_state", `manual_not_allowed:${can.reason}`, origin);
-      const path = idDocPath(ref, String(body.contentType ?? ""));
-      if (!path) return fail("bad_request", "The ID copy must be a PDF, JPG or PNG", origin);
+      const isForm = body.kind === "consent";
+      const path = isForm ? consentFormPath(ref, String(body.contentType ?? "")) : idDocPath(ref, String(body.contentType ?? ""));
+      if (!path) return fail("bad_request", `The ${isForm ? "signed consent form" : "ID copy"} must be a PDF, JPG or PNG`, origin);
       const { data: up, error: upErr } = await sb.storage.from(ID_DOC_BUCKET).createSignedUploadUrl(path);
       if (upErr || !up) return fail("server_error", "Could not prepare the upload", origin);
       return ok({ path: up.path, token: up.token, maxBytes: ID_DOC_MAX_BYTES }, origin);
@@ -543,39 +550,55 @@ Deno.serve(async (req) => {
 
     // ======================================================================================
     if (action === "manual-verify") {
-      // Step 2: the consultant confirmed the attestation. The stored text is OURS (never the
-      // browser's), the version must match what the page showed, and the file must really be an
-      // ID copy of an accepted type that was uploaded for this ref.
+      // Step 2: the consultant confirmed the attestation. MortgageMAX (2026-10-01) allows the manual
+      // route only once the client has SIGNED its Consent Form, so two files are required: the signed
+      // form and the ID copy. The stored statement is OURS (never the browser's), both versions must
+      // match what the page showed, and both files must really be documents of an accepted type that
+      // were uploaded for this ref. The database refuses a verification without the form as well.
       if (body.attested !== true) return fail("bad_request", "Confirm the statement first", origin);
       if (body.attestationVersion !== ATTESTATION.version) {
         return fail("invalid_state", "manual_attestation_changed", origin);
       }
+      if (body.consentFormVersion !== CONSENT_FORM.version) {
+        return fail("invalid_state", "manual_consent_form_changed", origin);
+      }
+      if (!validConsentFormPath(ref, body.consentFormPath)) return fail("bad_request", "Upload the signed consent form first", origin);
       if (!validIdDocPath(ref, body.path)) return fail("bad_request", "Upload the ID copy first", origin);
       const can = manualVerifyCheck(row);
       if (!can.ok) return fail("invalid_state", `manual_not_allowed:${can.reason}`, origin);
 
-      const { data: blob, error: dlErr } = await sb.storage.from(ID_DOC_BUCKET).download(body.path);
-      if (dlErr || !blob) return fail("bad_request", "The ID copy was not uploaded — try the upload again", origin);
-      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const formPath = body.consentFormPath, idPath = body.path;
       const discard = async () => {
-        const rm = await sb.storage.from(ID_DOC_BUCKET).remove([body.path as string]);
+        const rm = await sb.storage.from(ID_DOC_BUCKET).remove([formPath, idPath]);
         // Not fatal (delete-record sweeps the ref's folder) but never silent: it is personal data.
         if (rm.error) console.error(JSON.stringify({ event: "id_doc_discard_failed", ref, message: rm.error.message }));
       };
-      if (bytes.length === 0 || bytes.length > ID_DOC_MAX_BYTES) {
+      // Each file: present, within the size limit, and really the type its name claims.
+      const load = async (path: string, what: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; type: string } | string> => {
+        const { data: blob, error: dlErr } = await sb.storage.from(ID_DOC_BUCKET).download(path);
+        if (dlErr || !blob) return `The ${what} was not uploaded — try the upload again`;
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (bytes.length === 0 || bytes.length > ID_DOC_MAX_BYTES) return `The ${what} is empty or larger than 10 MB`;
+        const type = sniffDocType(bytes);
+        if (!type || ID_DOC_TYPES[type] !== path.split(".").pop()) return `The ${what} is not a readable PDF, JPG or PNG`;
+        return { bytes, type };
+      };
+      const form = await load(formPath, "signed consent form");
+      if (typeof form === "string") { await discard(); return fail("bad_request", form, origin); }
+      const idDoc = await load(idPath, "ID copy");
+      if (typeof idDoc === "string") { await discard(); return fail("bad_request", idDoc, origin); }
+      const formSha = await sha256HexBytes(form.bytes), idSha = await sha256HexBytes(idDoc.bytes);
+      if (formSha === idSha) {
         await discard();
-        return fail("bad_request", "The ID copy is empty or larger than 10 MB", origin);
-      }
-      const type = sniffDocType(bytes);
-      if (!type || ID_DOC_TYPES[type] !== body.path.split(".").pop()) {
-        await discard();
-        return fail("bad_request", "The file is not a readable PDF, JPG or PNG", origin);
+        return fail("bad_request", "The signed consent form and the ID copy are the same file — upload each document separately", origin);
       }
 
       const { data: evidenceId, error: rpcErr } = await sb.rpc("record_manual_verification", {
         p_ref: ref, p_from: row.status, p_user: user.id, p_label: staffLabel,
         p_version: ATTESTATION.version, p_text: ATTESTATION.text,
-        p_path: body.path, p_type: type, p_bytes: bytes.length, p_sha256: await sha256HexBytes(bytes),
+        p_path: idPath, p_type: idDoc.type, p_bytes: idDoc.bytes.length, p_sha256: idSha,
+        p_form_version: CONSENT_FORM.version, p_form_path: formPath, p_form_type: form.type,
+        p_form_bytes: form.bytes.length, p_form_sha256: formSha,
       });
       if (rpcErr) {
         await discard();
@@ -664,7 +687,8 @@ Deno.serve(async (req) => {
       }
       // Only once the row is gone: a failed delete must not leave live evidence marked as deleted.
       // The files are already removed, so a failed stamp is logged rather than reported as a failure.
-      const stamped = await sb.from("manual_verifications").update({ document_deleted_at: new Date().toISOString() })
+      const goneAt = new Date().toISOString();
+      const stamped = await sb.from("manual_verifications").update({ document_deleted_at: goneAt, consent_form_deleted_at: goneAt })
         .eq("ref", ref).is("document_deleted_at", null);
       if (stamped.error) console.error(JSON.stringify({ event: "id_doc_stamp_failed", ref, code: stamped.error.code, message: stamped.error.message }));
       // Only after the row is really gone: a failed delete must not leave a "Deleted" marker on a live record.
