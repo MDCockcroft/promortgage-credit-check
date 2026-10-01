@@ -406,6 +406,8 @@
   .login-card h2 { margin: var(--s2) 0 var(--s5); }
   .login-card .btn { width: 100%; margin-top: var(--s2); }
   .login-card .err { display: block; margin-top: var(--s3); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
+  /* the manual-verification panel's message sits outside a .field, so it needs the error look too */
+  .verify-set .err { display: block; margin-top: var(--s2); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -1479,7 +1481,10 @@
       } else if (res.expired) {
         pairs.push(['Result', 'Questions expired before the client answered them']);
       } else {
-        pairs.push(['Result', res.success === true ? 'Passed' : res.success === false ? 'Not passed' : '—']);
+        /* MortgageMAX sets success:true (and "TSCR") whenever the answers were SCORED, pass or fail
+           (UAT, 2026-09-29) — so the outcome comes from our own record, never from that flag. */
+        var scored = res.success === true || res.success === false || (res.statusCode != null && res.statusCode !== '');
+        pairs.push(['Result', r.idvPassedAt ? 'Passed' : scored ? 'Not passed' : '—']);
         if (res.statusCode != null && res.statusCode !== '') pairs.push(['Result code', String(res.statusCode), 'mono']);
         if (res.finalScore != null && res.finalScore !== '') pairs.push(['Final score', String(res.finalScore)]);
         if (res.vendorCode) pairs.push(['Vendor code', String(res.vendorCode), 'mono']);
