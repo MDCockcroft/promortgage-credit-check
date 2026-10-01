@@ -961,6 +961,14 @@
       } else if (/consultant_link_required/.test(m)) {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'This form must be opened from your consultant\u2019s personal link. Please ask your consultant for their link, then fill in the form again.';
+      } else if (/cell_linked_to_another_person/.test(m)) {
+        setErr('cell', 'This cellphone number can\u2019t be used for this application.');
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'This cellphone number has already been used for another person\u2019s application. Each person needs their own cellphone number. Please use your own number, or contact your consultant.';
+      } else if (/id_linked_to_another_cell/.test(m)) {
+        setErr('cell', 'Use the cellphone number you applied with before.');
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'This ID number is linked to a different cellphone number. Please use the number you applied with before, or contact your consultant.';
       } else if (/too_many_submissions/.test(m)) {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'This ID number has already been used several times today. Please contact your consultant directly.';
@@ -1060,6 +1068,7 @@
     /* status is no longer awaiting_otp: usually an earlier attempt succeeded but its reply was lost
        (can also be an expired record, so never claim consent is recorded outright) */
     already_confirmed: 'This code has already been used. If you entered it a moment ago, your consent is recorded and your consultant will contact you. Otherwise, go back and submit the form again.',
+    cell_linked: 'This cellphone number has just been used for another person\u2019s application, so it can\u2019t confirm this one. Please contact your consultant.',
     not_found: 'Something went wrong. Go back and submit the form again.'
   };
   var otpVerifyBtn = document.getElementById('otpVerify');

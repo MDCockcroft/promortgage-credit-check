@@ -175,6 +175,23 @@ Deno.serve(async (req) => {
         const who = await sb.rpc("consultant_by_code", { p_code: body.consultant_code });
         if (who.error) throw new Error(`server_error: ${who.error.message}`);
         if (typeof who.data !== "string" || !who.data) return fail("bad_request", "consultant_link_required", origin);
+        // One cellphone, one person (Michael, 2026-10-01): a phone that already confirmed an application
+        // for a different ID number is refused, and so is an ID number whose identity was verified with
+        // a different phone. Asked BEFORE the record is made and before any SMS is sent. (The database
+        // also refuses the confirmation itself - see 'confirm'.) Until migration 20261003 is applied
+        // the function does not exist and there is no such rule yet.
+        const fields = p as Record<string, unknown>;
+        const link = await sb.rpc("link_conflict", {
+          p_person: typeof fields.idNumber === "string" ? fields.idNumber : "",
+          p_cell: typeof fields.cell === "string" ? fields.cell : "",
+        });
+        if (link.error) {
+          if (!isMissingFunction(link.error)) throw new Error(`server_error: ${link.error.message}`);
+        } else if (link.data === "cell_linked") {
+          return fail("bad_request", "cell_linked_to_another_person", origin);
+        } else if (link.data === "id_linked") {
+          return fail("bad_request", "id_linked_to_another_cell", origin);
+        }
         const sub = await sb.rpc("submit_credit_check", { payload: p });
         if (sub.error) {
           const m = sub.error.message ?? "";
@@ -252,6 +269,10 @@ Deno.serve(async (req) => {
         return fail("forbidden", "Invalid or expired session", origin);
       }
       const c = await sb.rpc("confirm_consent", { p_ref: ref, p_otp: typeof body.otp === "string" ? body.otp : "" });
+      // 23P01 = the one_person_per_cellphone constraint: between this form being accepted and this
+      // code being entered, the same phone confirmed an application for a different ID number.
+      // Nothing was confirmed and no attempt was used up (the whole call was rolled back).
+      if (c.error && c.error.code === "23P01") return ok({ ok: false, ref, error: "cell_linked", idv_token: null }, origin);
       if (c.error) throw new Error(`server_error: ${c.error.message}`);
       const d = (c.data ?? {}) as { ok?: boolean; ref?: string; error?: string; idv_token?: string };
       // The one-time IDV token goes back to this browser only, exactly as confirm_consent minted it.
