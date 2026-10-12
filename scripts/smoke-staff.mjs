@@ -54,7 +54,7 @@ show("refresh-consents", await call("refresh-consents"));
 const direct = await fetch(`${URL_BASE}/rest/v1/credit_checks?ref=eq.${ref}`, {
   method: "PATCH",
   headers: { apikey: KEY, Authorization: `Bearer ${auth.access_token}`, "Content-Type": "application/json", Prefer: "return=representation" },
-  body: JSON.stringify({ status: "awaiting_otp" }),
+  body: JSON.stringify({ status: "consent_confirmed" }),
 });
 console.log(`${direct.status >= 400 ? "✓" : "✗"} direct status edit  HTTP ${direct.status} (expected to be denied)`);
 

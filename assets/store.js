@@ -1,8 +1,8 @@
 /* Pro Mortgage credit-check tool — data layer.
    Dual mode, one async API:
-     LIVE — Supabase (config.js filled in). The public form calls two RPCs
-            (submit_credit_check, confirm_consent) and the mm-client Edge Function
-            (consent wording, consent registration, identity questions). Staff read
+     LIVE — Supabase (config.js filled in). The public form calls only the mm-client Edge
+            Function (consent wording, the application itself, consent registration,
+            identity questions); it never calls the database directly. Staff read
             the table after Supabase Auth login and act through the mm-staff Edge
             Function — they cannot change a record's status directly (BUILD-PLAN D10).
      DEMO — localStorage in this browser, no login (config.js blank, or ?demo=1 on
@@ -97,6 +97,10 @@
      bypassed (MortgageMAX, 2026-10-01). version mirrors the server (manual.ts, parity-tested); href
      is the blank form a consultant sends to the client. */
   var CONSENT_FORM = { version: 'mmax-consent-form-2025-11', href: 'assets/docs/MortgageMAX-Consent-Form.pdf' };
+  /* Bennie Vermeulen, 2026-10-12: the consultant's photo of the client (in person, holding their ID)
+     replaced the uploaded ID copy. Images only - a PDF is never a photo. Mirrors manual.ts. */
+  var CLIENT_PHOTO = { kind: 'client_photo' };
+  var PHOTO_TYPES = ['image/jpeg', 'image/png'];
   var ID_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
   var ID_DOC_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -114,12 +118,12 @@
   var LIST_COLUMNS = 'ref, created_at, status, first_names, surname, id_type, id_number, ' +
     'passport_number, gross_income, report_summary, consent_confirmed_at, idv_started_at, ' +
     'check_started_at, report_ready_at, pdf_status';
-  /* Everything a staff member may see on one record — never otp_hash (bug-hunt #12/#29). */
+  /* Everything a staff member may see on one record — never the secrets table (bug-hunt #12/#29). */
   var DETAIL_COLUMNS = 'id, ref, created_at, status, first_names, surname, id_type, id_number, ' +
     'passport_number, date_of_birth, email, cell, home_phone, work_phone, street, suburb, city, ' +
     'province, postal_code, employment_status, marital_status, referral, gross_income, ' +
     'total_deductions, monthly_expenses, housing_payment, consent_confirmed_at, consent_ua, ' +
-    'otp_expires, otp_attempts, audit, mm_person_id, consents_presented, consent_registered_at, ' +
+    'audit, mm_person_id, consents_presented, consent_registered_at, ' +
     'mm_consents_snapshot, mm_consents_synced_at, consent_withdrawn_at, idv_attempts, ' +
     'idv_started_at, idv_questions, idv_result, idv_passed_at, verification_success_code, ' +
     'manual_verified_at, manual_verification_id, ' +
@@ -171,7 +175,7 @@
     });
   }
 
-  /* ---------- one-time IDV session token (issued by confirm_consent) ---------- */
+  /* ---------- one-time IDV session token (minted by submit_application, handed back by mm-client submit) ---------- */
   function tokenKey(ref) { return 'pm_idv_' + ref; }
   function setToken(ref, t) { try { sessionStorage.setItem(tokenKey(ref), t); } catch (e) { /* private mode */ } memTokens[ref] = t; }
   function getToken(ref) {
@@ -179,17 +183,6 @@
     try { return sessionStorage.getItem(tokenKey(ref)); } catch (e) { return null; }
   }
   var memTokens = {};
-
-  /* ---------- resend token for the SMS code (issued by mm-client submit) ---------- */
-  var OTP_COOLDOWN_S = 60;   /* mirrors _shared/sms.ts — the server enforces both */
-  var OTP_MAX_SENDS = 3;
-  var memOtpSessions = {};
-  function otpKey(ref) { return 'pm_otp_' + ref; }
-  function setOtpSession(ref, t) { try { sessionStorage.setItem(otpKey(ref), t); } catch (e) { /* private mode */ } memOtpSessions[ref] = t; }
-  function getOtpSession(ref) {
-    if (memOtpSessions[ref]) return memOtpSessions[ref];
-    try { return sessionStorage.getItem(otpKey(ref)); } catch (e) { return null; }
-  }
 
   /* ---------- demo-mode storage ---------- */
   function readAll() {
@@ -202,7 +195,6 @@
     var r = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
     return 'PM-' + t + r;
   }
-  function makeOtp() { return String(Math.floor(100000 + Math.random() * 900000)); }
   function demoFind(ref) { return readAll().find(function (r) { return r.ref === ref; }) || null; }
   function demoUpdate(ref, patch, auditEvent) {
     var list = readAll();
@@ -295,6 +287,145 @@
   }
   function auditEntry(event) { return { at: Date.now(), event: event }; }
 
+  /* ---------- the completed application form as a PDF (Michael, 2026-10-12) ----------
+     Built here, in the browser, from the record itself: what the client filled in, the consent
+     declaration they accepted (version, fingerprint and - when the wording is to hand - the text),
+     and when. No library: a plain PDF 1.4 with the standard Helvetica fonts, one byte per character
+     (WinAnsi), so it opens anywhere and the file is a few KB. Returns a Uint8Array.
+       rec   - a record as get()/all() return it
+       opts  - { consultant, generatedBy, declarations: [{id, version, declaration, isHtml}] } (all optional) */
+  var PDF_W = 595, PDF_H = 842, PDF_M = 56, PDF_LH = 14, PDF_COL = 150;
+  function pdfText(v) {
+    return String(v == null ? '' : v)
+      .replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-')
+      .replace(/\u2022/g, '*').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ')
+      .replace(/[^\x20-\x7E\xA0-\xFF]/g, '?').trim();
+  }
+  function pdfEscape(s) { return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)'); }
+  function pdfWrap(text, max) {
+    var out = [], line = '';
+    pdfText(text).split(' ').forEach(function (w) {
+      while (w.length > max) { if (line) { out.push(line); line = ''; } out.push(w.slice(0, max)); w = w.slice(max); }
+      if (!line) line = w;
+      else if ((line + ' ' + w).length <= max) line += ' ' + w;
+      else { out.push(line); line = w; }
+    });
+    if (line) out.push(line);
+    return out.length ? out : [''];
+  }
+  function htmlToText(s) {
+    return String(s == null ? '' : s)
+      .replace(/<\s*(br|\/p|\/li|\/h[1-6]|\/div)\b[^>]*>/gi, '\n').replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+  }
+  function buildFormPdf(rec, opts) {
+    opts = opts || {};
+    var pages = [], ops = [], y = 0;
+    var when = function (ts) { return ts ? new Date(ts).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }) : '-'; };
+    var money = function (n) { return 'R ' + (Number(n) || 0).toLocaleString('en-ZA'); };
+    function newPage() { if (ops.length) pages.push(ops); ops = []; y = PDF_H - PDF_M; }
+    function need(lines) { if (y - lines * PDF_LH < PDF_M + PDF_LH) newPage(); }
+    function run(font, size, x, text) { ops.push('BT /' + font + ' ' + size + ' Tf ' + x + ' ' + y.toFixed(1) + ' Td (' + pdfEscape(text) + ') Tj ET'); }
+    function heading(text, size) { need(3); y -= PDF_LH; run('F2', size || 12, PDF_M, pdfText(text)); y -= PDF_LH * 1.2; }
+    function para(text, font, size) {
+      var max = size === 9 ? 100 : 92;
+      pdfWrap(text, max).forEach(function (l) { need(1); run(font || 'F1', size || 10, PDF_M, l); y -= PDF_LH; });
+    }
+    function pair(label, value) {
+      var lines = pdfWrap(value == null || value === '' ? '-' : value, 62);
+      need(lines.length);
+      run('F2', 10, PDF_M, pdfText(label));
+      lines.forEach(function (l, i) { if (i) need(1); run('F1', 10, PDF_M + PDF_COL, l); y -= PDF_LH; });
+    }
+    function gap() { y -= PDF_LH * 0.5; }
+
+    newPage();
+    run('F2', 16, PDF_M, 'Application form and consent'); y -= PDF_LH * 1.3;
+    run('F1', 10, PDF_M, 'Pro Mortgages SA - reference ' + pdfText(rec.ref)); y -= PDF_LH * 1.2;
+    para('What the client completed online, including the consent declaration they accepted. ' +
+      'The credit report is a separate document from the credit bureau.', 'F1', 9);
+    y -= PDF_LH * 0.4;
+    pair('Submitted', when(rec.createdAt));
+    pair('Consultant', opts.consultant || '-');
+    gap();
+
+    heading('Personal particulars');
+    pair('Full name', ((rec.firstNames || '') + ' ' + (rec.surname || '')).trim());
+    if (rec.idType === 'passport') { pair('Passport number', rec.passportNumber); pair('Date of birth', rec.dateOfBirth); }
+    else pair('SA ID number', rec.idNumber);
+    pair('Email', rec.email); pair('Cellphone', rec.cell);
+    if (rec.homePhone) pair('Home phone', rec.homePhone);
+    if (rec.workPhone) pair('Work phone', rec.workPhone);
+    gap();
+    heading('Residential address');
+    pair('Street', rec.street); pair('Suburb', rec.suburb); pair('City', rec.city); pair('Province', rec.province); pair('Postal code', rec.postalCode);
+    gap();
+    heading('Employment and household');
+    pair('Employment', rec.employmentStatus); pair('Marital status', rec.maritalStatus);
+    if (rec.referral) pair('How they heard of us', rec.referral);
+    gap();
+    heading('Income and commitments (monthly)');
+    pair('Gross income', money(rec.grossIncome)); pair('Deductions', money(rec.totalDeductions));
+    pair('Expenses', money(rec.monthlyExpenses)); pair('Rent or bond', money(rec.housingPayment));
+    gap();
+
+    heading('Consent');
+    pair('Consent given', rec.consentConfirmedAt ? when(rec.consentConfirmedAt) + ' (declaration accepted on the online form)' : '-');
+    pair('Registered with MortgageMAX', rec.consentRegisteredAt ? when(rec.consentRegisteredAt) : 'Not yet');
+    if (rec.consentWithdrawnAt) pair('Withdrawn', when(rec.consentWithdrawnAt));
+    var presented = Array.isArray(rec.consentsPresented) ? rec.consentsPresented : [];
+    var decls = Array.isArray(opts.declarations) ? opts.declarations : [];
+    if (!presented.length) { para('The consent wording shown to the client was not recorded on this application.'); }
+    presented.forEach(function (c) {
+      c = c || {};
+      var id = String(c.id || c.consentTypeId || '');
+      var match = decls.filter(function (d) { return d && String(d.id || '').toLowerCase() === id.toLowerCase(); })[0];
+      gap();
+      pair('Declaration', (c.name || (match && match.name) || 'MortgageMAX consent') + ' - version ' + (c.version != null ? c.version : '-') +
+        (c.hash ? ' - fingerprint ' + String(c.hash).slice(0, 16) : ''));
+      if (match && (match.version == null || c.version == null || String(match.version) === String(c.version))) {
+        htmlToText(match.isHtml ? match.declaration : String(match.declaration || '')).split('\n').forEach(function (p) { if (p.trim()) para(p, 'F1', 9); });
+      } else {
+        para(match ? 'The wording now published by MortgageMAX is version ' + match.version + '; the version the client accepted is identified above by its number and fingerprint.'
+          : 'The wording of this declaration is identified by its version and fingerprint above.', 'F1', 9);
+      }
+    });
+    gap();
+    if (rec.consentUA) { para('Submitted from: ' + rec.consentUA, 'F1', 9); }
+    gap();
+    para('Generated ' + when(Date.now()) + (opts.generatedBy ? ' by ' + pdfText(opts.generatedBy) : '') + ' from the credit check register.', 'F1', 9);
+    pages.push(ops);
+
+    /* objects: 1 catalog, 2 pages, 3 Helvetica, 4 Helvetica-Bold, then (page, content) per page */
+    var objs = [];
+    var kids = [];
+    pages.forEach(function (p, i) { kids.push((5 + i * 2) + ' 0 R'); });
+    objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objs[2] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + pages.length + ' >>';
+    objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+    objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
+    pages.forEach(function (p, i) {
+      var n = 5 + i * 2;
+      var stream = p.join('\n');
+      objs[n] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PDF_W + ' ' + PDF_H + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + (n + 1) + ' 0 R >>';
+      objs[n + 1] = '<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream';
+    });
+    var out = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+    var offsets = [];
+    for (var i = 1; i < objs.length; i++) {
+      offsets[i] = out.length;
+      out += i + ' 0 obj\n' + objs[i] + '\nendobj\n';
+    }
+    var xref = out.length;
+    out += 'xref\n0 ' + objs.length + '\n0000000000 65535 f \n';
+    for (var j = 1; j < objs.length; j++) out += String(offsets[j]).padStart(10, '0') + ' 00000 n \n';
+    out += 'trailer\n<< /Size ' + objs.length + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+    var bytes = new Uint8Array(out.length);
+    for (var k = 0; k < out.length; k++) bytes[k] = out.charCodeAt(k) & 0xFF;
+    return bytes;
+  }
+
   /* ---------- SA ID helpers ---------- */
   function luhnTotal(digits) {
     var sum = 0;
@@ -330,7 +461,6 @@
   /* ---------- status machine (mirrors the DB CHECK and BUILD-PLAN §2) ----------
      group: which admin tile/filter bucket a status belongs to. */
   var STATUS = {
-    awaiting_otp:       { label: 'Awaiting SMS code',          chip: 'chip-awaiting',  group: 'awaiting' },
     consent_confirmed:  { label: 'Consent confirmed — not yet registered', chip: 'chip-attention', group: 'attention' },
     consent_registered: { label: 'Consent registered',         chip: 'chip-confirmed', group: 'ready' },
     idv_in_progress:    { label: 'Identity check in progress', chip: 'chip-awaiting',  group: 'awaiting' },
@@ -366,7 +496,7 @@
     if (status === 'report_ready') return 'report';
     if (status === 'consent_withdrawn' || status === 'expired') return 'closed';
     if (status === 'check_in_flight' || allowedFrom(idvMode).indexOf(status) !== -1) return 'ready';
-    return 'waiting'; /* awaiting_otp, idv_in_progress, consent_registered while identity questions are due */
+    return 'waiting'; /* idv_in_progress, consent_registered while identity questions are due */
   }
   function bucketInfo(key) {
     for (var i = 0; i < BUCKETS.length; i++) if (BUCKETS[i].key === key) return BUCKETS[i];
@@ -374,14 +504,13 @@
   }
   /* One plain sentence for View: what is happening, and what (if anything) staff should do. */
   var HINTS = {
-    awaiting_otp: 'The client submitted the form but hasn’t entered their SMS code yet. Nothing to do unless they ask for help — it expires after 24 hours.',
     consent_confirmed: 'The client confirmed consent, but it isn’t registered with MortgageMAX yet. Use “Retry consent registration” below.',
     idv_in_progress: 'The client is answering the identity questions (5-minute limit). Nothing to do.',
     idv_passed: 'The client passed the identity questions. You can run the credit check.',
     idv_waived: 'Consent is registered and identity questions aren’t required. You can run the credit check.',
-    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a copy of their ID and confirm the Experian statement.',
-    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a copy of their ID and confirm the Experian statement.',
-    manual_verified: 'The client’s identity was verified manually (signed consent form, ID copy and Experian statement, shown below). You can run the credit check.',
+    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a photo of the client you took in person (holding their ID) and confirm the Experian statement.',
+    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a photo of the client you took in person (holding their ID) and confirm the Experian statement.',
+    manual_verified: 'The client’s identity was verified manually (signed consent form, photo of the client and Experian statement, shown below). You can run the credit check.',
     check_in_flight: 'The credit check is running. This usually takes under a minute.',
     report_ready: 'The credit report is ready — see below.',
     check_failed: 'The credit check didn’t complete. See the error below, then run it again.',
@@ -543,6 +672,9 @@
     idvLinkCheck: idvLinkCheck,
     ATTESTATION: ATTESTATION,
     CONSENT_FORM: CONSENT_FORM,
+    CLIENT_PHOTO: CLIENT_PHOTO,
+    PHOTO_TYPES: PHOTO_TYPES,
+    buildFormPdf: buildFormPdf,
     BUCKETS: BUCKETS,
     bucketOf: bucketOf,
     bucketInfo: bucketInfo,
@@ -584,29 +716,30 @@
         }, function () { return { name: null, known: null }; });
     },
 
-    /* returns {ref, demo_otp, sms: {sent, reason?, uncertain, retryAfter, sendsLeft, canResend}}.
-       demo_otp is null when the code really went by SMS (SMS_MODE=live). Refusals throw an Error
-       whose message is the code (invalid_id_number, invalid_cell, too_many_submissions, …). */
+    /* returns {ref}. The application is consent_confirmed at once (no SMS code since 2026-10-12:
+       the identity questions verify the person) and the one-time identity-check session token is
+       kept in this tab, so registerConsent / idvStart can follow. Refusals throw an Error whose
+       message is the code (invalid_id_number, invalid_cell, too_many_submissions, …). */
     submit: function (data) {
       if (mode === 'live') {
         var body = { action: 'submit', payload: data };
         if (consultantCode) body.consultant_code = consultantCode;
         return invoke('mm-client', body).then(function (d) {
-          if (d.otp_session) setOtpSession(d.ref, d.otp_session);
-          return d;
+          /* An mm-client from before 12 Oct answers without a token (it sent an SMS instead): the
+             page must not go on as if consent were in hand. */
+          if (!d || !d.ref || !d.idv_token) throw mkErr({ code: 'server_error', message: 'no_idv_token' });
+          setToken(d.ref, d.idv_token);
+          return { ref: d.ref };
         });
       }
       var rec = Object.assign({}, data, {
         ref: makeRef(),
         createdAt: Date.now(),
-        status: 'awaiting_otp',
-        otp: makeOtp(),
-        otpExpires: Date.now() + 10 * 60 * 1000,
-        otpAttempts: 0,
-        otpSends: 1,
-        otpSentAt: Date.now(),
+        status: 'consent_confirmed',
+        consentConfirmedAt: Date.now(),
         idvAttempts: 0,
-        audit: [auditEntry('Form submitted by client'), auditEntry('Consent code sent by SMS [demo mode]')]
+        audit: [auditEntry('Form submitted by client'),
+          auditEntry('Consent declaration accepted on the form (identity is verified by the questions that follow)')]
       });
       var via = consultantCode ? demoStaff().filter(function (m) { return m.linkCode === consultantCode && m.active && m.role; })[0] : null;
       if (via) {
@@ -617,66 +750,11 @@
       var list = readAll();
       list.push(rec);
       writeAll(list);
-      return Promise.resolve({
-        ref: rec.ref, demo_otp: rec.otp,
-        sms: { sent: true, uncertain: false, retryAfter: OTP_COOLDOWN_S, sendsLeft: OTP_MAX_SENDS - 1, canResend: true }
-      });
+      setToken(rec.ref, 'demo');
+      return Promise.resolve({ ref: rec.ref });
     },
 
-    /* Ask for a new SMS code (the old one stops working).
-       → {sent, reason?: cooldown|too_many_sends|send_failed|cell_limit|daily_limit|invalid_state|unavailable,
-          uncertain, retryAfter (seconds), sendsLeft, demo_otp}. A lost or foreign session throws code 'forbidden'. */
-    resendCode: function (ref) {
-      if (mode === 'live') {
-        var session = getOtpSession(ref);
-        if (!session) return Promise.reject(mkErr({ code: 'forbidden', message: 'Invalid or expired session' }));
-        return invoke('mm-client', { action: 'resend-otp', ref: ref, otp_session: session });
-      }
-      var rec = demoFind(ref);
-      if (!rec || rec.status !== 'awaiting_otp') return Promise.resolve({ sent: false, reason: 'invalid_state' });
-      var wait = Math.ceil(((rec.otpSentAt || 0) + OTP_COOLDOWN_S * 1000 - Date.now()) / 1000);
-      if (wait > 0) return Promise.resolve({ sent: false, reason: 'cooldown', retryAfter: wait });
-      if ((rec.otpSends || 1) >= OTP_MAX_SENDS) return Promise.resolve({ sent: false, reason: 'too_many_sends' });
-      var sends = (rec.otpSends || 1) + 1;
-      var code = makeOtp();
-      demoUpdate(ref, { otp: code, otpExpires: Date.now() + 10 * 60 * 1000, otpAttempts: 0, otpSends: sends, otpSentAt: Date.now() },
-        'Consent code sent by SMS — resend ' + (sends - 1) + ' [demo mode]');
-      return Promise.resolve({ sent: true, uncertain: false, retryAfter: OTP_COOLDOWN_S, sendsLeft: OTP_MAX_SENDS - sends, demo_otp: code });
-    },
-
-    /* returns {ok, ref} or {ok:false, error: not_found|already_confirmed|expired|mismatch|too_many_attempts}.
-       On success the one-time IDV session token is kept in this tab (sessionStorage). */
-    confirmConsent: function (ref, otp) {
-      if (mode === 'live') {
-        /* Through mm-client, with the session token only this tab holds: a reference on its own
-           can no longer try codes (or learn that it exists). A lost session reads as not_found,
-           whose message sends the client back to submit the form again. */
-        return invoke('mm-client', { action: 'confirm', ref: ref, otp: otp, otp_session: getOtpSession(ref) || '' })
-          .then(function (d) {
-            d = d || {};
-            if (d.ok && d.idv_token) setToken(ref, d.idv_token);
-            return { ok: !!d.ok, ref: d.ref, error: d.error };
-          }, function (err) {
-            if (err && err.code === 'forbidden') return { ok: false, error: 'not_found' };
-            throw err;
-          });
-      }
-      var rec = demoFind(ref);
-      if (!rec) return Promise.resolve({ ok: false, error: 'not_found' });
-      if (rec.status !== 'awaiting_otp') return Promise.resolve({ ok: false, error: 'already_confirmed' });
-      if ((rec.otpAttempts || 0) >= 5) return Promise.resolve({ ok: false, error: 'too_many_attempts' });
-      if (Date.now() > rec.otpExpires) return Promise.resolve({ ok: false, error: 'expired' });
-      if (otp !== rec.otp) {
-        demoUpdate(ref, { otpAttempts: (rec.otpAttempts || 0) + 1 });
-        return Promise.resolve({ ok: false, error: 'mismatch' });
-      }
-      demoUpdate(ref, { status: 'consent_confirmed', consentConfirmedAt: Date.now(), otp: null },
-        'Consent confirmed via SMS one-time PIN');
-      setToken(ref, 'demo');
-      return Promise.resolve({ ok: true, ref: ref });
-    },
-
-    /* After OTP: register consent with MortgageMax.
+    /* After submit: register consent with MortgageMax.
        → {status: 'idv_waived'|'consent_registered'|'manual_required', idvMode}
        manual_required covers every case a person must sort out (passport, an ID number that fails
        validation, consent wording that changed or was not shown, a previous withdrawal on record).
@@ -750,13 +828,6 @@
       }
       demoUpdate(ref, { status: 'idv_passed', idvPassedAt: Date.now() }, 'Identity verified');
       return Promise.resolve({ status: 'idv_passed' });
-    },
-
-    /* demo-mode only: client backs out of the OTP step */
-    abandon: function (ref) {
-      if (mode !== 'demo') return Promise.resolve();
-      writeAll(readAll().filter(function (r) { return r.ref !== ref; }));
-      return Promise.resolve();
     },
 
     /* ===== staff auth (live mode) ===== */
@@ -875,7 +946,7 @@
     },
     fetchPdf: function (ref) {
       if (mode === 'live') return invoke('mm-staff', { action: 'fetch-pdf', ref: ref });
-      return demoFail('invalid_state', 'No PDF in demo mode');
+      return demoFail('invalid_state', 'No credit report PDF in demo mode');
     },
     /* Staff retry of consent registration (client session expired / vendor was down).
        → {status, idvMode}; status 'manual_required' means the audit trail says why. */
@@ -899,12 +970,12 @@
        sent to MortgageMAX), else {status:'consent_withdrawn', vendorRecorded, vendorCode?}. The
        record is withdrawn here whether or not MortgageMAX accepts it; vendorRecorded:false means
        MortgageMAX still has to be told.
-       Refused while awaiting the SMS code, already withdrawn, or a credit check is running. */
+       Refused once already withdrawn, or while a credit check is running. */
     recordWithdrawal: function (ref, reason) {
       if (mode === 'live') return invoke('mm-staff', { action: 'record-withdrawal', ref: ref, reason: reason || '' });
       var rec = demoRecover(ref);
       if (!rec) return demoFail('bad_request', 'No such record');
-      if (['awaiting_otp', 'consent_withdrawn', 'check_in_flight'].indexOf(rec.status) !== -1) {
+      if (['consent_withdrawn', 'check_in_flight'].indexOf(rec.status) !== -1) {
         return demoFail('invalid_state', 'Nothing to withdraw from status ' + rec.status);
       }
       var registered = !!rec.consentRegisteredAt;
@@ -948,26 +1019,26 @@
 
     /* Short-lived (60 s) signed URL for the stored report PDF; logs the access. */
     pdfUrl: function (rec) {
-      if (mode !== 'live') return demoFail('invalid_state', 'No PDF in demo mode');
-      if (!rec || !rec.reportPdfPath) return demoFail('invalid_state', 'No PDF stored for this record');
+      if (mode !== 'live') return demoFail('invalid_state', 'No credit report PDF in demo mode');
+      if (!rec || !rec.reportPdfPath) return demoFail('invalid_state', 'No credit report PDF stored for this record');
       return sb.storage.from('credit-reports').createSignedUrl(rec.reportPdfPath, 60).then(function (res) {
-        if (res.error || !res.data) throw mkErr({ code: 'server_error', message: 'Could not open the PDF' });
+        if (res.error || !res.data) throw mkErr({ code: 'server_error', message: 'Could not open the credit report PDF' });
         return PMStore.logAccess(rec.ref, 'download_pdf').then(function () { return res.data.signedUrl; });
       });
     },
     /* Manual identity verification (the only route past failed / unavailable identity questions):
-       upload the ID copy through a one-time URL mm-staff issues, then record the consultant's
-       attestation. attestationVersion must be the one shown. → {status:'manual_verified'}. */
-    /* Manual verification: the signed consent form AND the ID copy are uploaded (each to a path the
-       server chose), then the consultant's confirmation is recorded. Both files are required. */
-    manualVerify: function (ref, idFile, formFile, attestationVersion, consentFormVersion) {
-      var check = function (file, what) {
+       the signed consent form AND the consultant's photo of the client are uploaded (each to a path
+       the server chose), then the consultant's confirmation is recorded. Both files are required;
+       the versions must be the ones shown. → {status:'manual_verified'}. */
+    manualVerify: function (ref, photoFile, formFile, attestationVersion, consentFormVersion) {
+      var check = function (file, what, types, accepted) {
         if (!file) return 'Choose the ' + what + ' to upload';
-        if (ID_DOC_TYPES.indexOf(file.type) === -1) return 'The ' + what + ' must be a PDF, JPG or PNG';
+        if (types.indexOf(file.type) === -1) return 'The ' + what + ' must be a ' + accepted;
         if (!file.size || file.size > ID_DOC_MAX_BYTES) return 'The ' + what + ' is empty or larger than 10 MB';
         return null;
       };
-      var problem = check(formFile, 'signed consent form') || check(idFile, 'ID copy');
+      var problem = check(formFile, 'signed MortgageMAX consent form', ID_DOC_TYPES, 'PDF, JPG or PNG')
+        || check(photoFile, 'photo of the client', PHOTO_TYPES, 'JPG or PNG');
       if (problem) return demoFail('bad_request', problem);
       if (mode === 'live') {
         var upload = function (file, kind) {
@@ -980,9 +1051,9 @@
           });
         };
         return upload(formFile, 'consent').then(function (formPath) {
-          return upload(idFile, 'id').then(function (idPath) {
+          return upload(photoFile, 'photo').then(function (photoPath) {
             return invoke('mm-staff', {
-              action: 'manual-verify', ref: ref, path: idPath, consentFormPath: formPath,
+              action: 'manual-verify', ref: ref, path: photoPath, consentFormPath: formPath,
               attestationVersion: attestationVersion, consentFormVersion: consentFormVersion, attested: true
             });
           });
@@ -998,12 +1069,12 @@
         status: 'manual_verified', manualVerifiedAt: Date.now(), manualVerificationId: 1,
         demoEvidence: {
           created_at: new Date().toISOString(), verified_by_label: 'demo user', attestation_version: ATTESTATION.version,
-          attestation_text: ATTESTATION.text, document_type: idFile.type, document_bytes: idFile.size,
+          attestation_text: ATTESTATION.text, document_kind: CLIENT_PHOTO.kind, document_type: photoFile.type, document_bytes: photoFile.size,
           document_path: null, document_deleted_at: null,
           consent_form_version: CONSENT_FORM.version, consent_form_type: formFile.type, consent_form_bytes: formFile.size,
           consent_form_path: null, consent_form_deleted_at: null
         }
-      }, 'Identity verified manually by demo user (signed consent form + ID copy uploaded + Experian attestation)');
+      }, 'Identity verified manually by demo user (signed consent form + photo of the client + Experian attestation)');
       return Promise.resolve({ status: 'manual_verified' });
     },
     /* Staff: a fresh identity-check session for a client whose 30-minute session lapsed. The token
@@ -1025,7 +1096,7 @@
     manualEvidence: function (rec) {
       if (mode !== 'live') return Promise.resolve(rec && rec.demoEvidence ? [rec.demoEvidence] : []);
       return sb.from('manual_verifications')
-        .select('id, created_at, verified_by_label, attestation_version, attestation_text, document_path, document_type, document_bytes, document_sha256, document_deleted_at, ' +
+        .select('id, created_at, verified_by_label, attestation_version, attestation_text, document_kind, document_path, document_type, document_bytes, document_sha256, document_deleted_at, ' +
           'consent_form_version, consent_form_path, consent_form_type, consent_form_bytes, consent_form_deleted_at')
         .eq('ref', rec.ref).order('created_at', { ascending: false }).limit(10)
         .then(function (res) {
@@ -1033,7 +1104,15 @@
           return res.data || [];
         });
     },
-    /* Short-lived (60 s) signed URL for a stored ID copy; logs the access. */
+    /* Short-lived (60 s) signed URL for the stored photo of the client; logs the access. */
+    clientPhotoUrl: function (ref, path) {
+      if (mode !== 'live') return demoFail('invalid_state', 'No stored photo in demo mode');
+      return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {
+        if (res.error || !res.data) throw mkErr({ code: 'server_error', message: 'Could not open the photo' });
+        return PMStore.logAccess(ref, 'view_client_photo').then(function () { return res.data.signedUrl; });
+      });
+    },
+    /* The same for an ID copy stored by a verification from before 12 Oct 2026. */
     idDocumentUrl: function (ref, path) {
       if (mode !== 'live') return demoFail('invalid_state', 'No stored ID copy in demo mode');
       return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {
@@ -1049,7 +1128,8 @@
         return PMStore.logAccess(ref, 'view_signed_consent_form').then(function () { return res.data.signedUrl; });
       });
     },
-    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document' | 'view_signed_consent_form'.
+    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document' | 'view_signed_consent_form' | 'view_client_photo'
+       | 'download_form'.
        Never throws — access logging must not block viewing. */
     logAccess: function (ref, action) {
       if (mode !== 'live') return Promise.resolve();
@@ -1185,7 +1265,7 @@
           employmentStatus: 'Full-time employed', maritalStatus: 'Single',
           referral: 'Google search',
           grossIncome: 41500, totalDeductions: 9300, monthlyExpenses: 14200, housingPayment: 8500,
-          _age: 2 * 36e5, _status: 'awaiting_otp'
+          _age: 2 * 36e5, _status: 'consent_confirmed'
         }
       ];
       var list = readAll();
@@ -1193,18 +1273,16 @@
         var status = row._status, age = row._age, owner = row._consultant || null;
         delete row._status; delete row._age; delete row._consultant;
         var rec = Object.assign({}, row, {
-          ref: makeRef(), createdAt: now - age, status: 'awaiting_otp',
-          otp: makeOtp(), otpExpires: now - age + 10 * 60000, otpAttempts: 0, idvAttempts: 0, demo: true,
+          ref: makeRef(), createdAt: now - age, status: 'consent_confirmed', consentConfirmedAt: now - age,
+          idvAttempts: 0, demo: true,
           consultantId: owner, assignedAt: owner ? now - age : null,
-          audit: [{ at: now - age, event: 'Form submitted by client (sample data)' }]
+          audit: [{ at: now - age, event: 'Form submitted by client (sample data)' },
+            { at: now - age, event: 'Consent declaration accepted on the form (sample data)' }]
         });
-        if (status !== 'awaiting_otp') {
+        if (status !== 'consent_confirmed') {
           rec.status = 'idv_waived';
-          rec.consentConfirmedAt = now - age + 4 * 60000;
-          rec.consentRegisteredAt = now - age + 4 * 60000 + 3000;
-          rec.otp = null;
-          rec.audit.push({ at: now - age + 4 * 60000, event: 'Consent confirmed via SMS one-time PIN' });
-          rec.audit.push({ at: now - age + 4 * 60000 + 3000, event: 'Consent registered with MortgageMax; identity questions waived by configuration' });
+          rec.consentRegisteredAt = now - age + 3000;
+          rec.audit.push({ at: now - age + 3000, event: 'Consent registered with MortgageMax; identity questions waived by configuration' });
         }
         if (status === 'report_ready') {
           var rep = demoReport();

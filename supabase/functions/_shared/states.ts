@@ -37,9 +37,9 @@ export function idvLinkCheck(row: Record<string, unknown>, mode: IdvMode): { ok:
   return { ok: false, reason: `status_${String(row.status ?? "")}` };
 }
 
-/** Every status the DB CHECK constraint allows (latest: migration 20260929_manual_verification.sql). */
+/** Every status the DB CHECK constraint allows (latest: migration 20261006_retire_otp_and_one_phone.sql). */
 export const ALL_STATUSES = [
-  "awaiting_otp", "consent_confirmed", "consent_registered",
+  "consent_confirmed", "consent_registered",
   "idv_in_progress", "idv_passed", "idv_failed", "idv_unavailable", "idv_waived",
   "manual_verified", "check_in_flight", "report_ready", "check_failed",
   "consent_withdrawn", "manual_required", "expired", "config_error",

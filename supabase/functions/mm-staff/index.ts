@@ -8,8 +8,8 @@
 // POST { action: 'config' }
 // POST { ref, action: 'run-check' | 'fetch-pdf' | 'refresh-consents' | 'record-withdrawal' | 'register-consent'
 //              | 'delete-record' | 'recover' | 'clear-config-error', reason? }
-// POST { ref, action: 'manual-upload-url', contentType }            → one-time upload URL for the ID copy
-// POST { ref, action: 'manual-verify', path, attestationVersion, attested: true } → manual_verified
+// POST { ref, action: 'manual-upload-url', contentType, kind: 'consent' | 'photo' } → one-time upload URL
+// POST { ref, action: 'manual-verify', path (photo), consentFormPath, attestationVersion, consentFormVersion, attested: true } → manual_verified
 // POST { ref, action: 'reissue-idv-link' }                          → { token, expiresAt } (shown once)
 // Administrators only:
 // POST { ref, action: 'assign', consultantId }                      → { status: 'ok' }
@@ -37,21 +37,24 @@ import { logCall, serviceClient, sha256Hex, transition } from "../_shared/db.ts"
 import { mockFetch } from "../_shared/mock.ts";
 import { base64ToBytes, num, pdfIsEncrypted, summarise } from "../_shared/report.ts";
 import { recoverStale } from "../_shared/recover.ts";
+import { productionStopped, STOPPED } from "../_shared/stop.ts";
 import { personIdFor } from "../_shared/idnumber.ts";
 import { accessFor, isMissingFunction, loadMember, type Member } from "../_shared/access.ts";
 import {
   ATTESTATION,
+  CLIENT_PHOTO,
+  clientPhotoPath,
   ID_DOC_BUCKET,
   ID_DOC_MAX_BYTES,
   CONSENT_FORM,
   consentFormPath,
   ID_DOC_TYPES,
-  idDocPath,
+  PHOTO_TYPES,
   manualVerifyCheck,
   sha256HexBytes,
   sniffDocType,
+  validClientPhotoPath,
   validConsentFormPath,
-  validIdDocPath,
 } from "../_shared/manual.ts";
 
 const APP_NAME = "promortgage-credit-check";
@@ -67,7 +70,7 @@ const CONSENT_READ_TIMEOUT_MS = 15_000;   // pre-check read-back; 15 s + 90 s st
 const PDF_FETCH_STALE_MS = 3 * 60 * 1000; // a PDF still "fetching" this long after the report is dead
 const UNCERTAIN_TEXT = "MortgageMAX may still have processed this enquiry — check before retrying";
 /** record-withdrawal is refused from these (C8). */
-const NO_WITHDRAWAL_FROM = ["awaiting_otp", "consent_withdrawn", "check_in_flight"];
+const NO_WITHDRAWAL_FROM = ["consent_withdrawn", "check_in_flight"];
 
 import {
   ALL_STATUSES,
@@ -203,6 +206,12 @@ Deno.serve(async (req) => {
   if (access !== "ok") return fail("forbidden", access === "admin_only" ? "admin_only" : "account_inactive", origin);
 
   const mode: Mode = Deno.env.get("MM_MODE") === "live" ? "live" : "mock";
+  // The emergency stop (_shared/stop.ts): in production, no vendor call while MM_MODE is not live.
+  // Withdrawals stay possible (local-first; the vendor is told later), as does everything local.
+  if (productionStopped(mode) && ["run-check", "register-consent", "fetch-pdf", "refresh-consents"].includes(action ?? "")) {
+    console.error(JSON.stringify({ event: "stopped_in_production", action, mode }));
+    return fail(STOPPED.code, STOPPED.message, origin);
+  }
   const idvMode: IdvMode = idvModeFromEnv();
   const fetchImpl = mode === "mock" ? mockFetch : undefined;
   // The number sent to MortgageMAX is the one id_type names (C6b); mm_person_id is redacted too.
@@ -536,13 +545,22 @@ Deno.serve(async (req) => {
     // ======================================================================================
     if (action === "manual-upload-url") {
       // Step 1 of manual verification, once per file: a one-time signed upload URL for a path WE
-      // choose - the signed consent form (kind "consent") or the ID copy. The bucket enforces type
-      // and size; manual-verify re-checks the bytes of both before anything counts.
+      // choose - the signed consent form (kind "consent") or the photo of the client (kind "photo").
+      // The bucket enforces type and size; manual-verify re-checks the bytes of both before anything
+      // counts. An older page asking for an ID-copy path (kind "id") is refused: it is no longer evidence.
       const can = manualVerifyCheck(row);
       if (!can.ok) return fail("invalid_state", `manual_not_allowed:${can.reason}`, origin);
-      const isForm = body.kind === "consent";
-      const path = isForm ? consentFormPath(ref, String(body.contentType ?? "")) : idDocPath(ref, String(body.contentType ?? ""));
-      if (!path) return fail("bad_request", `The ${isForm ? "signed consent form" : "ID copy"} must be a PDF, JPG or PNG`, origin);
+      const contentType = String(body.contentType ?? "");
+      let path: string | null;
+      if (body.kind === "consent") {
+        path = consentFormPath(ref, contentType);
+        if (!path) return fail("bad_request", "The signed MortgageMAX consent form must be a PDF, JPG or PNG", origin);
+      } else if (body.kind === "photo") {
+        path = clientPhotoPath(ref, contentType);
+        if (!path) return fail("bad_request", "The photo of the client must be a JPG or PNG", origin);
+      } else {
+        return fail("bad_request", "Manual verification needs the signed consent form and a photo of the client — reload the page", origin);
+      }
       const { data: up, error: upErr } = await sb.storage.from(ID_DOC_BUCKET).createSignedUploadUrl(path);
       if (upErr || !up) return fail("server_error", "Could not prepare the upload", origin);
       return ok({ path: up.path, token: up.token, maxBytes: ID_DOC_MAX_BYTES }, origin);
@@ -550,11 +568,12 @@ Deno.serve(async (req) => {
 
     // ======================================================================================
     if (action === "manual-verify") {
-      // Step 2: the consultant confirmed the attestation. MortgageMAX (2026-10-01) allows the manual
-      // route only once the client has SIGNED its Consent Form, so two files are required: the signed
-      // form and the ID copy. The stored statement is OURS (never the browser's), both versions must
-      // match what the page showed, and both files must really be documents of an accepted type that
-      // were uploaded for this ref. The database refuses a verification without the form as well.
+      // Step 2: the consultant confirmed the attestation. MortgageMAX allows the manual route only
+      // once the client has SIGNED its Consent Form (2026-10-01) and the consultant has verified the
+      // person face to face (2026-10-12), so two files are required: the signed form and the photo of
+      // the client the consultant took. The stored statement is OURS (never the browser's), both
+      // versions must match what the page showed, and both files must really be of an accepted type
+      // and uploaded for this ref. The database refuses a verification without either file as well.
       if (body.attested !== true) return fail("bad_request", "Confirm the statement first", origin);
       if (body.attestationVersion !== ATTESTATION.version) {
         return fail("invalid_state", "manual_attestation_changed", origin);
@@ -562,43 +581,46 @@ Deno.serve(async (req) => {
       if (body.consentFormVersion !== CONSENT_FORM.version) {
         return fail("invalid_state", "manual_consent_form_changed", origin);
       }
-      if (!validConsentFormPath(ref, body.consentFormPath)) return fail("bad_request", "Upload the signed consent form first", origin);
-      if (!validIdDocPath(ref, body.path)) return fail("bad_request", "Upload the ID copy first", origin);
+      if (!validConsentFormPath(ref, body.consentFormPath)) return fail("bad_request", "Upload the signed MortgageMAX consent form first", origin);
+      if (!validClientPhotoPath(ref, body.path)) return fail("bad_request", "Take the photo of the client first", origin);
       const can = manualVerifyCheck(row);
       if (!can.ok) return fail("invalid_state", `manual_not_allowed:${can.reason}`, origin);
 
-      const formPath = body.consentFormPath, idPath = body.path;
+      const formPath = body.consentFormPath, photoPath = body.path;
       const discard = async () => {
-        const rm = await sb.storage.from(ID_DOC_BUCKET).remove([formPath, idPath]);
+        const rm = await sb.storage.from(ID_DOC_BUCKET).remove([formPath, photoPath]);
         // Not fatal (delete-record sweeps the ref's folder) but never silent: it is personal data.
         if (rm.error) console.error(JSON.stringify({ event: "id_doc_discard_failed", ref, message: rm.error.message }));
       };
-      // Each file: present, within the size limit, and really the type its name claims.
-      const load = async (path: string, what: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; type: string } | string> => {
+      // Each file: present, within the size limit, and really the type its name claims (of the types
+      // allowed for that kind: the form may be a PDF, the photo may not).
+      const load = async (path: string, what: string, types: Record<string, string>, accepted: string):
+        Promise<{ bytes: Uint8Array<ArrayBuffer>; type: string } | string> => {
         const { data: blob, error: dlErr } = await sb.storage.from(ID_DOC_BUCKET).download(path);
         if (dlErr || !blob) return `The ${what} was not uploaded — try the upload again`;
         const bytes = new Uint8Array(await blob.arrayBuffer());
         if (bytes.length === 0 || bytes.length > ID_DOC_MAX_BYTES) return `The ${what} is empty or larger than 10 MB`;
         const type = sniffDocType(bytes);
-        if (!type || ID_DOC_TYPES[type] !== path.split(".").pop()) return `The ${what} is not a readable PDF, JPG or PNG`;
+        if (!type || types[type] !== path.split(".").pop()) return `The ${what} is not a readable ${accepted}`;
         return { bytes, type };
       };
-      const form = await load(formPath, "signed consent form");
+      const form = await load(formPath, "signed MortgageMAX consent form", ID_DOC_TYPES, "PDF, JPG or PNG");
       if (typeof form === "string") { await discard(); return fail("bad_request", form, origin); }
-      const idDoc = await load(idPath, "ID copy");
-      if (typeof idDoc === "string") { await discard(); return fail("bad_request", idDoc, origin); }
-      const formSha = await sha256HexBytes(form.bytes), idSha = await sha256HexBytes(idDoc.bytes);
-      if (formSha === idSha) {
+      const photo = await load(photoPath, "photo of the client", PHOTO_TYPES, "JPG or PNG");
+      if (typeof photo === "string") { await discard(); return fail("bad_request", photo, origin); }
+      const formSha = await sha256HexBytes(form.bytes), photoSha = await sha256HexBytes(photo.bytes);
+      if (formSha === photoSha) {
         await discard();
-        return fail("bad_request", "The signed consent form and the ID copy are the same file — upload each document separately", origin);
+        return fail("bad_request", "The signed MortgageMAX consent form and the photo are the same file — upload each separately", origin);
       }
 
       const { data: evidenceId, error: rpcErr } = await sb.rpc("record_manual_verification", {
         p_ref: ref, p_from: row.status, p_user: user.id, p_label: staffLabel,
         p_version: ATTESTATION.version, p_text: ATTESTATION.text,
-        p_path: idPath, p_type: idDoc.type, p_bytes: idDoc.bytes.length, p_sha256: idSha,
+        p_path: photoPath, p_type: photo.type, p_bytes: photo.bytes.length, p_sha256: photoSha,
         p_form_version: CONSENT_FORM.version, p_form_path: formPath, p_form_type: form.type,
         p_form_bytes: form.bytes.length, p_form_sha256: formSha,
+        p_kind: CLIENT_PHOTO.kind,
       });
       if (rpcErr) {
         await discard();
@@ -670,12 +692,13 @@ Deno.serve(async (req) => {
         const rm = await sb.storage.from("credit-reports").remove([...paths]);
         if (rm.error) return fail("server_error", "Could not delete the stored report PDF", origin);
       }
-      // The client's ID copy goes too; the evidence row keeps who attested and the file's hash.
+      // The manual-verification files go too (the photo of the client, the signed consent form, and
+      // ID copies from before 12 Oct 2026); the evidence row keeps who attested and the files' hashes.
       const idDocs = await listAll(ID_DOC_BUCKET);
-      if (idDocs === null) return fail("server_error", "Could not list the stored ID copies", origin);
+      if (idDocs === null) return fail("server_error", "Could not list the stored identity files", origin);
       if (idDocs.length) {
         const rm = await sb.storage.from(ID_DOC_BUCKET).remove(idDocs);
-        if (rm.error) return fail("server_error", "Could not delete the stored ID copy", origin);
+        if (rm.error) return fail("server_error", "Could not delete the stored identity files", origin);
       }
       const blank = await sb.from("mm_api_log").update({ body_head: null }).eq("ref", ref);
       if (blank.error) return fail("server_error", "Could not clear the logged vendor responses", origin);

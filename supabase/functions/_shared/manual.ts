@@ -1,6 +1,8 @@
 // Manual identity verification — the only route to a credit check without passing the identity
-// questions (MortgageMAX, 2026-09-28: IDV is mandatory; manual = ID copy uploaded + the consultant's
-// Experian attestation). Shared by mm-staff and checked for parity against assets/store.js.
+// questions (MortgageMAX, 2026-09-28: IDV is mandatory). The evidence is the client's SIGNED consent
+// form plus a PHOTO OF THE CLIENT taken by the consultant in person (Bennie Vermeulen, 2026-10-12;
+// it replaced the uploaded ID copy) and the consultant's Experian attestation. Shared by mm-staff
+// and checked for parity against assets/store.js.
 
 /**
  * The consultant's statement, VERBATIM from MortgageMAX (Bennie Vermeulen, 2026-09-28) — Experian
@@ -22,8 +24,19 @@ export const ATTESTATION = {
  */
 export const CONSENT_FORM = { version: "mmax-consent-form-2025-11" } as const;
 
+/**
+ * The photo of the client (Bennie Vermeulen, 2026-10-12): taken by the consultant, in person, with the
+ * client holding their ID document - so the attestation's "validated their identity documents" stays
+ * true and the image shows who was verified. The phone's camera is used wherever the page can ask for
+ * it. Images only: a PDF is never a photo. The kind is stored on the evidence row, because rows from
+ * before this date hold an uploaded ID copy instead.
+ */
+export const CLIENT_PHOTO = { kind: "client_photo" } as const;
+export const PHOTO_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png" };
+
 export const ID_DOC_BUCKET = "id-documents";
 export const ID_DOC_MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's file_size_limit
+/** What the bucket accepts; the signed consent form may be any of them, the photo only the images. */
 export const ID_DOC_TYPES: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png" };
 
 /** Statuses where consent is registered and no identity step or check is running. */
@@ -44,16 +57,16 @@ export function manualVerifyCheck(row: Record<string, unknown>): { ok: true } | 
   return { ok: false, reason: `status_${status}` };
 }
 
-/** Server-chosen object path for a record's ID copy; the browser never names it. */
-export function idDocPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
-  const ext = ID_DOC_TYPES[contentType];
-  return ext ? `${ref}/${id}.${ext}` : null;
+/** Server-chosen object path for the photo of the client; the browser never names it. */
+export function clientPhotoPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
+  const ext = PHOTO_TYPES[contentType];
+  return ext ? `${ref}/photo-${id}.${ext}` : null;
 }
 
-/** The path must be one idDocPath() could have issued for THIS ref. */
-export function validIdDocPath(ref: string, path: unknown): path is string {
+/** The path must be one clientPhotoPath() could have issued for THIS ref (never an old ID copy's). */
+export function validClientPhotoPath(ref: string, path: unknown): path is string {
   if (typeof path !== "string" || !path.startsWith(`${ref}/`)) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png)$/.test(path.slice(ref.length + 1));
+  return /^photo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png)$/.test(path.slice(ref.length + 1));
 }
 
 /**

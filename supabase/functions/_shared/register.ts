@@ -1,5 +1,5 @@
 // Consent registration with MortgageMax — ONE implementation, used by mm-client (client, straight
-// after OTP) and mm-staff (consultant retry when the client's session expired or the vendor was down).
+// after submit) and mm-staff (consultant retry when the client's session expired or the vendor was down).
 // BUILD-PLAN D4, D5, D6, D11, D13.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -234,6 +234,7 @@ export async function registerConsent(
       return {
         ref, event: "registered", consent_type_id: t.id, consent_version: t.version,
         declaration_hash: hash, granted: true,
+        // The column keeps its old name; since 2026-10-12 this is when the form was accepted (no SMS code).
         otp_confirmed_at: row.consent_confirmed_at ?? null,
         // C6e: the exact wording the hash stands for, so the evidence survives the vendor's next version.
         request_body: { ...redactedBody, _evidence: { declaration: renderDeclaration(t.declaration), version: t.version, hash } },

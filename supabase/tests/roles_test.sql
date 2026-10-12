@@ -45,9 +45,9 @@ select t.rec('PM-R1', :'B'), t.rec('PM-R2', :'C'), t.rec('PM-R3', null), t.rec('
 select upsert_staff_member(:'D', 'consultant', false, :'A') \gset d2_
 insert into consent_events (ref, event) values ('PM-R1', 'registered'), ('PM-R2', 'registered'), ('PM-GONE', 'deleted');
 insert into manual_verifications (ref, verified_by, verified_by_label, attestation_version, attestation_text, attestation_sha256,
-    document_path, document_type, document_bytes, document_sha256)
-  values ('PM-R1', :'B', 'b', 'v', 't', 'h', 'PM-R1/a.png', 'image/png', 1, 'h'),
-         ('PM-R2', :'C', 'c', 'v', 't', 'h', 'PM-R2/a.png', 'image/png', 1, 'h');
+    document_kind, document_path, document_type, document_bytes, document_sha256)
+  values ('PM-R1', :'B', 'b', 'v', 't', 'h', 'client_photo', 'PM-R1/photo-a.png', 'image/png', 1, 'h'),
+         ('PM-R2', :'C', 'c', 'v', 't', 'h', 'client_photo', 'PM-R2/photo-a.png', 'image/png', 1, 'h');
 insert into mm_api_log (ref, api, method, path_redacted) values ('PM-R1', 'credit', 'POST', '/x'), ('PM-R2', 'credit', 'POST', '/x'), (null, 'consent', 'GET', '/ConsentTypes');
 insert into report_access_log (ref, user_id, action) values ('PM-R1', :'B', 'view'), ('PM-R2', :'C', 'view');
 insert into storage.objects (bucket_id, name) values

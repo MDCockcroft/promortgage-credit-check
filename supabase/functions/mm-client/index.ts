@@ -1,21 +1,21 @@
 // mm-client — the ANONYMOUS-facing Edge Function (BUILD-PLAN D2, D14).
-// Called by index.html. It can serve the consent wording, register consent with MortgageMax after
-// the client confirms their SMS OTP, and run the identity-verification questions. It can NEVER run
-// a credit check — that path exists only in mm-staff, behind a staff login.
+// Called by index.html. It can serve the consent wording, accept the application, register consent
+// with MortgageMax, and run the identity-verification questions. It can NEVER run a credit check —
+// that path exists only in mm-staff, behind a staff login.
 //
-// Authorisation: 'consent-types' is public (the wording is not secret). Every other action needs
-// { ref, idv_token }: confirm_consent minted the token once (32 random bytes); only its sha256 is
-// stored, with a 30-minute expiry, in credit_check_secrets (unreadable by any client role). A
-// consultant can re-issue it (mm-staff 'reissue-idv-link', 24-hour expiry), which replaces the hash.
+// Authorisation: 'consent-types' and 'consultant' are public (neither is secret). Every other action
+// needs { ref, idv_token }: submit_application minted the token once (32 random bytes); only its
+// sha256 is stored, with a 30-minute expiry, in credit_check_secrets (unreadable by any client role).
+// A consultant can re-issue it (mm-staff 'reissue-idv-link', 24-hour expiry), which replaces the hash.
 // Deploy with --no-verify-jwt: the project's publishable key is not a JWT.
 //
-// 'submit' creates the application and SMSes the consent code (SMS_MODE, _shared/sms.ts); it hands
-// back a one-time otp_session (sha256 stored) that alone may ask for 'resend-otp'.
+// There is no SMS code (MortgageMAX, Bennie Vermeulen, 2026-10-12: the identity questions alone
+// verify the person). 'submit' creates the application already in consent_confirmed and hands the
+// token straight back; the browser then calls 'register-consent' and 'idv-start'.
 //
 // POST { action: 'consent-types' }
 // POST { action: 'consultant', code }               → { name } (first name for a personal link, or null)
-// POST { action: 'submit', payload, consultant_code? } → { ref, otp_session, sms, demo_otp (not live) }
-// POST { action: 'resend-otp', ref, otp_session }   → { sent, reason?, retryAfter, sendsLeft }
+// POST { action: 'submit', payload, consultant_code } → { ref, idv_token }
 // POST { ref, idv_token, action: 'register-consent' | 'idv-start' | 'idv-answer' | 'idv-expire', answers? }
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -28,9 +28,7 @@ import { recoverStale } from "../_shared/recover.ts";
 import { idvIdType, personIdFor } from "../_shared/idnumber.ts";
 import { IDV_ANSWER_WINDOW_MS, MAX_IDV_ROUNDS } from "../_shared/states.ts";
 import { isMissingFunction, validLinkCode } from "../_shared/access.ts";
-import {
-  OTP_COOLDOWN_S, OTP_FAILED_RETRY_S, OTP_MAX_PER_CELL_24H, OTP_MAX_SENDS, otpMessage, sendSms, type SmsConfig, smsConfigFromEnv, smsGuard,
-} from "../_shared/sms.ts";
+import { productionStopped, STOPPED } from "../_shared/stop.ts";
 
 const APP_NAME = "promortgage-credit-check";
 const APP_VERSION = "2026.09.26";
@@ -40,54 +38,11 @@ const SOURCE_SYSTEM = "PMSA-CreditCheck";
 // 2 = MortgageMAX's production cooldown (Louis Pires, 2026-09-30): identity questions at most twice
 // per 24 hours. A third round would only be refused by the vendor, so hand over to manual first.
 const MAX_IDV_ROUNDS_PER_PERSON_24H = 2;
-// submit_credit_check's own refusals — safe to pass to the form as codes (it maps them to copy).
+// submit_application's own refusals — safe to pass to the form as codes (it maps them to copy).
 const SUBMIT_REFUSALS = new Set([
   "invalid_id_number", "invalid_passport_number", "invalid_id_type", "invalid_cell", "too_many_submissions",
+  "too_many_applications", "consent_required", "consultant_link_required",
 ]);
-
-type SendOutcome =
-  | { missing: true }
-  | {
-    missing?: false; sent: boolean; reason?: string; retryAfter?: number; sendsLeft?: number;
-    uncertain?: boolean; demoCode?: string;
-  };
-
-/**
- * Make a code and SMS it. claim_otp_send (migration 20260928) does every check and writes the
- * sms_log row BEFORE the send; record_sms_result closes it. The code is returned to the browser
- * ONLY outside live mode. { missing: true } = the migration is not applied yet.
- */
-async function sendCode(sb: SupabaseClient, sms: SmsConfig, ref: string, sessionHash: string, isResend: boolean): Promise<SendOutcome> {
-  const c = await sb.rpc("claim_otp_send", {
-    p_ref: ref, p_session_hash: sessionHash, p_is_resend: isResend, p_mode: sms.mode,
-    p_cooldown_s: OTP_COOLDOWN_S, p_max_sends: OTP_MAX_SENDS, p_cell_max: OTP_MAX_PER_CELL_24H, p_daily_max: sms.dailyMax,
-  });
-  if (c.error) {
-    if (c.error.code === "PGRST202" || /claim_otp_send/.test(c.error.message ?? "")) return { missing: true };
-    throw new Error(`server_error: ${c.error.message}`);
-  }
-  const d = c.data as { ok: boolean; reason?: string; retry_after?: number; code?: string; cell?: string; sms_id?: number; send_no?: number };
-  if (!d?.ok) {
-    if (d?.reason === "daily_limit") console.error(JSON.stringify({ event: "sms_daily_limit", ref, dailyMax: sms.dailyMax }));
-    return { sent: false, reason: d?.reason ?? "server_error", retryAfter: d?.retry_after };
-  }
-  const r = await sendSms(sms, { to: d.cell!, text: otpMessage(sms.brand, d.code!), customerId: ref });
-  const rec = await sb.rpc("record_sms_result", {
-    p_sms_id: d.sms_id, p_status: r.status, p_http: r.http, p_event_id: r.eventId, p_error: r.errorCode, p_cost: r.cost,
-  });
-  if (rec.error) console.error(JSON.stringify({ event: "sms_record_failed", ref, message: rec.error.message }));
-  // Never the number, the code or the text.
-  console.log(JSON.stringify({
-    event: "sms_send", ref, mode: sms.mode, sendNo: d.send_no, status: r.status, http: r.http,
-    errorCode: r.errorCode, latencyMs: r.latencyMs,
-  }));
-  if (r.http === 401 || r.http === 403) console.error(JSON.stringify({ event: "sms_config_error", ref, http: r.http }));
-  const sendsLeft = Math.max(0, OTP_MAX_SENDS - (d.send_no ?? OTP_MAX_SENDS));
-  const demoCode = sms.mode === "live" ? undefined : d.code;
-  // record_sms_result gives a failed send back (sendsLeft + 1) and allows a retry after 15 s.
-  if (r.status === "failed") return { sent: false, reason: "send_failed", retryAfter: OTP_FAILED_RETRY_S, sendsLeft: sendsLeft + 1, demoCode };
-  return { sent: true, uncertain: r.status === "unknown", retryAfter: OTP_COOLDOWN_S, sendsLeft, demoCode };
-}
 
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin");
@@ -95,8 +50,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return fail("bad_request", "POST only", origin);
 
   let body: {
-    ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown; otp_session?: string;
-    code?: unknown; consultant_code?: unknown; otp?: unknown;
+    ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown;
+    code?: unknown; consultant_code?: unknown;
   };
   try {
     body = await req.json();
@@ -119,6 +74,15 @@ Deno.serve(async (req) => {
   const idvMode = idvModeFromEnv();
   const fetchImpl = mode === "mock" ? mockFetch : undefined;
   const requestId = crypto.randomUUID();
+
+  // The emergency stop (_shared/stop.ts): in production nothing talks to the vendor, and no new
+  // application is accepted, while MM_MODE is not live. The consultant lookup and idv-expire are
+  // local and stay available.
+  const stopped = productionStopped(mode);
+  if (stopped && ["consent-types", "submit", "register-consent", "idv-start", "idv-answer"].includes(action)) {
+    console.error(JSON.stringify({ event: "stopped_in_production", action, mode }));
+    return fail(STOPPED.code, STOPPED.message, origin);
+  }
 
   // ---- public: the consent wording the form must show ----------------------------------------
   if (action === "consent-types") {
@@ -148,135 +112,60 @@ Deno.serve(async (req) => {
     return ok({ name: typeof c.data === "string" && c.data ? c.data : null }, origin);
   }
 
-  // ---- the form, and its SMS code ------------------------------------------------------------
-  // The browser no longer calls submit_credit_check itself: the code must never reach it (live).
-  if (action === "submit" || action === "resend-otp") {
-    let sms: SmsConfig;
-    try {
-      sms = smsConfigFromEnv();
-    } catch (e) {
-      console.error(JSON.stringify({ event: "sms_config_error", message: String(e instanceof Error ? e.message : e) }));
-      return fail("config_error", "Service is not configured", origin);
-    }
-    const unsafe = smsGuard(sms, cfg.env);
-    if (unsafe) {
-      console.error(JSON.stringify({ event: "sms_config_error", message: unsafe }));
-      return fail("config_error", "Service is not configured", origin);
-    }
-    try {
-      if (action === "submit") {
-        const p = body.payload;
-        if (!p || typeof p !== "object" || Array.isArray(p)) return fail("bad_request", "payload is required", origin);
-        // Applications arrive only through an active consultant's personal link (Michael, 2026-10-01):
-        // the bare address is the staff sign-in, and there is no general form any more. Checked BEFORE
-        // the record is made, so a stale or made-up code leaves nothing behind. (The page hides the
-        // form in the same cases; this is the control.)
-        if (!validLinkCode(body.consultant_code)) return fail("bad_request", "consultant_link_required", origin);
-        const who = await sb.rpc("consultant_by_code", { p_code: body.consultant_code });
-        if (who.error) throw new Error(`server_error: ${who.error.message}`);
-        if (typeof who.data !== "string" || !who.data) return fail("bad_request", "consultant_link_required", origin);
-        // One cellphone, one person (Michael, 2026-10-01): a phone that already confirmed an application
-        // for a different ID number is refused, and so is an ID number whose identity was verified with
-        // a different phone. Asked BEFORE the record is made and before any SMS is sent. (The database
-        // also refuses the confirmation itself - see 'confirm'.) Until migration 20261003 is applied
-        // the function does not exist and there is no such rule yet.
-        const fields = p as Record<string, unknown>;
-        const link = await sb.rpc("link_conflict", {
-          p_person: typeof fields.idNumber === "string" ? fields.idNumber : "",
-          p_cell: typeof fields.cell === "string" ? fields.cell : "",
-        });
-        if (link.error) {
-          if (!isMissingFunction(link.error)) throw new Error(`server_error: ${link.error.message}`);
-        } else if (link.data === "cell_linked") {
-          return fail("bad_request", "cell_linked_to_another_person", origin);
-        } else if (link.data === "id_linked") {
-          return fail("bad_request", "id_linked_to_another_cell", origin);
-        }
-        const sub = await sb.rpc("submit_credit_check", { payload: p });
-        if (sub.error) {
-          const m = sub.error.message ?? "";
-          if (SUBMIT_REFUSALS.has(m)) return fail("bad_request", m, origin);
-          throw new Error(`server_error: ${m}`);
-        }
-        const d = sub.data as { ref: string; demo_otp?: string };
-        // The record belongs to that consultant. If they were deactivated in the instant since the
-        // check above, it stays unassigned for an administrator to hand out (and is logged below).
-        if (validLinkCode(body.consultant_code)) {
-          const at = await sb.rpc("attach_consultant", { p_ref: d.ref, p_code: body.consultant_code });
-          // Never silent: every application that arrives through a link but lands unassigned is
-          // logged (the database also notes an inactive link on the record itself).
-          if (at.error) {
-            console.error(JSON.stringify({
-              event: "attach_consultant_failed", ref: d.ref,
-              message: isMissingFunction(at.error) ? "roles_not_installed" : at.error.message,
-            }));
-          } else if (at.data !== true) {
-            // A mistyped, old or deactivated link: worth seeing, not an error.
-            console.warn(JSON.stringify({ event: "attach_consultant_not_attached", ref: d.ref }));
-          }
-        }
-        const session = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
-        const out = await sendCode(sb, sms, d.ref, await sha256Hex(session), false);
-        if (out.missing) {
-          // Migration 20260928 not applied: submit_credit_check still made the code and returned it.
-          // Fine for mock/test; never for live (no limits, no log) — the row just expires.
-          if (sms.mode === "live") {
-            console.error(JSON.stringify({ event: "sms_config_error", message: "SMS_MODE=live before migration 20260928" }));
-            return fail("config_error", "Service is not configured", origin);
-          }
-          return ok({ ref: d.ref, demo_otp: d.demo_otp ?? null, sms: { sent: true, mode: sms.mode, canResend: false } }, origin);
-        }
-        return ok({
-          ref: d.ref, otp_session: session, demo_otp: out.demoCode ?? null,
-          sms: {
-            sent: out.sent, reason: out.reason, uncertain: out.uncertain ?? false, retryAfter: out.retryAfter ?? 0,
-            sendsLeft: out.sendsLeft ?? 0, mode: sms.mode, canResend: true,
-          },
-        }, origin);
-      }
+  // ---- retired actions (remove after 2026-11-01) -------------------------------------------------
+  // A form page cached before the 12 Oct push still shows the SMS screen after submitting (the
+  // application IS recorded, in consent_confirmed). Answer its two calls with the copy that page
+  // already has for "your consent is recorded; your consultant will contact you", so the client is
+  // not told to retry or to submit again (each resubmission would be another application).
+  if (action === "confirm") return ok({ ok: false, ref: ref ?? null, error: "already_confirmed", idv_token: null }, origin);
+  if (action === "resend-otp") return ok({ sent: false, reason: "invalid_state" }, origin);
 
-      // resend-otp: only the browser that submitted holds otp_session.
-      const session = body.otp_session;
-      if (!ref || typeof session !== "string" || session.length < 32) return fail("forbidden", "Invalid or expired session", origin);
-      const out = await sendCode(sb, sms, ref, await sha256Hex(session), true);
-      if (out.missing) return ok({ sent: false, reason: "unavailable" }, origin);
-      if (!out.sent && (out.reason === "forbidden" || out.reason === "not_found")) {
-        return fail("forbidden", "Invalid or expired session", origin);
-      }
-      return ok({
-        sent: out.sent, reason: out.reason, uncertain: out.uncertain ?? false, retryAfter: out.retryAfter ?? 0,
-        sendsLeft: out.sendsLeft, demo_otp: out.demoCode ?? null, mode: sms.mode,
-      }, origin);
-    } catch (e) {
-      console.error(JSON.stringify({ event: "mm_client_error", action, message: String(e instanceof Error ? e.message : e) }));
-      return fail("server_error", "Something went wrong", origin);
-    }
-  }
-
-  // ---- the SMS code: only the browser that submitted may try it --------------------------------
-  // confirm_consent used to be callable by anyone with a reference: it said whether the reference
-  // existed and let a stranger use up the client's five attempts. Now the code is checked only
-  // behind the session token that submit gave the submitting browser (the proof resend-otp needs).
-  // A wrong token and an unknown reference get the same answer.
-  if (action === "confirm") {
-    const session = body.otp_session;
-    if (!ref || typeof session !== "string" || session.length < 32) return fail("forbidden", "Invalid or expired session", origin);
+  // ---- the form --------------------------------------------------------------------------------
+  // The browser never calls the database itself. submit_application (migration 20261005) validates
+  // the payload, creates the record already in consent_confirmed and mints the one-time identity-
+  // check token in the same transaction. The token goes back to this browser once.
+  if (action === "submit") {
     try {
-      const { data: sec, error: secErr } = await sb.from("credit_check_secrets")
-        .select("otp_session_hash").eq("ref", ref).maybeSingle();
-      if (secErr) throw new Error(`server_error: ${secErr.message}`);
-      if (!sec?.otp_session_hash || sec.otp_session_hash !== await sha256Hex(session)) {
-        return fail("forbidden", "Invalid or expired session", origin);
+      const p = body.payload;
+      if (!p || typeof p !== "object" || Array.isArray(p)) return fail("bad_request", "payload is required", origin);
+      // Applications arrive only through an active consultant's personal link (Michael, 2026-10-01):
+      // the bare address is the staff sign-in, and there is no general form any more. Checked BEFORE
+      // the record is made, so a stale or made-up code leaves nothing behind. (The page hides the
+      // form in the same cases; this is the control.)
+      if (!validLinkCode(body.consultant_code)) return fail("bad_request", "consultant_link_required", origin);
+      const who = await sb.rpc("consultant_by_code", { p_code: body.consultant_code });
+      if (who.error) throw new Error(`server_error: ${who.error.message}`);
+      if (typeof who.data !== "string" || !who.data) return fail("bad_request", "consultant_link_required", origin);
+
+      // submit_application checks the link again, the consent flag, and the caps (per person and
+      // link, per link, and the daily breaker) under its own locks - see migration 20261005.
+      const sub = await sb.rpc("submit_application", { payload: p, p_consultant_code: body.consultant_code });
+      if (sub.error) {
+        const m = sub.error.message ?? "";
+        if (SUBMIT_REFUSALS.has(m)) return fail("bad_request", m, origin);
+        if (isMissingFunction(sub.error)) {
+          // Migration 20261005 not applied yet: nothing was written. Never silent.
+          console.error(JSON.stringify({ event: "submit_application_missing" }));
+          return fail("config_error", "Service is not configured", origin);
+        }
+        throw new Error(`server_error: ${m}`);
       }
-      const c = await sb.rpc("confirm_consent", { p_ref: ref, p_otp: typeof body.otp === "string" ? body.otp : "" });
-      // 23P01 = the one_person_per_cellphone constraint: between this form being accepted and this
-      // code being entered, the same phone confirmed an application for a different ID number.
-      // Nothing was confirmed and no attempt was used up (the whole call was rolled back).
-      if (c.error && c.error.code === "23P01") return ok({ ok: false, ref, error: "cell_linked", idv_token: null }, origin);
-      if (c.error) throw new Error(`server_error: ${c.error.message}`);
-      const d = (c.data ?? {}) as { ok?: boolean; ref?: string; error?: string; idv_token?: string };
-      // The one-time IDV token goes back to this browser only, exactly as confirm_consent minted it.
-      return ok({ ok: !!d.ok, ref: d.ref ?? ref, error: d.error ?? null, idv_token: d.ok ? d.idv_token ?? null : null }, origin);
+      const d = sub.data as { ref: string; idv_token: string };
+      // The record belongs to that consultant. If they were deactivated in the instant since the
+      // check above, it stays unassigned for an administrator to hand out (and is logged below).
+      const at = await sb.rpc("attach_consultant", { p_ref: d.ref, p_code: body.consultant_code });
+      // Never silent: every application that arrives through a link but lands unassigned is logged
+      // (the database also notes an inactive link on the record itself).
+      if (at.error) {
+        console.error(JSON.stringify({
+          event: "attach_consultant_failed", ref: d.ref,
+          message: isMissingFunction(at.error) ? "roles_not_installed" : at.error.message,
+        }));
+      } else if (at.data !== true) {
+        // A mistyped, old or deactivated link: worth seeing, not an error.
+        console.warn(JSON.stringify({ event: "attach_consultant_not_attached", ref: d.ref }));
+      }
+      return ok({ ref: d.ref, idv_token: d.idv_token }, origin);
     } catch (e) {
       console.error(JSON.stringify({ event: "mm_client_error", action, message: String(e instanceof Error ? e.message : e) }));
       return fail("server_error", "Something went wrong", origin);

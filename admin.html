@@ -406,6 +406,7 @@
   .login-card h2 { margin: var(--s2) 0 var(--s5); }
   .login-card .btn { width: 100%; margin-top: var(--s2); }
   .login-card .err { display: block; margin-top: var(--s3); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
+  .next-step { margin: var(--s2) 0 var(--s3); font-size: 1rem; line-height: 1.5; }
   /* the manual-verification panel's message sits outside a .field, so it needs the error look too */
   .verify-set .err { display: block; margin-top: var(--s2); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
 </style>
@@ -615,7 +616,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261001-2"></script>
+<script src="assets/store.js?v=20261012-1"></script>
 <script>
 (function () {
   'use strict';
@@ -635,6 +636,10 @@
   function rolesOn() { return sysCfg.me.roles === true; }
   function isAdmin() { return sysCfg.me.role === 'admin'; }
   function adminView() { return rolesOn() && isAdmin(); }
+  /* Consultants do bonds, not IT (Michael, 2026-10-12): they see what the client filled in, where the
+     application is in plain words, the link and manual-override actions, and the report. The audit
+     trail, vendor read-backs, codes, raw data and access logs are the administrator's view. */
+  function plainView() { return rolesOn() && !isAdmin(); }
   function consultantLabel(id) {
     if (!id) return 'Unassigned';
     var m = staffById[id];
@@ -670,7 +675,7 @@
   var RECOVERABLE = ['check_in_flight', 'idv_in_progress'];
 
   /* Statuses where "Run credit check" can never apply — hidden, not just disabled. */
-  var NEVER_RUN = ['report_ready', 'consent_withdrawn', 'expired', 'awaiting_otp'];
+  var NEVER_RUN = ['report_ready', 'consent_withdrawn', 'expired'];
 
   var dlg = document.getElementById('detailDlg');
   var pdlg = document.getElementById('profileDlg');
@@ -779,10 +784,41 @@
     return el('span', { className: 'chip ' + b.chip, text: b.label });
   }
   function hintEl(r) {
+    if (plainView()) {
+      var ps = plainStatus(r);
+      return el('p', { className: 'next-step', id: 'dlgStatusHint' }, [el('strong', { text: ps.head }), ps.detail ? ' ' + ps.detail : '']);
+    }
     var t = PMStore.hintFor(r.status, bucketFor(r), isStalled(r));
     return t ? el('p', { className: 'small', id: 'dlgStatusHint', text: t }) : null;
   }
+  /* The consultant's one-line answer to "where is this application, and what do I do?" */
+  function plainStatus(r) {
+    var n = r.idvAttempts || 0, max = PMStore.MAX_IDV_ROUNDS;
+    if (isStalled(r)) return { head: 'This application has stalled.', detail: 'Open it again in a minute; if it stays like this, ask your administrator.' };
+    switch (r.status) {
+      case 'consent_confirmed': return { head: 'Waiting for the client.', detail: 'They submitted the form but have not reached the identity questions. If nothing changes, use “Retry consent registration” below, then send them a new identity link.' };
+      case 'consent_registered': return { head: 'Waiting for the client to answer the identity questions.', detail: 'Nothing to do yet. If they closed the page, send them a new link below.' };
+      case 'idv_in_progress': return { head: 'The client is answering the identity questions now.', detail: 'Give them a few minutes.' };
+      case 'idv_passed': return { head: 'Identity verified. Ready to run the credit check.', detail: '' };
+      case 'idv_waived': return { head: 'Ready to run the credit check.', detail: '' };
+      case 'manual_verified': return { head: 'Identity verified manually. Ready to run the credit check.', detail: '' };
+      case 'idv_failed': return { head: 'The client did not pass the identity questions (' + n + ' of ' + max + ' tries).',
+        detail: n < max ? 'Send them a new link for another try, or verify their identity manually below.' : 'No more tries today. Verify their identity manually below.' };
+      case 'idv_unavailable': return { head: 'No identity questions were available for this client.', detail: 'Verify their identity manually below.' };
+      case 'check_in_flight': return { head: 'The credit check is running.', detail: 'Usually under a minute.' };
+      case 'report_ready': return { head: 'The credit report is ready.', detail: 'See below, and open the credit report PDF.' };
+      case 'check_failed': return { head: 'The credit check did not complete.', detail: 'Run it again. If it keeps failing, ask your administrator.' };
+      case 'manual_required': return r.idType === 'passport'
+        ? { head: 'No credit check is possible.', detail: 'Passport applicants are not covered by Experian. Handle this application outside the system.' }
+        : { head: 'This application needs your administrator.', detail: 'Something stopped the automatic process; your administrator can see why.' };
+      case 'config_error': return { head: 'A system problem stopped this application.', detail: 'Nothing is wrong with the client’s form. Tell your administrator.' };
+      case 'consent_withdrawn': return { head: 'The client withdrew consent.', detail: 'No credit check can be run on this application.' };
+      case 'expired': return { head: 'This application expired before the client finished.', detail: 'Ask the client to apply again through your link.' };
+      default: return { head: statusInfo(r.status).label, detail: '' };
+    }
+  }
   function chipEl(status, rec) {
+    if (plainView() && rec) return bucketChipEl(rec);
     var s = statusInfo(status);
     if (rec && isStalled(rec)) return el('span', { className: 'chip chip-attention', text: s.label + ' — stalled' });
     return el('span', { className: 'chip ' + s.chip, text: s.label });
@@ -1149,14 +1185,17 @@
       ['Gross income', rand(r.grossIncome)], ['Deductions', rand(r.totalDeductions)],
       ['Expenses', rand(r.monthlyExpenses)], ['Rent / bond', rand(r.housingPayment)]
     ]));
+    f.appendChild(formDownloadRow());
 
-    f.appendChild(h3('Consent audit trail'));
-    var ul = el('ul', { className: 'audit' });
-    (r.audit || []).forEach(function (a) {
-      ul.appendChild(el('li', null, [el('time', { text: fmtDate(a && a.at) }), el('span', { text: a && a.event })]));
-    });
-    f.appendChild(ul);
-    if (r.consentUA) f.appendChild(el('p', { className: 'small ua-line', text: 'Consent device: ' + r.consentUA }));
+    if (!plainView()) {
+      f.appendChild(h3('Consent audit trail'));
+      var ul = el('ul', { className: 'audit' });
+      (r.audit || []).forEach(function (a) {
+        ul.appendChild(el('li', null, [el('time', { text: fmtDate(a && a.at) }), el('span', { text: a && a.event })]));
+      });
+      f.appendChild(ul);
+      if (r.consentUA) f.appendChild(el('p', { className: 'small ua-line', text: 'Consent device: ' + r.consentUA }));
+    }
 
     f.appendChild(consentSection(r));
     f.appendChild(idvSection(r));
@@ -1166,10 +1205,52 @@
     return f;
   }
 
+  /* ---------- a0. the completed application form, as a PDF (Michael, 2026-10-12) ----------
+     Built in the browser from the record (PMStore.buildFormPdf): the client's details, the consent
+     declaration they accepted (version, fingerprint, and the wording when MortgageMAX still publishes
+     that version) and when. Logged like opening a report. */
+  function formDownloadRow() {
+    var row = el('div', { className: 'dsec-actions' });
+    row.appendChild(btn('Download the client’s application form (PDF)', 'btn btn-ghost btn-sm', onDownloadForm, 'formPdfBtn'));
+    row.appendChild(msgRegion('formPdfMsg'));
+    return row;
+  }
+  function consultantName(id) {
+    if (!id) return '';
+    if (id === sysCfg.me.userId) return (profile && (profile.fullName || profile.email)) || 'You';
+    return consultantLabel(id);
+  }
+  function onDownloadForm(e) {
+    var b = e.currentTarget;
+    if (!currentRec) return;
+    var r = currentRec, ref = r.ref;
+    b.disabled = true;
+    setMsg('formPdfMsg', 'Preparing the application form PDF…');
+    var presented = Array.isArray(r.consentsPresented) && r.consentsPresented.length;
+    safe(function () { return presented ? PMStore.consentTypes().catch(function () { return []; }) : []; }).then(function (decls) {
+      var bytes = PMStore.buildFormPdf(r, {
+        consultant: consultantName(r.consultantId),
+        generatedBy: (profile && (profile.fullName || profile.email)) || '',
+        declarations: decls
+      });
+      var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      var fileName = 'Application-form-' + ref + '-' + String(r.surname || '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.pdf';
+      var a = el('a', { href: url, download: fileName });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      PMStore.logAccess(ref, 'download_form');
+      setMsg('formPdfMsg', 'Downloaded: ' + fileName, 'ok');
+    }).catch(function (err) {
+      setMsg('formPdfMsg', 'The application form PDF could not be built (' + ((err && err.message) || 'unknown error') + ').', 'err');
+    }).then(function () { b.disabled = false; });
+  }
+
   /* ---------- a. consent with MortgageMAX ---------- */
   var EVENT_LABELS = { registered: 'Registered', withdrawn: 'Withdrawn', readback: 'Read back', deleted: 'Deleted' };
   /* Statuses where "Record withdrawal" is not offered (the server refuses them too). */
-  var NO_WITHDRAW = ['awaiting_otp', 'consent_withdrawn', 'check_in_flight'];
+  var NO_WITHDRAW = ['consent_withdrawn', 'check_in_flight'];
 
   /* GET /Consents returns every consent MortgageMAX holds for the person, from any licensee and of
      any type. Show only the types this client was shown; count the rest separately. */
@@ -1211,8 +1292,9 @@
   }
 
   function consentSection(r) {
+    var plain = plainView();
     var s = el('section', { className: 'dsec', 'aria-labelledby': 'secConsentH' });
-    s.appendChild(h3('Consent with MortgageMAX', 'secConsentH'));
+    s.appendChild(h3(plain ? 'Consent' : 'Consent with MortgageMAX', 'secConsentH'));
 
     var presented = Array.isArray(r.consentsPresented) ? r.consentsPresented : [];
     var presentedNode = presented.length
@@ -1224,10 +1306,17 @@
         }))
       : 'Not recorded';
 
-    var pairs = [['Registered', r.consentRegisteredAt ? fmtDate(r.consentRegisteredAt) : 'Not registered yet']];
-    if (r.consentWithdrawnAt) pairs.push(['Withdrawn', fmtDate(r.consentWithdrawnAt)]);
-    pairs.push(['Wording shown to client', presentedNode]);
-    if (Array.isArray(r.mmConsentsSnapshot)) pairs.push(['MortgageMAX read-back', readBackNode(r, presented)]);
+    var pairs;
+    if (plain) {
+      pairs = [['Consent given', r.consentConfirmedAt ? fmtDate(r.consentConfirmedAt) + ' (on the online form)' : null],
+        ['Registered with MortgageMAX', r.consentRegisteredAt ? fmtDate(r.consentRegisteredAt) : 'Not yet']];
+      if (r.consentWithdrawnAt) pairs.push(['Withdrawn', fmtDate(r.consentWithdrawnAt)]);
+    } else {
+      pairs = [['Registered', r.consentRegisteredAt ? fmtDate(r.consentRegisteredAt) : 'Not registered yet']];
+      if (r.consentWithdrawnAt) pairs.push(['Withdrawn', fmtDate(r.consentWithdrawnAt)]);
+      pairs.push(['Wording shown to client', presentedNode]);
+      if (Array.isArray(r.mmConsentsSnapshot)) pairs.push(['MortgageMAX read-back', readBackNode(r, presented)]);
+    }
     s.appendChild(kv(pairs));
 
     var warn = withdrawWarn[r.ref];
@@ -1239,18 +1328,20 @@
       ]));
     }
 
-    s.appendChild(el('h4', { className: 'tier-h', text: 'Consent events' }));
-    var box = el('div', { 'aria-busy': 'true' }, el('p', { className: 'small', text: 'Loading consent events…' }));
-    s.appendChild(box);
-    loadConsentEvents(r.ref, box);
+    if (!plain) {
+      s.appendChild(el('h4', { className: 'tier-h', text: 'Consent events' }));
+      var box = el('div', { 'aria-busy': 'true' }, el('p', { className: 'small', text: 'Loading consent events…' }));
+      s.appendChild(box);
+      loadConsentEvents(r.ref, box);
+    }
 
     var row = el('div', { className: 'dsec-actions' });
     /* only a registered consent has anything at MortgageMAX to read back — otherwise the
-       person's ID number would be sent for nothing */
-    if (r.consentRegisteredAt) {
+       person's ID number would be sent for nothing (administrators only: it is a check, not a step) */
+    if (r.consentRegisteredAt && !plain) {
       row.appendChild(btn('Refresh from MortgageMAX', 'btn btn-ghost btn-sm', onRefreshConsents));
     }
-    /* Not in the first 2 minutes after the SMS code: the client's own registration is still
+    /* Not in the first 2 minutes after the form was submitted: the client's own registration is still
        running, and a staff retry would take the claim from them (they would then skip IDV). */
     if (r.status === 'consent_confirmed' && (!r.consentConfirmedAt || Date.now() - r.consentConfirmedAt > 2 * 60 * 1000)) {
       row.appendChild(btn('Retry consent registration', 'btn btn-ghost btn-sm', onRetryRegistration));
@@ -1467,12 +1558,12 @@
     else if (r.idvAttempts) state = 'Attempted (see audit trail)';
     else state = 'Not started';
 
-    var pairs = [
-      ['Identity questions', (IDV_MODE_TEXT[mode] || mode) + (cfgLoaded ? '' : ' (assumed — settings unavailable)')],
-      ['Current state', state],
-      ['Attempts', (r.idvAttempts || 0) + ' of ' + PMStore.MAX_IDV_ROUNDS]
+    var plain = plainView();
+    var pairs = plain ? [] : [
+      ['Identity questions', (IDV_MODE_TEXT[mode] || mode) + (cfgLoaded ? '' : ' (assumed — settings unavailable)')]
     ];
-    if (r.idvStartedAt) pairs.push(['Last started', fmtDate(r.idvStartedAt)]);
+    pairs.push(['Current state', state], ['Attempts', (r.idvAttempts || 0) + ' of ' + PMStore.MAX_IDV_ROUNDS]);
+    if (r.idvStartedAt && !plain) pairs.push(['Last started', fmtDate(r.idvStartedAt)]);
     if (r.idvPassedAt) pairs.push(['Passed at', fmtDate(r.idvPassedAt)]);
     var res = r.idvResult;
     if (res && typeof res === 'object') {
@@ -1485,10 +1576,12 @@
            (UAT, 2026-09-29) — so the outcome comes from our own record, never from that flag. */
         var scored = res.success === true || res.success === false || (res.statusCode != null && res.statusCode !== '');
         pairs.push(['Result', r.idvPassedAt ? 'Passed' : scored ? 'Not passed' : '—']);
-        if (res.statusCode != null && res.statusCode !== '') pairs.push(['Result code', String(res.statusCode), 'mono']);
-        if (res.finalScore != null && res.finalScore !== '') pairs.push(['Final score', String(res.finalScore)]);
-        if (res.vendorCode) pairs.push(['Vendor code', String(res.vendorCode), 'mono']);
-        if (res.vendorMessage) pairs.push(['Vendor message', String(res.vendorMessage)]);
+        if (!plain) {
+          if (res.statusCode != null && res.statusCode !== '') pairs.push(['Result code', String(res.statusCode), 'mono']);
+          if (res.finalScore != null && res.finalScore !== '') pairs.push(['Final score', String(res.finalScore)]);
+          if (res.vendorCode) pairs.push(['Vendor code', String(res.vendorCode), 'mono']);
+          if (res.vendorMessage) pairs.push(['Vendor message', String(res.vendorMessage)]);
+        }
       }
     }
     s.appendChild(kv(pairs));
@@ -1503,7 +1596,7 @@
       s.appendChild(el('p', { className: 'note',
         text: 'Identity questions are switched off; this record was waived by configuration.' }));
     }
-    s.appendChild(el('p', { className: 'note', text: 'The client’s answers are never stored.' }));
+    if (!plain) s.appendChild(el('p', { className: 'note', text: 'The client’s answers are never stored.' }));
     return s;
   }
 
@@ -1628,11 +1721,17 @@
     });
   }
 
-  /* ---------- b2. manual identity verification (signed consent form + ID copy + Experian statement) ----------
+  /* ---------- b2. manual identity verification (signed consent form + photo of the client + Experian statement) ----------
      MortgageMAX (2026-10-01): the identity questions may be bypassed only once the client has signed
      its Consent Form. The consultant sends the form, the client signs page 1, and the signed copy is
-     uploaded here with the ID copy. The server and the database both refuse without it. */
+     uploaded here. MortgageMAX (Bennie Vermeulen, 2026-10-12): the proof that the consultant verified
+     the person is a photo of the client, taken by the consultant in person, with the client holding
+     their ID document (it replaced the uploaded ID copy). On a phone the input opens the camera
+     (`capture`); a desktop browser offers a file instead. The server and the database both refuse
+     without both files, and a PDF is never accepted as the photo. */
   var DOC_ACCEPT = 'application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png';
+  var PHOTO_ACCEPT = 'image/jpeg,image/png,.jpg,.jpeg,.png';
+  var photoPickerOpen = false; /* the camera or picker for #manualFile is up (see manualBlock) */
   function manualBlock(r, mode) {
     if (r.manualVerifiedAt) return evidenceBlock(r);
     if (!PMStore.manualVerifyCheck(r).ok || PMStore.allowedFrom(mode).indexOf(r.status) !== -1) return null;
@@ -1641,21 +1740,29 @@
     var box = el('fieldset', { className: 'verify-set', id: 'manualSet', 'data-version': att.version, 'data-form-version': formVersion });
     box.appendChild(el('legend', { text: 'Verify identity manually' }));
     box.appendChild(el('p', { className: 'small', text: 'Use this when the client couldn’t pass the identity questions, or none were available. ' +
-      'MortgageMAX allows it only once the client has signed its consent form. All three steps are kept as evidence for MortgageMAX’s audits.' }));
+      'MortgageMAX allows it only once the client has signed its consent form and you have verified the client in person. ' +
+      'All three steps are kept as evidence for MortgageMAX’s audits.' }));
     var step1 = el('p', { className: 'small' }, [
       el('strong', { text: '1. Send the client the consent form. ' }),
       'They fill in and sign page 1 and send it back to you (a scan or a clear photo is fine). '
     ]);
     step1.appendChild(el('a', { href: PMStore.CONSENT_FORM.href, target: '_blank', rel: 'noopener', download: 'MortgageMAX-Consent-Form.pdf',
-      text: 'Download the MortgageMAX consent form (PDF)' }));
+      text: 'Download the blank MortgageMAX consent form (PDF)' }));
     box.appendChild(step1);
     box.appendChild(el('div', { className: 'field' }, [
-      el('label', { 'for': 'manualForm', text: '2. The signed consent form (PDF, JPG or PNG, up to 10 MB)' }),
+      el('label', { 'for': 'manualForm', text: '2. The MortgageMAX consent form, signed by the client (PDF, JPG or PNG, up to 10 MB)' }),
       el('input', { type: 'file', id: 'manualForm', accept: DOC_ACCEPT, 'aria-describedby': 'manualErr' })
     ]));
+    var photoInput = el('input', { type: 'file', id: 'manualFile', accept: PHOTO_ACCEPT, capture: 'environment', 'aria-describedby': 'manualErr' });
+    /* While the camera (or the file picker) is open the input still has no file, so a live refresh
+       would rebuild the panel under it and lose the photo and the signed form. Hold refreshes from
+       the tap until the picker returns a file or is dismissed. */
+    photoInput.addEventListener('click', function () { photoPickerOpen = true; });
+    photoInput.addEventListener('change', function () { photoPickerOpen = false; });
+    photoInput.addEventListener('cancel', function () { photoPickerOpen = false; });
     box.appendChild(el('div', { className: 'field' }, [
-      el('label', { 'for': 'manualFile', text: '3. A copy of the client’s ID document or driver’s licence, which you checked yourself (PDF, JPG or PNG, up to 10 MB)' }),
-      el('input', { type: 'file', id: 'manualFile', accept: DOC_ACCEPT, 'aria-describedby': 'manualErr' })
+      el('label', { 'for': 'manualFile', text: '3. A photo of the client, taken by you now, holding the ID document or driver’s licence you checked (JPG or PNG, up to 10 MB). On a phone this opens the camera.' }),
+      photoInput
     ]));
     box.appendChild(el('blockquote', { className: 'attest', id: 'manualStatement', text: att.text }));
     box.appendChild(el('label', { className: 'check-row', 'for': 'manualChk' }, [
@@ -1685,24 +1792,28 @@
         return deletedAt ? 'Deleted ' + fmtDate(Date.parse(deletedAt))
           : (TYPES[type] || type) + ', ' + Math.max(1, Math.round(Number(bytes) / 1024)) + ' KB';
       };
-      /* a verification from before 1 Oct 2026 has no signed consent form: say so, never hide it */
+      /* a verification from before 1 Oct 2026 has no signed consent form, and one from before
+         12 Oct 2026 holds an ID copy where later ones hold the photo: say so, never hide it */
       var hasForm = !!e.consent_form_type;
+      var isPhoto = e.document_kind === 'client_photo';
+      var docLabel = isPhoto ? 'Photo of the client' : 'ID copy (verified before the photo was required)';
       holder.appendChild(kv([
         ['Verified by', e.verified_by_label],
         ['When', fmtDate(Date.parse(e.created_at))],
-        ['Signed consent form', hasForm ? fileLine(e.consent_form_type, e.consent_form_bytes, e.consent_form_deleted_at)
+        ['Signed MortgageMAX consent form', hasForm ? fileLine(e.consent_form_type, e.consent_form_bytes, e.consent_form_deleted_at)
           : 'None (verified before the signed form was required)'],
-        ['ID copy', fileLine(e.document_type, e.document_bytes, e.document_deleted_at)],
+        [docLabel, fileLine(e.document_type, e.document_bytes, e.document_deleted_at)],
         ['Statement version', e.attestation_version, 'mono']
       ].concat(hasForm ? [['Consent form version', e.consent_form_version, 'mono']] : [])));
       holder.appendChild(el('blockquote', { className: 'attest', text: e.attestation_text }));
       var opens = [];
       if (e.consent_form_path && !e.consent_form_deleted_at && PMStore.mode === 'live') {
-        opens.push(btn('Open signed consent form', 'btn btn-ghost btn-sm',
+        opens.push(btn('Open signed MortgageMAX consent form', 'btn btn-ghost btn-sm',
           function (ev) { onOpenStoredDoc(ev, r.ref, e.consent_form_path, 'form'); }, 'formCopyBtn'));
       }
       if (e.document_path && !e.document_deleted_at && PMStore.mode === 'live') {
-        opens.push(btn('Open ID copy', 'btn btn-ghost btn-sm', function (ev) { onOpenStoredDoc(ev, r.ref, e.document_path, 'id'); }, 'idCopyBtn'));
+        opens.push(btn(isPhoto ? 'Open photo of the client' : 'Open ID copy', 'btn btn-ghost btn-sm',
+          function (ev) { onOpenStoredDoc(ev, r.ref, e.document_path, isPhoto ? 'photo' : 'id'); }, 'idCopyBtn'));
       }
       if (opens.length) holder.appendChild(el('div', { className: 'dsec-actions' }, opens));
     }).catch(function (err) {
@@ -1722,15 +1833,15 @@
     var formFile = g && g.files && g.files[0];
     var file = f && f.files && f.files[0];
     var problem = null, target = null;
-    var checkDoc = function (doc, input, what) {
+    var checkDoc = function (doc, input, what, types, accepted, verb) {
       if (problem) return;
-      if (!doc) problem = 'Choose the ' + what + ' to upload.';
-      else if (['application/pdf', 'image/jpeg', 'image/png'].indexOf(doc.type) === -1) problem = 'The ' + what + ' must be a PDF, JPG or PNG.';
+      if (!doc) problem = verb + ' the ' + what + '.';
+      else if (types.indexOf(doc.type) === -1) problem = 'The ' + what + ' must be a ' + accepted + '.';
       else if (doc.size > 10 * 1024 * 1024) problem = 'The ' + what + ' is larger than 10 MB.';
       if (problem) target = input;
     };
-    checkDoc(formFile, g, 'signed consent form');
-    checkDoc(file, f, 'ID copy');
+    checkDoc(formFile, g, 'signed MortgageMAX consent form', ['application/pdf', 'image/jpeg', 'image/png'], 'PDF, JPG or PNG', 'Choose');
+    checkDoc(file, f, 'photo of the client', PMStore.PHOTO_TYPES, 'JPG or PNG', 'Take');
     if (!problem && !c.checked) { problem = 'Tick the box to confirm the Experian statement.'; target = c; }
     if (problem) {
       errN.textContent = problem;
@@ -1743,7 +1854,7 @@
     busy = true;
     b.disabled = true;
     b.textContent = 'Saving…';
-    setMsg('manualMsg', 'Uploading the signed consent form and the ID copy, and recording your confirmation…');
+    setMsg('manualMsg', 'Uploading the signed MortgageMAX consent form and the photo, and recording your confirmation…');
     var here = function () { return dlg.open && currentRef === ref; };
     safe(function () { return PMStore.manualVerify(ref, file, formFile, version, formVersion); }).then(function () {
       busy = false;
@@ -1759,9 +1870,18 @@
       var m = staffError(err, 'manual');
       render();
       if (here()) {
-        /* reload: after a dropped connection the save may still have landed */
-        pushFlash('dlgMsg', m.text, 'err', m.sub);
-        reloadDetail(ref, 'manualFile');
+        if (err && err.code === 'bad_request') {
+          /* the server refused a file or the statement: nothing was saved, so keep the chosen
+             files (a camera photo is costly to retake) and say what to fix */
+          $('manualErr').textContent = m.text;
+          $('manualBtn').disabled = false;
+          $('manualBtn').textContent = 'Save manual verification';
+          setMsg('manualMsg', '');
+        } else {
+          /* reload: after a dropped connection the save may still have landed */
+          pushFlash('dlgMsg', m.text, 'err', m.sub);
+          reloadDetail(ref, 'manualFile');
+        }
       } else {
         setMsg('pageMsg', ref + ': manual verification not saved — ' + m.text, 'err', m.sub);
       }
@@ -1770,12 +1890,15 @@
 
   function onOpenStoredDoc(e, ref, path, kind) {
     var b = e.currentTarget;
-    var name = kind === 'form' ? 'the signed consent form' : 'the ID copy';
+    var name = kind === 'form' ? 'the signed MortgageMAX consent form' : kind === 'photo' ? 'the photo of the client' : 'the ID copy';
     if (busy) return;
     busy = true;
     b.disabled = true;
     setMsg('evidenceMsg', 'Preparing a secure link…');
-    safe(function () { return kind === 'form' ? PMStore.consentFormUrl(ref, path) : PMStore.idDocumentUrl(ref, path); }).then(function (url) {
+    safe(function () {
+      return kind === 'form' ? PMStore.consentFormUrl(ref, path)
+        : kind === 'photo' ? PMStore.clientPhotoUrl(ref, path) : PMStore.idDocumentUrl(ref, path);
+    }).then(function (url) {
       if (typeof url !== 'string' || !/^https:\/\//i.test(url)) throw new Error('The link was not valid');
       busy = false;
       b.disabled = false;
@@ -1927,15 +2050,18 @@
         return el('li', { text: d });
       })));
     }
-    meta.appendChild(el('p', { className: 'ids-line mono',
-      text: 'Bureau enquiry ' + (s.enquiryId || r.bureauEnquiryId || '—') + ' · Group ' + (r.groupId || '—') }));
+    if (!plainView()) {
+      meta.appendChild(el('p', { className: 'ids-line mono',
+        text: 'Bureau enquiry ' + (s.enquiryId || r.bureauEnquiryId || '—') + ' · Group ' + (r.groupId || '—') }));
+    }
     card.appendChild(meta);
     sec.appendChild(card);
 
-    /* Tier 2 — the bureau's own sections */
-    sec.appendChild(bureauDetail(r.reportJson));
+    /* Tier 2 — the bureau's own sections (the PDF has them in the bureau's own layout; consultants
+       get the PDF, administrators get both) */
+    if (!plainView()) sec.appendChild(bureauDetail(r.reportJson));
 
-    /* Tier 3 — PDF + raw data */
+    /* Tier 3 — PDF (+ raw data and the access log, administrators only) */
     sec.appendChild(pdfAndRaw(r));
     return sec;
   }
@@ -1978,36 +2104,38 @@
   }
 
   var PDF_STATUS = {
-    pending: ['PDF pending', 'chip-awaiting'],
-    fetching: ['Fetching PDF…', 'chip-requested'],
-    stored: ['PDF stored', 'chip-confirmed'],
-    failed: ['PDF fetch failed', 'chip-failed'],
-    locked: ['PDF is password-protected by the bureau', 'chip-attention']
+    pending: ['Credit report PDF pending', 'chip-awaiting'],
+    fetching: ['Fetching credit report PDF…', 'chip-requested'],
+    stored: ['Credit report PDF stored', 'chip-confirmed'],
+    failed: ['Credit report PDF fetch failed', 'chip-failed'],
+    locked: ['Credit report PDF is password-protected by the bureau', 'chip-attention']
   };
   function pdfChip(st) {
-    var p = PDF_STATUS[st] || [st ? 'PDF: ' + st : (PMStore.mode === 'demo' ? 'No PDF (demo mode)' : 'No PDF'), 'chip-muted'];
+    var p = PDF_STATUS[st] || [st ? 'Credit report PDF: ' + st : (PMStore.mode === 'demo' ? 'No credit report PDF (demo mode)' : 'No PDF'), 'chip-muted'];
     return el('span', { className: 'chip ' + p[1], text: p[0] });
   }
 
   function pdfAndRaw(r) {
+    var plain = plainView();
     var wrap = el('div');
-    wrap.appendChild(el('h4', { className: 'tier-h', id: 'secPdfH', tabindex: '-1', text: 'Report PDF and raw data' }));
+    wrap.appendChild(el('h4', { className: 'tier-h', id: 'secPdfH', tabindex: '-1', text: plain ? 'Credit report PDF' : 'Credit report PDF and raw data' }));
     var row = el('div', { className: 'dsec-actions' });
     row.appendChild(pdfChip(r.pdfStatus));
-    var open = btn('Open PDF', 'btn btn-primary btn-sm', onOpenPdf, 'openPdfBtn');
+    var open = btn('Open credit report (PDF)', 'btn btn-primary btn-sm', onOpenPdf, 'openPdfBtn');
     open.disabled = r.pdfStatus !== 'stored';
     row.appendChild(open);
     var pdfStale = r.pdfStatus === 'fetching' && r.reportReadyAt && (Date.now() - r.reportReadyAt > PDF_FETCH_STALE_MS);
     if (r.pdfStatus === 'failed' || r.pdfStatus === 'pending' || pdfStale) {
-      row.appendChild(btn('Fetch PDF', 'btn btn-ghost btn-sm', onFetchPdf));
+      row.appendChild(btn('Fetch credit report PDF', 'btn btn-ghost btn-sm', onFetchPdf));
     }
     wrap.appendChild(row);
     if (r.pdfStatus === 'locked') {
       wrap.appendChild(el('p', { className: 'note',
-        text: 'The bureau sent a password-protected PDF, so it can’t be opened here. The report data on this page is unaffected.' }));
+        text: 'The bureau sent a password-protected credit report PDF, so it can’t be opened here. The report data on this page is unaffected.' }));
     }
-    if (r.pdfAttempts) wrap.appendChild(el('p', { className: 'note', text: 'PDF fetch attempts: ' + r.pdfAttempts }));
+    if (r.pdfAttempts && !plain) wrap.appendChild(el('p', { className: 'note', text: 'Credit report PDF fetch attempts: ' + r.pdfAttempts }));
     wrap.appendChild(msgRegion('pdfMsg'));
+    if (plain) return wrap;
 
     var ref = r.ref;
     var pre = el('pre', { className: 'raw-json', tabindex: '0', 'aria-label': 'Raw report data (JSON)' });
@@ -2036,7 +2164,9 @@
           return;
         }
         logBox.appendChild(el('ul', { className: 'access-list' }, rows.slice(0, 20).map(function (x) {
-          var what = x.action === 'download_pdf' ? 'Opened PDF' : x.action === 'view_raw' ? 'Viewed raw data' : 'Viewed report';
+          var what = x.action === 'download_pdf' ? 'Opened credit report PDF' : x.action === 'view_raw' ? 'Viewed raw data'
+            : x.action === 'view_client_photo' ? 'Opened photo of the client' : x.action === 'view_signed_consent_form' ? 'Opened signed MortgageMAX consent form'
+            : x.action === 'view_id_document' ? 'Opened ID copy' : x.action === 'download_form' ? 'Downloaded the application form' : 'Viewed report';
           return el('li', { text: fmtDate(x.created_at) + ' · ' + what + ' · ' + (x.name ? x.name : 'user ' + shortId(x.user_id)) });
         })));
       });
@@ -2054,24 +2184,24 @@
     b.textContent = 'Opening…';
     setMsg('pdfMsg', 'Preparing a secure link…');
     safe(function () { return PMStore.pdfUrl(rec); }).then(function (url) {
-      if (typeof url !== 'string' || !/^https:\/\//i.test(url)) throw new Error('The PDF link was not valid');
+      if (typeof url !== 'string' || !/^https:\/\//i.test(url)) throw new Error('The credit report link was not valid');
       busy = false;
       b.disabled = false;
-      b.textContent = 'Open PDF';
+      b.textContent = 'Open credit report (PDF)';
       window.open(url, '_blank', 'noopener');
       /* fallback for popup blockers: the signed link is valid for 60 seconds */
-      var n = setMsg('pdfMsg', 'PDF opened in a new tab. If nothing opened, use this link (valid for 60 seconds): ', 'ok');
+      var n = setMsg('pdfMsg', 'Credit report PDF opened in a new tab. If nothing opened, use this link (valid for 60 seconds): ', 'ok');
       if (n) {
-        var a = el('a', { href: url, target: '_blank', rel: 'noopener', text: 'open the report PDF' });
+        var a = el('a', { href: url, target: '_blank', rel: 'noopener', text: 'open the credit report PDF' });
         n.firstChild.appendChild(a);
         setTimeout(function () {
-          if (a.isConnected) setMsg('pdfMsg', 'The PDF link has expired — use Open PDF again if you need it.');
+          if (a.isConnected) setMsg('pdfMsg', 'The link has expired — use “Open credit report” again if you need it.');
         }, 60000);
       }
     }).catch(function (err) {
       busy = false;
       b.disabled = false;
-      b.textContent = 'Open PDF';
+      b.textContent = 'Open credit report (PDF)';
       var m = staffError(err, 'pdf');
       setMsg('pdfMsg', m.text, 'err', m.sub);
     });
@@ -2084,21 +2214,21 @@
     busy = true;
     b.disabled = true;
     b.textContent = 'Fetching…';
-    setMsg('pdfMsg', 'Fetching the report PDF from MortgageMAX…');
+    setMsg('pdfMsg', 'Fetching the credit report PDF from MortgageMAX…');
     safe(function () { return PMStore.fetchPdf(ref); }).then(function (d) {
       busy = false;
       var st = d && d.pdfStatus;
-      var text = st === 'stored' ? 'PDF stored — you can open it now.'
-        : st === 'locked' ? 'The bureau sent a password-protected PDF.'
-        : st === 'failed' ? 'The PDF could not be fetched. Try again later.'
-        : 'PDF status: ' + (st || 'unknown');
+      var text = st === 'stored' ? 'Credit report PDF stored — you can open it now.'
+        : st === 'locked' ? 'The bureau sent a password-protected credit report PDF.'
+        : st === 'failed' ? 'The credit report PDF could not be fetched. Try again later.'
+        : 'Credit report PDF status: ' + (st || 'unknown');
       pushFlash('pdfMsg', text, st === 'stored' ? 'ok' : st === 'failed' ? 'err' : null);
       render();
       reloadDetail(ref, 'secPdfH');
     }).catch(function (err) {
       busy = false;
       b.disabled = false;
-      b.textContent = 'Fetch PDF';
+      b.textContent = 'Fetch credit report PDF';
       var m = staffError(err, 'pdf');
       setMsg('pdfMsg', m.text, 'err', m.sub);
     });
@@ -2107,6 +2237,15 @@
   /* ---------- d. failure / system callouts (staff may see codes) ---------- */
   function statusCallout(r) {
     var c;
+    var plain = plainView();
+    if (plain) {
+      /* the plain status line above already says what to do; only the vendor's own message adds anything */
+      if (r.status === 'check_failed' && r.checkErrorText) {
+        return el('div', { className: 'callout callout-error' }, [
+          el('span', { className: 'callout-tag', text: 'Credit check failed' }), el('p', { text: r.checkErrorText })]);
+      }
+      return null;
+    }
     if (r.status === 'check_failed') {
       var errText = r.checkErrorText || 'MortgageMAX did not return a report for this enquiry.';
       c = el('div', { className: 'callout callout-error' }, [
@@ -2185,7 +2324,7 @@
   }
   function whyNot(st, mode, r) {
     if (mode === 'required' && r && PMStore.manualVerifyCheck(r).ok) {
-      return 'The client’s identity isn’t verified yet. Verify it manually in the Identity check section above (signed consent form, ID copy and Experian statement), then run the check.';
+      return 'The client’s identity isn’t verified yet. Verify it manually in the Identity check section above (signed MortgageMAX consent form, photo of the client and Experian statement), then run the check.';
     }
     switch (st) {
       case 'check_in_flight':
@@ -2227,7 +2366,7 @@
     del.disabled = st === 'check_in_flight' || pdfBusy;
     del.textContent = 'Delete record';
     del.title = st === 'check_in_flight' ? 'A credit check is running — try again shortly'
-      : pdfBusy ? 'The report PDF is being stored — try again in a few minutes' : '';
+      : pdfBusy ? 'The credit report PDF is being stored — try again in a few minutes' : '';
   }
 
   function startConfirm(p, question, yesLabel, yesClass) {
@@ -2272,10 +2411,10 @@
     /* MortgageMAX (2026-09-29): ID copies must be producible on request for an Experian or POPIA
        audit — deleting the record destroys the copy, so say so before it happens. */
     var evidence = currentRec.manualVerifiedAt
-      ? ' This also destroys the signed consent form and the ID copy kept as evidence of the manual identity check, which MortgageMAX or Experian may ask for in an audit. Only delete if the client has asked for their information to be destroyed.'
+      ? ' This also destroys the signed consent form and the photo of the client (or ID copy) kept as evidence of the manual identity check, which MortgageMAX or Experian may ask for in an audit. Only delete if the client has asked for their information to be destroyed.'
       : '';
     startConfirm({ kind: 'delete', ref: currentRec.ref, name: name },
-      'Delete ' + name + '’s record permanently? Any stored report PDF is deleted too.' + evidence + ' This cannot be undone.',
+      'Delete ' + name + '’s record permanently? Any stored credit report PDF is deleted too.' + evidence + ' This cannot be undone.',
       'Yes, delete record', 'btn btn-danger');
   });
 
@@ -2300,7 +2439,7 @@
       busy = false;
       pending = null;
       var text = 'Credit report received for ' + p.name + '.';
-      if (res && res.pdfStatus === 'failed') text += ' The PDF could not be fetched yet — use Fetch PDF to retry.';
+      if (res && res.pdfStatus === 'failed') text += ' The credit report PDF could not be fetched yet — use Fetch PDF to retry.';
       render();
       if (dlg.open && currentRef === p.ref) {
         pushFlash('dlgMsg', text, 'ok');
@@ -2348,12 +2487,14 @@
 
   /* ================= live refresh ================= */
   function isMidInteraction() {
-    /* a chosen ID copy or a ticked statement would be lost by a re-render */
-    var f = $('manualFile'), c = $('manualChk');
+    /* a chosen signed form or photo, a camera that is still open, or a ticked statement would be
+       lost by a re-render */
+    var f = $('manualFile'), g = $('manualForm'), c = $('manualChk');
+    if (!f) photoPickerOpen = false; /* the panel is gone: nothing to hold for */
     /* ...and so would a freshly re-issued link, which is shown only once */
     var a = $('assignTo');
-    return busy || !!pending || withdrawOpen || !!(f && f.files && f.files.length) || !!(c && c.checked) || !!$('linkUrl') ||
-      !!(a && a.value);
+    return busy || !!pending || withdrawOpen || photoPickerOpen || !!(f && f.files && f.files.length) ||
+      !!(g && g.files && g.files.length) || !!(c && c.checked) || !!$('linkUrl') || !!(a && a.value);
   }
   function updateStatusChip(r) {
     var n = $('dlgStatusChip');

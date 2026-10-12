@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
-  ATTESTATION, CONSENT_FORM, consentFormPath, idDocPath, manualVerifyCheck, sha256HexBytes, sniffDocType,
-  validConsentFormPath, validIdDocPath,
+  ATTESTATION, CLIENT_PHOTO, CONSENT_FORM, clientPhotoPath, consentFormPath, manualVerifyCheck, PHOTO_TYPES,
+  sha256HexBytes, sniffDocType, validClientPhotoPath, validConsentFormPath,
 } from "./manual.ts";
 
 const said = (extra: Record<string, unknown>) => ({ id_type: "said", consent_registered_at: "2026-09-28T10:00:00Z", ...extra });
@@ -20,7 +20,7 @@ Deno.test("manualVerifyCheck: only where consent is registered and nothing is ru
   // The identity-round limit keeps consent_registered_at → allowed; consent-side exits clear it → refused.
   assertEquals(manualVerifyCheck(said({ status: "manual_required" })).ok, true);
   assertEquals(manualVerifyCheck(said({ status: "manual_required", consent_registered_at: null })).ok, false);
-  for (const st of ["awaiting_otp", "consent_confirmed", "idv_in_progress", "idv_passed", "manual_verified",
+  for (const st of ["consent_confirmed", "idv_in_progress", "idv_passed", "manual_verified",
     "check_in_flight", "report_ready", "check_failed", "consent_withdrawn", "expired", "config_error"]) {
     assertEquals(manualVerifyCheck(said({ status: st })).ok, false, st);
   }
@@ -30,26 +30,34 @@ Deno.test("manualVerifyCheck: only where consent is registered and nothing is ru
   assertEquals(manualVerifyCheck(said({ status: "idv_failed", consent_withdrawn_at: "x" })), { ok: false, reason: "withdrawn" });
 });
 
-Deno.test("ID copy paths: server-chosen, bound to the ref, accepted types only", () => {
-  const p = idDocPath("PM-ABC123", "image/png")!;
-  assertEquals(validIdDocPath("PM-ABC123", p), true);
-  assertEquals(validIdDocPath("PM-OTHER1", p), false);
-  assertEquals(idDocPath("PM-ABC123", "image/gif"), null);
-  assertEquals(validIdDocPath("PM-ABC123", "PM-ABC123/../PM-X/a.pdf"), false);
-  assertEquals(validIdDocPath("PM-ABC123", "PM-ABC123/not-a-uuid.pdf"), false);
-  assertEquals(validIdDocPath("PM-ABC123", 42), false);
+Deno.test("photo of the client: server-chosen path, bound to the ref, images only, never an old ID copy", () => {
+  // Bennie Vermeulen, 2026-10-12: the consultant's photo of the client replaced the uploaded ID copy.
+  assertEquals(CLIENT_PHOTO.kind, "client_photo");
+  assertEquals(Object.keys(PHOTO_TYPES), ["image/jpeg", "image/png"]);
+  const p = clientPhotoPath("PM-ABC123", "image/png")!;
+  assertEquals(validClientPhotoPath("PM-ABC123", p), true);
+  assertEquals(validClientPhotoPath("PM-OTHER1", p), false);
+  assertEquals(clientPhotoPath("PM-ABC123", "application/pdf"), null); // a PDF is never a photo
+  assertEquals(clientPhotoPath("PM-ABC123", "image/gif"), null);
+  assertEquals(validClientPhotoPath("PM-ABC123", "PM-ABC123/../PM-X/photo-a.jpg"), false);
+  assertEquals(validClientPhotoPath("PM-ABC123", "PM-ABC123/photo-not-a-uuid.jpg"), false);
+  // The ID-copy paths issued before 2026-10-12 (<uuid>.<ext>, PDF allowed) are not photos.
+  assertEquals(validClientPhotoPath("PM-ABC123", "PM-ABC123/1b4e28ba-2fa1-11d2-883f-0016d3cca427.pdf"), false);
+  assertEquals(validClientPhotoPath("PM-ABC123", "PM-ABC123/1b4e28ba-2fa1-11d2-883f-0016d3cca427.jpg"), false);
+  assertEquals(validClientPhotoPath("PM-ABC123", "PM-ABC123/photo-1b4e28ba-2fa1-11d2-883f-0016d3cca427.pdf"), false);
+  assertEquals(validClientPhotoPath("PM-ABC123", 42), false);
 });
 
-Deno.test("signed consent form: its own path, never interchangeable with the ID copy", () => {
+Deno.test("signed consent form: its own path, never interchangeable with the photo", () => {
   // MortgageMAX, 2026-10-01: the manual route needs the client's signed Consent Form as well.
   assertEquals(CONSENT_FORM.version, "mmax-consent-form-2025-11");
-  const form = consentFormPath("PM-ABC123", "application/pdf")!;
-  const id = idDocPath("PM-ABC123", "application/pdf")!;
+  const form = consentFormPath("PM-ABC123", "image/jpeg")!;
+  const photo = clientPhotoPath("PM-ABC123", "image/jpeg")!;
   assertEquals(validConsentFormPath("PM-ABC123", form), true);
   assertEquals(validConsentFormPath("PM-OTHER1", form), false);
   // An upload made as one kind cannot be passed off as the other.
-  assertEquals(validConsentFormPath("PM-ABC123", id), false);
-  assertEquals(validIdDocPath("PM-ABC123", form), false);
+  assertEquals(validConsentFormPath("PM-ABC123", photo), false);
+  assertEquals(validClientPhotoPath("PM-ABC123", form), false);
   assertEquals(consentFormPath("PM-ABC123", "image/gif"), null);
   assertEquals(validConsentFormPath("PM-ABC123", "PM-ABC123/consent-not-a-uuid.pdf"), false);
   assertEquals(validConsentFormPath("PM-ABC123", "PM-ABC123/../PM-X/consent-a.pdf"), false);

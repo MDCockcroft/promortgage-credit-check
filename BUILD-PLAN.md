@@ -11,6 +11,13 @@ saving anything non-trivial, and stop on a failure to diagnose rather than retry
 
 ## PROGRESS — 2026-09-26 (read this first)
 
+> **Superseded in part, 2026-10-12.** MortgageMAX (Bennie Vermeulen) dropped the SMS code: the identity
+> questions alone verify the person, so every flow below that shows `awaiting_otp` → OTP → `confirm_consent`
+> now reads submit → `submit_application` → `consent_confirmed` (token minted at once) → register consent →
+> questions. The manual override's evidence is the signed consent form plus a photo of the client taken by
+> the consultant (not an ID copy), and the one-cellphone-one-person rule is withdrawn. Operative detail:
+> `HANDOVER-2026-09-26.md` rows 6e–6g and its 12 Oct header; migrations `20261004`–`20261006`.
+
 **28 Sep:** everything is committed and pushed; functions deployed in mock mode. Vendor answers
 are in: **IDV is mandatory** (D3's `off` launch is superseded), `clientConsent="Y"`. Live UAT run
 proved consent, `/full` and `getDocument`; IDV questions return `NoQuestionsFound` (asked the

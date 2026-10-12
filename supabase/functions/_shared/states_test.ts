@@ -12,7 +12,7 @@ import {
   STALE_IN_FLIGHT_MS,
   staleState,
 } from "./states.ts";
-import { ATTESTATION, CONSENT_FORM, manualVerifyCheck } from "./manual.ts";
+import { ATTESTATION, CLIENT_PHOTO, CONSENT_FORM, manualVerifyCheck, PHOTO_TYPES } from "./manual.ts";
 import { validLinkCode } from "./access.ts";
 
 function loadStore() {
@@ -25,6 +25,8 @@ function loadStore() {
     allowedFrom: (m: string) => string[]; STATUS: Record<string, unknown>; mode: string;
     ATTESTATION: { version: string; text: string };
     CONSENT_FORM: { version: string; href: string };
+    CLIENT_PHOTO: { kind: string };
+    PHOTO_TYPES: string[];
     manualVerifyCheck: (rec: Record<string, unknown>) => { ok: boolean; reason?: string };
     idvLinkCheck: (rec: Record<string, unknown>, mode: string) => { ok: boolean; reason?: string };
     MAX_IDV_ROUNDS: number;
@@ -59,7 +61,7 @@ Deno.test("the LATEST migration's CHECK constraint lists exactly ALL_STATUSES", 
   const dir = new URL("../../migrations/", import.meta.url);
   const files = [...Deno.readDirSync(dir)].map((e) => e.name).filter((n) => n.endsWith(".sql")).sort();
   const latest = files.filter((n) => Deno.readTextFileSync(new URL(n, dir)).includes("check (status in (")).pop()!;
-  assertEquals(latest, "20260929_manual_verification.sql");
+  assertEquals(latest, "20261006_retire_otp_and_one_phone.sql");
   const sql = Deno.readTextFileSync(new URL(latest, dir));
   const block = sql.slice(sql.indexOf("check (status in ("), sql.indexOf("));", sql.indexOf("check (status in (")));
   const found = [...block.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
@@ -105,6 +107,9 @@ Deno.test("store.js attestation wording and manual-verification rule === server 
   // The consent-form edition the page offers is the one the server stores; the blank form is in the site.
   assertEquals(store.CONSENT_FORM.version, CONSENT_FORM.version);
   assertEquals(Deno.statSync(new URL(`../../../${store.CONSENT_FORM.href}`, import.meta.url)).isFile, true);
+  // The photo of the client: the page accepts exactly the image types the server will store.
+  assertEquals(store.CLIENT_PHOTO.kind, CLIENT_PHOTO.kind);
+  assertEquals(store.PHOTO_TYPES, Object.keys(PHOTO_TYPES));
   for (const status of [...ALL_STATUSES]) {
     for (const idType of ["said", "passport"]) {
       for (const registered of [null, "2026-09-28T10:00:00Z"]) {

@@ -110,14 +110,7 @@
   .err-summary a { color: var(--error); font-weight: 600; }
   .err-summary ul { margin: var(--s2) 0 0; padding-left: 1.2em; }
 
-  /* --- OTP + done panels --- */
-  .otp-input {
-    font-family: var(--font-mono);
-    font-size: 1.8rem !important;
-    letter-spacing: 0.5em;
-    text-align: center;
-    max-width: 320px;
-  }
+  /* --- done panel --- */
   .ref-badge {
     display: inline-block;
     font-family: var(--font-mono);
@@ -296,7 +289,7 @@
       </ol>
     </nav>
     <div class="rail-foot">
-      <p>Your information is used only to prepare your home-loan pre-qualification and is processed in terms of POPIA. Nothing is sent to a credit bureau until you confirm consent by SMS code.</p>
+      <p>Your information is used only to prepare your home-loan pre-qualification and is processed in terms of POPIA. Nothing is sent to a credit bureau until you have submitted the form with your consent.</p>
       <p>Pro Mortgage SA &middot; NCR registration [to be inserted]<br>queries: [contact to be inserted]</p>
     </div>
   </aside>
@@ -374,7 +367,7 @@
               </div>
               <div class="field">
                 <label for="cell">Cellphone number <span class="req" aria-hidden="true">*</span>
-                  <span class="hint">Your SMS confirmation code goes to this number.</span></label>
+                  <span class="hint">Your consultant may contact you on this number.</span></label>
                 <input id="cell" name="cell" type="tel" inputmode="numeric" autocomplete="tel" placeholder="0821234567" required>
                 <span class="err" id="cell-err"></span>
               </div>
@@ -532,40 +525,16 @@
           </fieldset>
 
           <div class="form-actions rise">
-            <button class="btn btn-primary" id="submitBtn" type="submit" disabled aria-describedby="submitHint">Submit and send my SMS code</button>
+            <button class="btn btn-primary" id="submitBtn" type="submit" disabled aria-describedby="submitHint">Submit my application</button>
           </div>
           <p class="small" id="submitHint">You can submit once the consent wording above has loaded.</p>
           <div class="callout callout-error err-summary" id="errSummary" role="alert" hidden></div>
         </form>
       </div>
 
-      <section id="otpPanel" hidden>
-        <header class="doc-head">
-          <p class="doc-meta">Step 2 &middot; Confirm consent</p>
-          <h1>Enter your SMS code</h1>
-          <p class="lede" id="otpLede">We&rsquo;ve sent a 6-digit code to your cellphone. Entering it confirms your consent &mdash; only then is anything sent to the credit bureau.</p>
-        </header>
-        <div class="callout callout-error" id="otpSendBox" role="alert" hidden></div>
-        <div class="callout callout-demo" id="otpDemoBox">
-          <span class="callout-tag">Demo mode</span>
-          No SMS is sent in demo mode. Your code is <strong class="mono" id="otpDemoCode"></strong>. In production this arrives by SMS and is never shown on screen.
-        </div>
-        <div class="field">
-          <label for="otpInput">6-digit code</label>
-          <input id="otpInput" class="otp-input" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-          <span class="err" id="otpInput-err" aria-live="assertive"></span>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" id="otpVerify" type="button">Confirm consent</button>
-          <button class="btn btn-ghost" id="otpResend" type="button">Send a new code</button>
-          <button class="btn btn-ghost" id="otpBack" type="button">Back to the form</button>
-        </div>
-        <p class="small" id="otpResendNote" aria-live="polite" style="margin-top: 12px"></p>
-      </section>
-
       <section id="workPanel" hidden>
         <header class="doc-head">
-          <p class="doc-meta" id="workMeta">Step 2 &middot; Confirm consent</p>
+          <p class="doc-meta" id="workMeta">Step 2 &middot; Register consent</p>
           <h1 id="workHead" tabindex="-1">Registering your consent</h1>
         </header>
         <div class="work-status">
@@ -622,17 +591,16 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261001-2"></script>
+<script src="assets/store.js?v=20261012-1"></script>
 <script>
 (function () {
   'use strict';
   var form = document.getElementById('ccForm');
   var formView = document.getElementById('formView');
-  var otpPanel = document.getElementById('otpPanel');
   var workPanel = document.getElementById('workPanel');
   var idvPanel = document.getElementById('idvPanel');
   var donePanel = document.getElementById('donePanel');
-  var PANELS = [formView, otpPanel, workPanel, idvPanel, donePanel];
+  var PANELS = [formView, workPanel, idvPanel, donePanel];
   var currentRef = null;
   var resumed = false; /* opened from a consultant's re-issued identity-check link */
 
@@ -933,19 +901,13 @@
       monthlyExpenses: parseAmount(v('monthlyExpenses')),
       housingPayment: parseAmount(v('housingPayment')),
       consentUA: navigator.userAgent,
+      consentAccepted: document.getElementById('consent').checked === true,
       consentsPresented: consentsPresented
     }).then(function (res) {
+      /* No SMS code (2026-10-12): the application is accepted with its consent, and the identity
+         questions that follow are what verify the person. */
       currentRef = res.ref;
-      var cell = v('cell').replace(/\s/g, '');
-      maskedCell = cell.slice(0, 3) + ' ••• ••' + cell.slice(-2);
-      document.getElementById('otpLede').textContent =
-        'We’ve sent a 6-digit code to ' + maskedCell +
-        '. Entering it confirms your consent — only then is anything sent to the credit bureau.';
-      otpInput.value = '';
-      setErr('otpInput', '');
-      showOtpDemo(res.demo_otp);
-      applySmsOutcome(res.sms || { sent: true, canResend: false });
-      showPanel(otpPanel, otpInput);
+      startPostConsent();
     }).catch(function (err) {
       var m = String((err && err.message) || '');
       errSummary.hidden = false;
@@ -957,21 +919,23 @@
       } else if (/invalid_cell/.test(m)) {
         setErr('cell', 'Enter a valid SA cellphone number, e.g. 0821234567.');
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
-          'Please check your cellphone number — your SMS code goes to it.';
+          'Please check your cellphone number.';
       } else if (/consultant_link_required/.test(m)) {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'This form must be opened from your consultant\u2019s personal link. Please ask your consultant for their link, then fill in the form again.';
-      } else if (/cell_linked_to_another_person/.test(m)) {
-        setErr('cell', 'This cellphone number can\u2019t be used for this application.');
-        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
-          'This cellphone number has already been used for another person\u2019s application. Each person needs their own cellphone number. Please use your own number, or contact your consultant.';
-      } else if (/id_linked_to_another_cell/.test(m)) {
-        setErr('cell', 'Use the cellphone number you applied with before.');
-        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
-          'This ID number is linked to a different cellphone number. Please use the number you applied with before, or contact your consultant.';
       } else if (/too_many_submissions/.test(m)) {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'This ID number has already been used several times today. Please contact your consultant directly.';
+      } else if (/too_many_applications/.test(m)) {
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'We can\u2019t accept more applications right now. Please contact your consultant directly.';
+      } else if (/no_idv_token/.test(m)) {
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'The form is being updated right now. Please try again in a few minutes.';
+      } else if (/consent_required/.test(m)) {
+        setErr('consent', 'Please tick the consent declaration.');
+        errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
+          'Please tick the consent declaration above, then submit again.';
       } else {
         errSummary.innerHTML = '<span class="callout-tag">Could not submit</span>' +
           'We couldn’t reach the server. Please check your connection and try again.';
@@ -984,7 +948,7 @@
   });
 
   /* --- done panel: every variant tells the client their consent IS recorded
-     (confirm_consent succeeded before any of these can be reached). --- */
+     (the application was accepted before any of these can be reached). --- */
   var DONE = {
     standard: 'Your consultant will request your credit report and contact you with the outcome.',
     idvPassed: 'Your identity has been verified. Your consultant will request your credit report and contact you with the outcome.',
@@ -1033,7 +997,7 @@
     setTimeout(function () { if (seq === workSeq) workMsg.textContent = msg; }, 60);
   }
 
-  /* --- after OTP: register consent with MortgageMAX, then (if configured) identity questions --- */
+  /* --- after submit: register consent with MortgageMAX, then (if configured) identity questions --- */
   function handleIdvStart(res) {
     res = res || {};
     if (res.skipped) return showDone(DONE.standard);
@@ -1043,7 +1007,7 @@
     showDone(DONE.unreachable);
   }
   function startPostConsent() {
-    setWork('Step 2 · Confirm consent', 'Registering your consent', 'Registering your consent with MortgageMAX…');
+    setWork('Step 2 · Register consent', 'Registering your consent', 'Registering your consent with MortgageMAX…');
     showPanel(workPanel);
     PMStore.registerConsent(currentRef).then(function (res) {
       res = res || {};
@@ -1059,160 +1023,6 @@
       showDone(doneForError(err));
     });
   }
-
-  /* --- OTP --- */
-  var OTP_ERRORS = {
-    mismatch: 'That code doesn’t match. Check the SMS and try again.',
-    expired: 'This code has expired.',
-    too_many_attempts: 'Too many incorrect attempts.',
-    /* status is no longer awaiting_otp: usually an earlier attempt succeeded but its reply was lost
-       (can also be an expired record, so never claim consent is recorded outright) */
-    already_confirmed: 'This code has already been used. If you entered it a moment ago, your consent is recorded and your consultant will contact you. Otherwise, go back and submit the form again.',
-    cell_linked: 'This cellphone number has just been used for another person\u2019s application, so it can\u2019t confirm this one. Please contact your consultant.',
-    not_found: 'Something went wrong. Go back and submit the form again.'
-  };
-  var otpVerifyBtn = document.getElementById('otpVerify');
-  var otpBackBtn = document.getElementById('otpBack');
-  var otpInput = document.getElementById('otpInput');
-  var otpResendBtn = document.getElementById('otpResend');
-  var otpResendNote = document.getElementById('otpResendNote');
-  var otpSendBox = document.getElementById('otpSendBox');
-  var maskedCell = '';
-  var resendTimerId = null;
-  var resendAllowed = true; /* false once no further code can be sent for this application */
-
-  /* Why a code could not be sent. Static copy only — reason codes go to the console. */
-  var SEND_PROBLEMS = {
-    send_failed: 'We couldn’t send the SMS just now. Try “Send a new code” in a few seconds.',
-    cell_limit: 'We’ve sent the maximum number of codes to this cellphone number today. Please contact your consultant.',
-    daily_limit: 'We can’t send SMS codes right now. Please contact your consultant.',
-    too_many_sends: 'We’ve sent the maximum number of codes for this application. Go back and submit the form again, or contact your consultant.',
-    invalid_state: 'This application is no longer waiting for a code. If you already confirmed it, your consultant will contact you.',
-    unavailable: 'A new code can’t be sent right now. Go back and submit the form again.',
-    bad_cell: 'We can’t send an SMS to this cellphone number. Go back and check it, or contact your consultant.',
-    forbidden: 'This page’s session has ended. Go back and submit the form again.'
-  };
-
-  function showOtpDemo(code) {
-    document.getElementById('otpDemoBox').hidden = !code;
-    if (code) document.getElementById('otpDemoCode').textContent = code;
-  }
-  function stopResendTimer() {
-    if (resendTimerId) { clearInterval(resendTimerId); resendTimerId = null; }
-  }
-  /* Disable "Send a new code" for `sec` seconds, showing the countdown in its label. */
-  function startResendCooldown(sec) {
-    stopResendTimer();
-    var until = Date.now() + sec * 1000;
-    var tick = function () {
-      var left = Math.ceil((until - Date.now()) / 1000);
-      if (left <= 0) {
-        stopResendTimer();
-        otpResendBtn.disabled = !resendAllowed;
-        otpResendBtn.textContent = 'Send a new code';
-        return;
-      }
-      otpResendBtn.disabled = true;
-      otpResendBtn.textContent = 'Send a new code (' + left + 's)';
-    };
-    tick();
-    if (sec > 0) resendTimerId = setInterval(tick, 1000);
-  }
-  /* One place that turns a send outcome (submit or resend) into what the client sees. */
-  function applySmsOutcome(o) {
-    o = o || {};
-    resendAllowed = o.canResend !== false && (o.sendsLeft === undefined || o.sendsLeft > 0 || !o.sent);
-    if (o.reason === 'too_many_sends' || o.reason === 'cell_limit' || o.reason === 'daily_limit' ||
-        o.reason === 'invalid_state' || o.reason === 'unavailable' || o.reason === 'forbidden' ||
-        o.reason === 'bad_cell') {
-      resendAllowed = false;
-    }
-    if (o.sent) {
-      otpSendBox.hidden = true;
-      otpResendNote.textContent = o.uncertain
-        ? 'The SMS is taking longer than usual. If it hasn’t arrived in a minute, send a new code.'
-        : (resendAllowed ? 'Didn’t get it? You can ask for a new code in a minute. Only the newest code works.'
-          : 'This is the last code we can send for this application.');
-    } else if (o.reason === 'cooldown') {
-      otpResendNote.textContent = 'Please wait a moment before asking for another code.';
-    } else if (o.reason) {
-      console.error('SMS code not sent:', o.reason);
-      otpSendBox.hidden = false;
-      otpSendBox.textContent = SEND_PROBLEMS[o.reason] || SEND_PROBLEMS.send_failed;
-      otpResendNote.textContent = '';
-    }
-    otpResendBtn.hidden = !resendAllowed;
-    startResendCooldown(resendAllowed ? (o.retryAfter || 0) : 0);
-  }
-
-  otpResendBtn.addEventListener('click', function () {
-    var ref = currentRef;
-    if (!ref || otpResendBtn.disabled) return;
-    otpResendBtn.disabled = true;
-    otpResendNote.textContent = 'Sending a new code…';
-    PMStore.resendCode(ref).then(function (res) {
-      if (ref !== currentRef) return;
-      res = res || {};
-      if (res.sent) {
-        otpInput.value = '';
-        setErr('otpInput', '');
-        document.getElementById('otpLede').textContent = 'We’ve sent a new 6-digit code to ' + maskedCell +
-          '. Only the newest code works. Entering it confirms your consent — only then is anything sent to the credit bureau.';
-      }
-      if (res.demo_otp) showOtpDemo(res.demo_otp);
-      applySmsOutcome(res);
-      otpInput.focus();
-    }).catch(function (err) {
-      if (ref !== currentRef) return;
-      if (err && err.code === 'forbidden') return applySmsOutcome({ sent: false, reason: 'forbidden' });
-      console.error('resend failed:', err);
-      otpResendNote.textContent = 'We couldn’t reach the server. Please try again.';
-      otpResendBtn.disabled = !resendAllowed;
-    });
-  });
-
-  otpBackBtn.addEventListener('click', function () {
-    if (otpVerifyBtn.disabled) return; // a confirmation is in flight; its outcome decides
-    stopResendTimer();
-    if (currentRef) PMStore.abandon(currentRef);
-    currentRef = null;
-    otpInput.value = '';
-    setErr('otpInput', '');
-    showPanel(formView, document.getElementById('formHead'));
-  });
-  otpInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); otpVerifyBtn.click(); }
-  });
-  otpVerifyBtn.addEventListener('click', function () {
-    var val = otpInput.value.trim();
-    var ref = currentRef;
-    if (!ref) return;
-    if (otpVerifyBtn.disabled) return;
-    otpVerifyBtn.disabled = true;
-    otpBackBtn.disabled = true;
-    PMStore.confirmConsent(ref, val).then(function (res) {
-      res = res || {};
-      if (res.ok) {
-        setErr('otpInput', '');
-        startPostConsent();
-        return;
-      }
-      var msg = OTP_ERRORS[res.error] || OTP_ERRORS.not_found;
-      if (res.error === 'expired' || res.error === 'too_many_attempts') {
-        /* Only point at the resend button while it is actually on screen. */
-        msg += resendAllowed && !otpResendBtn.hidden
-          ? ' Tap “Send a new code”, or go back and submit the form again.'
-          : ' Go back and submit the form again, or contact your consultant.';
-      }
-      setErr('otpInput', msg);
-    }).catch(function (err) {
-      setErr('otpInput', 'We couldn’t reach the server. Please try again.');
-      console.error('confirm failed:', err);
-    }).finally(function () {
-      otpVerifyBtn.disabled = false;
-      otpBackBtn.disabled = false;
-    });
-  });
 
   /* --- identity questions (IDV) --- */
   var IDV_SECONDS = 5 * 60;
