@@ -79,6 +79,12 @@ questions. Live status: `HANDOVER-2026-09-26.md`. Go-live procedure afterwards: 
 - **Still to do before production** (say it): MortgageMAX's written UAT acceptance and production
   details; Pro Mortgages SA's legal review and Operator Agreement; the consultant logins.
 
+## Leave-behind
+
+One page for the attendees, "Pro Mortgages SA credit check: what is in place" (shared doc):
+https://claude.ai/artifact/39b1a2Sh8yS8mu2qsbNW4d — the flow, the controls table, and what each party still
+provides. Share the link after the call, or export it to PDF from the doc.
+
 ## After the demo
 
 - [ ] `supabase secrets set MM_MODE=mock --project-ref mxakigcvckhmyppoiuds` — back to mock until go-live.
