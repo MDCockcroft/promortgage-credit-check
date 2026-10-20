@@ -136,13 +136,20 @@
   var ROLE_COLUMNS = ', consultant_id, assigned_at';
   var roleColumns = true;
   var rolesConfirmed = false; /* the server has said roles are installed: the columns must exist */
+  /* The MortgageMAX person columns (migration 20261007) are optional the same way. */
+  var PERSON_COLUMNS = ', bt_person_id, bt_person_env';
+  var personColumns = true;
   function selectChecks(columns, build) {
-    function run(withRoles) { return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : ''))); }
-    return run(roleColumns).then(function (res) {
-      /* Only for OUR two columns, and never once roles are confirmed: then a missing column is a
+    function run(withRoles, withPerson) {
+      return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : '') + (withPerson ? PERSON_COLUMNS : '')));
+    }
+    return run(roleColumns, personColumns).then(function (res) {
+      /* Only for OUR columns, and never once roles are confirmed: then a missing column is a
          real fault, and reading without ownership would show every record as unassigned. */
-      var ours = res.error && res.error.code === '42703' && /consultant_id|assigned_at/.test(String(res.error.message || ''));
-      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false); }
+      var msg = String((res.error && res.error.message) || '');
+      if (res.error && res.error.code === '42703' && /bt_person_/.test(msg) && personColumns) { personColumns = false; return run(roleColumns, false); }
+      var ours = res.error && res.error.code === '42703' && /consultant_id|assigned_at/.test(msg);
+      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false, personColumns); }
       return res;
     });
   }
@@ -259,6 +266,7 @@
       consentRegisteredAt: ts(r.consent_registered_at),
       mmConsentsSnapshot: r.mm_consents_snapshot || null,
       mmConsentsSyncedAt: ts(r.mm_consents_synced_at),
+      btPersonId: r.bt_person_id || '',
       consentWithdrawnAt: ts(r.consent_withdrawn_at),
       idvAttempts: r.idv_attempts || 0,
       idvStartedAt: ts(r.idv_started_at),

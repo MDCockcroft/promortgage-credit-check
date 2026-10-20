@@ -23,7 +23,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { fail, ok, preflight } from "../_shared/http.ts";
-import { callVendor, configFromEnv, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
+import { type Api, callVendor, configFromEnv, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
 import {
   buildWithdrawConsents,
   consentGrantState,
@@ -216,9 +216,15 @@ Deno.serve(async (req) => {
   const fetchImpl = mode === "mock" ? mockFetch : undefined;
   // The number sent to MortgageMAX is the one id_type names (C6b); mm_person_id is redacted too.
   const personId: string = personIdFor(row);
+  // MortgageMAX, 2026-10-20: the consent, its read-back, a withdrawal and the check's idConcent are keyed
+  // to the person record in their People domain once the registration stored it; older records (or the
+  // People domain switched off) keep the ID number as the key.
+  const storedPerson = (typeof row.bt_person_id === "string" && row.bt_person_id.trim() &&
+    (typeof row.bt_person_env !== "string" || !row.bt_person_env || row.bt_person_env === cfg.env)) ? row.bt_person_id.trim() : "";
+  const vendorPersonId: string = storedPerson || personId;
   const requestId = crypto.randomUUID();
   const staffLabel = user.email ?? user.id;
-  const log = (api: "credit" | "consent", method: string, path: string, result: VendorResult) =>
+  const log = (api: Api, method: string, path: string, result: VendorResult) =>
     logCall(sb, { ref, requestId, api, method, path, result, redactValues: [personId, row.mm_person_id], env: cfg.env });
 
   const ctx: Ctx = { sb, cfg, mode, fetchImpl, log };
@@ -292,7 +298,7 @@ Deno.serve(async (req) => {
       // before the paid call. No state change on any failure here: nothing has been sent.
       const typeIds = configuredTypeIds(Deno.env.get("MM_CONSENT_TYPES"));
       const pre = await callVendor(cfg, "consent", "GET", "/Consents", {
-        query: { PersonId: personId }, timeoutMs: CONSENT_READ_TIMEOUT_MS, fetchImpl,
+        query: { PersonId: vendorPersonId }, timeoutMs: CONSENT_READ_TIMEOUT_MS, fetchImpl,
       });
       await log("consent", "GET", "/Consents", pre);
       if (pre.http === 401 || pre.http === 403) {
@@ -349,7 +355,7 @@ Deno.serve(async (req) => {
         grossIncome: gross,
         nettIncome: Math.max(gross - deductions, 0),
         expenses: num(row.monthly_expenses) ?? 0,
-        idConcent: personId, // vendor spelling; best inference = personId (vendor email confirms)
+        idConcent: vendorPersonId, // vendor spelling: the consent's person key (Louis, 28 Sep; People domain since 20 Oct)
         totalBondRepayment: num(row.housing_payment) ?? 0,
         totalBondRepaymentToBeSettled: 0,
         repaymentTerm: DEFAULT_TERM_MONTHS,
@@ -521,15 +527,34 @@ Deno.serve(async (req) => {
         }
       }
 
-      const wBody = buildWithdrawConsents({ personId, apiClientId: cfg.apiClientId, ref, items, createdBy: staffLabel });
-      const w = await callVendor(cfg, "consent", "POST", "/Consents", { body: wBody, timeoutMs: 20_000, fetchImpl });
-      await log("consent", "POST", "/Consents", w);
-      if (!succeeded.consentPost(w)) {
-        const vendorCode = w.vendorCode ?? `http_${w.http}`;
+      // The person may be known to MortgageMAX under more than one key: this record's, the keys of
+      // their other applications (a person id each, or the ID number for records registered before
+      // the People domain). A withdrawal that reaches one key and not the others is not a withdrawal.
+      const keys = new Set<string>([vendorPersonId]);
+      if (row.mm_person_id) {
+        const { data: sibs } = await sb.from("credit_checks").select("bt_person_id, bt_person_env, consent_registered_at")
+          .eq("mm_person_id", row.mm_person_id).neq("ref", ref).not("consent_registered_at", "is", null);
+        for (const s of sibs ?? []) {
+          const sid = typeof s.bt_person_id === "string" && s.bt_person_id.trim() && (!s.bt_person_env || s.bt_person_env === cfg.env) ? s.bt_person_id.trim() : "";
+          keys.add(sid || personId);
+        }
+      }
+      const failures: string[] = [];
+      let first: VendorResult | null = null, firstBody: Record<string, unknown> | null = null;
+      for (const key of keys) {
+        const wBody = buildWithdrawConsents({ personId: key, apiClientId: cfg.apiClientId, ref, items, createdBy: staffLabel });
+        const w = await callVendor(cfg, "consent", "POST", "/Consents", { body: wBody, timeoutMs: 20_000, fetchImpl });
+        await log("consent", "POST", "/Consents", w);
+        if (!succeeded.consentPost(w)) failures.push(w.vendorCode ?? `http_${w.http}`);
+        else if (!first) { first = w; firstBody = wBody; }
+      }
+      if (!first || !firstBody) {
+        const vendorCode = failures[0] ?? "unknown";
         await transition(sb, ref, ["consent_withdrawn"], {},
           `MortgageMAX did not accept the withdrawal (${vendorCode}) — record it with MortgageMAX manually`);
         return ok({ status: "consent_withdrawn", vendorRecorded: false, vendorCode }, origin);
       }
+      const w = first, wBody = firstBody;
       const { error: evErr } = await sb.from("consent_events").insert(evidence.map((e) => ({
         ref, event: "withdrawn", consent_type_id: e.id, consent_version: e.version,
         declaration_hash: e.hash, granted: false,
@@ -537,7 +562,13 @@ Deno.serve(async (req) => {
         created_by: staffLabel,
       })));
       if (evErr) console.error(JSON.stringify({ event: "consent_events_insert_failed", message: evErr.message }));
-      await transition(sb, ref, ["consent_withdrawn"], {}, "Withdrawal accepted by MortgageMax");
+      if (failures.length) {
+        await transition(sb, ref, ["consent_withdrawn"], {},
+          `Withdrawal accepted by MortgageMax under ${keys.size - failures.length} of ${keys.size} person keys (${failures.join(", ")}) — record the rest with MortgageMAX manually`);
+        return ok({ status: "consent_withdrawn", vendorRecorded: false, vendorCode: failures[0] }, origin);
+      }
+      await transition(sb, ref, ["consent_withdrawn"], {}, keys.size > 1
+        ? `Withdrawal accepted by MortgageMax under all ${keys.size} person keys` : "Withdrawal accepted by MortgageMax");
       await readConsents(); // C8: store what MortgageMAX now holds (best effort)
       return ok({ status: "consent_withdrawn", vendorRecorded: true }, origin);
     }
@@ -780,7 +811,7 @@ Deno.serve(async (req) => {
   async function readConsents(): Promise<
     { ok: true; snapshot: unknown[] } | { ok: false; vendorCode: string | null; traceId: string | null }
   > {
-    const rb = await callVendor(cfg, "consent", "GET", "/Consents", { query: { PersonId: personId }, timeoutMs: 20_000, fetchImpl });
+    const rb = await callVendor(cfg, "consent", "GET", "/Consents", { query: { PersonId: vendorPersonId }, timeoutMs: 20_000, fetchImpl });
     await log("consent", "GET", "/Consents", rb);
     if (rb.http !== 200 || !Array.isArray(rb.data)) return { ok: false, vendorCode: rb.vendorCode, traceId: rb.traceId };
     const snapshot = rb.data as unknown[];

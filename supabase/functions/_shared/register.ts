@@ -3,7 +3,7 @@
 // BUILD-PLAN D4, D5, D6, D11, D13.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { callVendor, type MmConfig, succeeded, type VendorResult } from "./mmax.ts";
+import { type Api, callVendor, type MmConfig, succeeded, type VendorResult } from "./mmax.ts";
 import {
   buildCreateConsents,
   buildWithdrawConsents,
@@ -19,6 +19,7 @@ import {
 import { transition } from "./db.ts";
 import { loaderCache } from "./cache.ts";
 import { idProblem, personIdFor } from "./idnumber.ts";
+import { peopleEnabled, peopleRefs, resolvePersonId } from "./people.ts";
 import { type IdvMode, idvModeFrom } from "./states.ts";
 import fixtureTypes from "./fixtures/consent-types-active.json" with { type: "json" };
 
@@ -30,7 +31,7 @@ export interface Ctx {
   cfg: MmConfig;
   mode: Mode;
   fetchImpl?: typeof fetch;
-  log: (api: "credit" | "consent", method: string, path: string, r: VendorResult) => Promise<void>;
+  log: (api: Api, method: string, path: string, r: VendorResult) => Promise<void>;
 }
 
 export type Outcome =
@@ -142,7 +143,23 @@ export async function registerConsent(
     // C6b — the number we send must be the one the id_type says, and a real SA ID shape.
     const problem = idProblem(row);
     if (problem) return toManual(problem, "invalid_id");
-    const personId = personIdFor(row);
+    const idNumber = personIdFor(row);
+    // MortgageMAX, 2026-10-20: consent is keyed to the person record in their People domain (people.ts).
+    // A person id this record already holds (from this environment) is used whatever the switch says —
+    // its consent, if any, lives under it. Resolving a NEW one happens further down, after every local
+    // check that can stop a registration, so nobody's details are created at the vendor for nothing.
+    const kept = typeof row.bt_person_id === "string" && row.bt_person_id.trim() &&
+      (typeof row.bt_person_env !== "string" || !row.bt_person_env || row.bt_person_env === cfg.env) ? row.bt_person_id.trim() : "";
+    let personId = kept || idNumber;
+    if (peopleEnabled(cfg) && !kept) {
+      // Only a South African ID can be created as a person: the reference ids are the SA ID's.
+      if (row.id_type !== "said") return toManual("Passport applicant — the MortgageMAX person record needs an SA ID (consultant to handle)", "passport");
+      try { peopleRefs(cfg); } catch (e) {
+        await transition(sb, ref, ["consent_confirmed"], { status: "config_error", consent_registered_at: null },
+          `MortgageMAX People domain is not fully configured (${String(e instanceof Error ? e.message : e).replace(/^config_error:\s*/, "")})`);
+        return { ok: false, code: "config_error", message: "People domain is not configured" };
+      }
+    }
 
     let types: ConsentType[];
     try {
@@ -162,6 +179,56 @@ export async function registerConsent(
     const covered = types.every((t) => presented.some((p: { id?: string }) => String(p.id).toLowerCase() === t.id.toLowerCase()));
     const stale = await staleAgainst(presented, types);
     if (!covered || stale.length) return toManual(`${MSG_RECONSENT} (consent_stale)`, "consent_stale");
+
+    if (peopleEnabled(cfg) && !kept) {
+      // A refusal recorded under the OLD key (the ID number, before the People domain) must still stop
+      // us: read it before any person exists. 401/403 here is the consent API's problem, handled below.
+      const legacy = await callVendor(cfg, "consent", "GET", "/Consents", {
+        query: { PersonId: idNumber }, timeoutMs: 20_000, fetchImpl: ctx.fetchImpl,
+      });
+      await ctx.log("consent", "GET", "/Consents", legacy);
+      if (legacy.http === 200 && Array.isArray(legacy.data) && consentGrantState(legacy.data, types.map((t) => t.id)).anyRefused) {
+        return toManual(MSG_PRIOR_WITHDRAWAL, "prior_withdrawal");
+      }
+
+      let who: Awaited<ReturnType<typeof resolvePersonId>>;
+      try {
+        who = await resolvePersonId({ cfg, fetchImpl: ctx.fetchImpl, log: (m, p, r) => ctx.log("people", m, p, r) }, row, idNumber);
+      } catch (e) {
+        const msg = String(e instanceof Error ? e.message : e);
+        if (!msg.startsWith("config_error")) throw e;
+        // The token request itself failed (wrong audience, no grant): the record says so, like a 401.
+        await transition(sb, ref, ["consent_confirmed"], { status: "config_error", consent_registered_at: null },
+          `MortgageMAX People API: ${msg.replace(/^config_error:\s*/, "")}`);
+        return { ok: false, code: "config_error", message: "People API token failed" };
+      }
+      if (!who.ok) {
+        if (who.code === "config_error") {
+          await transition(sb, ref, ["consent_confirmed"], { status: "config_error", consent_registered_at: null },
+            `MortgageMax rejected our credentials on the People API (${who.http})`);
+          return { ok: false, code: "config_error", message: "vendor rejected credentials" };
+        }
+        if (who.code === "manual") {
+          const why = who.reason === "duplicate_person" ? "MortgageMAX holds more than one person record for this ID number"
+            : who.reason === "person_mismatch" ? "MortgageMAX's person record for this ID number carries a different ID number"
+            : `MortgageMAX rejected the person record (${who.vendorCode ?? who.http}${who.vendorMessage ? `: ${who.vendorMessage.slice(0, 120)}` : ""})`;
+          return toManual(`${why} — consultant to resolve with MortgageMAX before consent can be registered`, "person");
+        }
+        await release(`Could not find or create the person at MortgageMax (${who.vendorCode ?? who.http}, ${who.step}) — can be retried`);
+        return { ok: false, code: "vendor_error", message: "Could not find or create the person at MortgageMAX", vendorCode: who.vendorCode, traceId: who.traceId };
+      }
+      personId = who.personId;
+      // Keep the id BEFORE the consent goes out, so a later failure never makes a second person and
+      // staff actions key on the right record. A failed write stops the registration: an unkeyed
+      // consent would be invisible to every later read-back and withdrawal.
+      const { error: keepErr } = await sb.from("credit_checks").update({ bt_person_id: personId, bt_person_env: cfg.env }).eq("ref", ref);
+      if (keepErr) {
+        await release(`Could not store the MortgageMAX person id (${keepErr.message.slice(0, 120)}) — is migration 20261007 applied? Can be retried`);
+        return { ok: false, code: "vendor_error", message: "Could not store the person id" };
+      }
+      await transition(sb, ref, ["consent_confirmed"], {}, who.created
+        ? "Person record created at MortgageMax" : "Person record found at MortgageMax");
+    }
 
     // C6d — PRE-READ: a POST replaces the vendor record (P11). Never overwrite a recorded
     // withdrawal/decline, ours or anyone's, without a consultant speaking to the person first.
@@ -213,7 +280,7 @@ export async function registerConsent(
       // withdrawal was recorded meanwhile, our possible granted=true must be undone.
       const { data: nowRow } = await sb.from("credit_checks").select("status").eq("ref", ref).maybeSingle();
       if (nowRow?.status === "consent_withdrawn") {
-        await rewithdraw(ctx, ref, personId, types, createdBy);
+        await rewithdraw(ctx, ref, personId, types, createdBy, idNumber);
         return { ok: false, code: "invalid_state", message: "Record changed during registration" };
       }
       await release(`Consent registration with MortgageMax failed (${post.vendorCode ?? post.http}) — can be retried`);
@@ -238,7 +305,7 @@ export async function registerConsent(
         otp_confirmed_at: row.consent_confirmed_at ?? null,
         // C6e: the exact wording the hash stands for, so the evidence survives the vendor's next version.
         request_body: { ...redactedBody, _evidence: { declaration: renderDeclaration(t.declaration), version: t.version, hash } },
-        response_body: post.text.slice(0, 500).split(personId).join("[redacted]"),
+        response_body: post.text.slice(0, 500).split(idNumber).join("[redacted]"),
         vendor_created_date: typeof match?.createdDate === "string" ? match.createdDate : null,
         created_by: createdBy,
       };
@@ -259,7 +326,7 @@ export async function registerConsent(
       // Only a withdrawal (or delete) can move a claimed consent_confirmed row. If the withdrawal's
       // granted=false reached MortgageMAX before our granted=true, ours replaced it (P11) — put it back.
       const { data: now } = await sb.from("credit_checks").select("status").eq("ref", ref).maybeSingle();
-      if (now?.status === "consent_withdrawn") await rewithdraw(ctx, ref, personId, types, createdBy);
+      if (now?.status === "consent_withdrawn") await rewithdraw(ctx, ref, personId, types, createdBy, idNumber);
       return { ok: false, code: "invalid_state", message: "Record changed during registration" };
     }
     return { ok: true, status: next, idvMode };
@@ -267,7 +334,8 @@ export async function registerConsent(
 }
 
 /** Compensating granted=false after a registration lost a race with a withdrawal. Best effort. */
-async function rewithdraw(ctx: Ctx, ref: string, personId: string, types: ConsentType[], createdBy: string) {
+async function rewithdraw(ctx: Ctx, ref: string, personId: string, types: ConsentType[], createdBy: string, idNumber: string) {
+  const scrub = (s: string) => s.split(personId).join("[redacted]").split(idNumber).join("[redacted]");
   try {
     const body = buildWithdrawConsents({
       personId, apiClientId: ctx.cfg.apiClientId, ref, createdBy,
@@ -279,7 +347,7 @@ async function rewithdraw(ctx: Ctx, ref: string, personId: string, types: Consen
       const { error } = await ctx.sb.from("consent_events").insert(await Promise.all(types.map(async (t) => ({
         ref, event: "withdrawn", consent_type_id: t.id, consent_version: t.version,
         declaration_hash: await declarationHash(t), granted: false,
-        request_body: { ...body, personId: "[redacted]" }, response_body: w.text.slice(0, 500).split(personId).join("[redacted]"),
+        request_body: { ...body, personId: "[redacted]" }, response_body: scrub(w.text.slice(0, 500)),
         created_by: createdBy,
       }))));
       if (error) console.error(JSON.stringify({ event: "consent_events_insert_failed", message: error.message }));
@@ -288,6 +356,6 @@ async function rewithdraw(ctx: Ctx, ref: string, personId: string, types: Consen
       ? "Registration raced the withdrawal — withdrawal re-sent to MortgageMax"
       : `Registration raced the withdrawal and MortgageMax did not accept the re-sent withdrawal (${w.vendorCode ?? w.http}) — record it with MortgageMAX manually`);
   } catch (e) {
-    console.error(JSON.stringify({ event: "rewithdraw_failed", message: String(e instanceof Error ? e.message : e).split(personId).join("[redacted]") }));
+    console.error(JSON.stringify({ event: "rewithdraw_failed", message: scrub(String(e instanceof Error ? e.message : e)) }));
   }
 }

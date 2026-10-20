@@ -20,7 +20,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { fail, ok, preflight } from "../_shared/http.ts";
-import { callVendor, configFromEnv, IDV_LIMIT_CODE, idvPassScore, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
+import { type Api, callVendor, configFromEnv, IDV_LIMIT_CODE, idvPassScore, type MmConfig, succeeded, type VendorResult } from "../_shared/mmax.ts";
 import { logCall, serviceClient, sha256Hex, transition } from "../_shared/db.ts";
 import { mockFetch } from "../_shared/mock.ts";
 import { type Ctx, idvModeFromEnv, type Mode, publicConsentTypes, registerConsent } from "../_shared/register.ts";
@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
 
   // C4/C15: the number sent is the one id_type names; mm_person_id is also redacted from logs.
   const personId: string = personIdFor(row);
-  const log = (api: "credit" | "consent", method: string, path: string, result: VendorResult) =>
+  const log = (api: Api, method: string, path: string, result: VendorResult) =>
     logCall(sb, { ref, requestId, api, method, path, result, redactValues: [personId, row.mm_person_id], env: cfg.env });
   const ctx: Ctx = { sb, cfg, mode, fetchImpl, log };
   const configFailure = async (r: VendorResult, from: string[], restore: Record<string, unknown> = {}) => {

@@ -1314,6 +1314,8 @@
     } else {
       pairs = [['Registered', r.consentRegisteredAt ? fmtDate(r.consentRegisteredAt) : 'Not registered yet']];
       if (r.consentWithdrawnAt) pairs.push(['Withdrawn', fmtDate(r.consentWithdrawnAt)]);
+      /* MortgageMAX People domain (20 Oct 2026): the person record the consent is keyed to */
+      pairs.push(['MortgageMAX person', r.btPersonId ? r.btPersonId : (r.consentRegisteredAt ? 'Keyed on the ID number (registered before the People domain)' : 'Not yet'), r.btPersonId ? 'mono' : null]);
       pairs.push(['Wording shown to client', presentedNode]);
       if (Array.isArray(r.mmConsentsSnapshot)) pairs.push(['MortgageMAX read-back', readBackNode(r, presented)]);
     }

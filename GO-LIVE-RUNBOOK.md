@@ -34,6 +34,9 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 - [ ] **Legal:** Liz's placeholders in the form's notice filled in; the adviser's review done; the
       Operator Agreement signed; a decision on backing up the stored evidence files (photos of
       clients, signed consent forms — Supabase backups do not cover stored files).
+- [ ] **MortgageMAX People domain** (row 6i): Louis's token audience + the three reference ids, the
+      `MMAX_PEOPLE_*` secrets set (UAT first, then the production host), migration `20261007`, one UAT run
+      with Good2 showing the consent against the person record.
 - [ ] **People:** the real consultant logins created and given roles, each with their details added.
 - [ ] **Address:** `check.promortgagesa.co.za` live (handover row 7), so clients never get a github.io link.
 - [ ] **First check:** a consenting person for step 4 (Liz or Michael). It is billed and leaves an

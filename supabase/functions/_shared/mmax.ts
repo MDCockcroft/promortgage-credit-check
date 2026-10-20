@@ -11,12 +11,17 @@
 //  - Exactly nine paths may ever be called. The sandbox key can also WRITE consent types.
 //  - personId / idNumber never appear in any log line.
 
-export type Api = "credit" | "consent";
+export type Api = "credit" | "consent" | "people";
 export type BodyKind = "empty" | "json" | "json_string" | "text" | "pdf_bytes" | "pdf_base64" | "url";
 
 export interface MmConfig {
   creditBaseUrl: string;
   consentBaseUrl: string;
+  /** BT People Management API (MortgageMAX, 2026-10-20). Absent = consent keyed on the ID number, as before. */
+  peopleBaseUrl?: string;
+  peopleScope?: string;
+  /** Read leniently here; people.ts checks completeness on the People path only (a bad value must not take down every action). */
+  people?: { sourceSystemTypeId?: number; identityDocumentTypeId?: number; countryOfOriginId?: string; phoneNumberTypeId?: number; emailAddressTypeId?: number };
   subscriptionKey: string;
   apiClientId: string;
   env: string;
@@ -47,9 +52,26 @@ export function configFromEnv(get: (k: string) => string | undefined = (k) => De
   };
   const tenantId = get("MMAX_OAUTH_TENANT_ID");
   const clientSecret = get("MMAX_OAUTH_CLIENT_SECRET");
+  // The People domain (people.ts): whitespace is "unset"; a bad reference id reads as absent and is
+  // refused on the People path only, so one wrong secret cannot take down withdrawals or deletes.
+  const peopleBaseUrl = (get("MMAX_PEOPLE_BASE_URL") ?? "").trim().replace(/\/+$/, "") || undefined;
+  const intOf = (k: string): number | undefined => {
+    const v = (get(k) ?? "").trim();
+    return /^[1-9][0-9]*$/.test(v) ? Number(v) : undefined;
+  };
+  const people = peopleBaseUrl ? {
+    sourceSystemTypeId: intOf("MMAX_PEOPLE_SOURCE_SYSTEM_ID"),
+    identityDocumentTypeId: intOf("MMAX_PEOPLE_ID_DOC_TYPE_ID"),
+    countryOfOriginId: (get("MMAX_PEOPLE_COUNTRY_ID") ?? "").trim() || undefined,
+    phoneNumberTypeId: intOf("MMAX_PEOPLE_PHONE_TYPE_ID"),
+    emailAddressTypeId: intOf("MMAX_PEOPLE_EMAIL_TYPE_ID"),
+  } : undefined;
   return {
     creditBaseUrl: need("MMAX_CREDIT_BASE_URL").replace(/\/+$/, ""),
     consentBaseUrl: need("MMAX_CONSENT_BASE_URL").replace(/\/+$/, ""),
+    peopleBaseUrl,
+    peopleScope: peopleBaseUrl ? ((get("MMAX_PEOPLE_SCOPE") ?? "").trim() || "api://People/.default") : undefined,
+    people,
     subscriptionKey: need("MMAX_SUBSCRIPTION_KEY"),
     apiClientId: need("MMAX_API_CLIENT_ID"),
     env: get("MMAX_ENV") ?? "uat",
@@ -72,6 +94,8 @@ const ALLOWED: Array<[Api, string, RegExp]> = [
   ["credit", "POST", /^\/Idv\/checkAnswers$/],
   ["credit", "POST", /^\/CreditCheck\/full$/],
   ["credit", "GET", /^\/CreditCheck\/getDocument\/[^/]+\/(true|false)\/(true|false)$/],
+  ["people", "GET", /^\/People\/IdentityNumber$/],
+  ["people", "POST", /^\/People$/],
 ];
 
 export function isAllowed(api: Api, method: string, path: string): boolean {
@@ -246,22 +270,29 @@ const LOG_BODY_MAX = 2048;
  */
 export function logBodyHead(api: Api, r: VendorResult, secrets: Array<string | null | undefined>): string {
   const isSuccess = r.http >= 200 && r.http < 300;
-  if (api === "credit" && isSuccess) {
+  // A credit report, and a found PERSON (name, contacts, addresses), are never kept in the log.
+  if ((api === "credit" || api === "people") && isSuccess) {
     const note = r.vendorCode && r.vendorMessage ? ` ${redact(r.vendorMessage.slice(0, 500), secrets)}` : "";
     return `[omitted: ${r.text.length} chars]${note}`;
   }
-  return redact(r.text.slice(0, LOG_BODY_MAX), secrets);
+  // Redact before cutting, so a number straddling the cut cannot leave its first digits behind.
+  return redact(r.text, secrets).slice(0, LOG_BODY_MAX);
 }
 
 // ---------------------------------------------------------------------------
 // Optional Entra bearer (D1). Two scope-keyed cached tokens. Inactive unless configured.
 // ---------------------------------------------------------------------------
-const SCOPES: Record<Api, string> = {
+const SCOPES: Record<Exclude<Api, "people">, string> = {
   // Correct spelling. The misspelt "CreditCheckManagment" from the vendor's notes is NOT a registered
   // resource (Entra: AADSTS500011) — verified against the live tenant 2026-09-29.
   credit: "api://CreditCheckManagement/.default",
   consent: "api://ConsentManagement/.default",
 };
+/** The People API's audience is configuration (MMAX_PEOPLE_SCOPE) until MortgageMAX names it. */
+function scopeFor(cfg: MmConfig, api: Api): string {
+  if (api === "people") return cfg.peopleScope || "api://People/.default";
+  return SCOPES[api];
+}
 const tokenCache = new Map<Api, { token: string; expiresAt: number }>();
 
 async function bearer(cfg: MmConfig, api: Api, fetchImpl: typeof fetch): Promise<string | null> {
@@ -275,7 +306,7 @@ async function bearer(cfg: MmConfig, api: Api, fetchImpl: typeof fetch): Promise
       grant_type: "client_credentials",
       client_id: cfg.oauth.clientId,
       client_secret: cfg.oauth.clientSecret,
-      scope: SCOPES[api],
+      scope: scopeFor(cfg, api),
     }),
   });
   const j = await res.json().catch(() => ({}));
@@ -307,7 +338,8 @@ export async function callVendor(
 ): Promise<VendorResult> {
   if (!isAllowed(api, method, path)) throw new Error(`blocked: ${method} ${api}${path} is not allow-listed`);
   const f = opts.fetchImpl ?? fetch;
-  const base = api === "credit" ? cfg.creditBaseUrl : cfg.consentBaseUrl;
+  const base = api === "credit" ? cfg.creditBaseUrl : api === "consent" ? cfg.consentBaseUrl : cfg.peopleBaseUrl;
+  if (!base) throw new Error("config_error: MMAX_PEOPLE_BASE_URL is not set");
   const url = new URL(base + path);
   for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, v);
 

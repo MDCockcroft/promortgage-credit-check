@@ -86,6 +86,8 @@ export const MOCK_REPORT = {
 
 /** Mock consent register, per isolate: personId → consentTypeId(lowercase) → record. */
 const mockConsents = new Map<string, Map<string, Record<string, unknown>>>();
+/** Mock People domain, per isolate: ID number → person id. */
+const mockPeople = new Map<string, string>();
 
 function reply(status: number, body: unknown, contentType = "application/json"): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
@@ -102,8 +104,23 @@ export const mockFetch: typeof fetch = (input, init) => {
     return Promise.resolve(reply(200, { token_type: "Bearer", expires_in: 60, access_token: "mock-token" }));
   }
   const method = (init?.method ?? "GET").toUpperCase();
-  const p = url.pathname.replace(/^\/(CreditManagement\/v1|ConsentManagement\/v3)/, "");
+  const p = url.pathname.replace(/^\/(CreditManagement\/v\d+|ConsentManagement\/v\d+|PeopleManagement\/v\d+)/, "");
   const body = init?.body ? JSON.parse(String(init.body)) : {};
+
+  // People domain (2026-10-20): find by ID number, else 404; create answers 201 with the id as text.
+  if (method === "GET" && p === "/People/IdentityNumber") {
+    const id = mockPeople.get(url.searchParams.get("IdentityNumber") ?? "");
+    if (!id) return Promise.resolve(reply(404, "Person not found", "text/plain"));
+    return Promise.resolve(reply(200, { id, name: { givenName: "Mock", familyName: "Person" }, identityDocument: { identityDocumentTypeId: 1, identityNumber: url.searchParams.get("IdentityNumber"), countryOfOriginId: "ZA" } }));
+  }
+  if (method === "POST" && p === "/People") {
+    const idNumber = String(body?.identityDocument?.identityNumber ?? "");
+    if (!idNumber || !body?.name?.givenName || !body?.name?.familyName) return Promise.resolve(reply(400, { title: "Validation failed", errors: {} }));
+    if (mockPeople.has(idNumber)) return Promise.resolve(reply(409, "Person already exists", "text/plain")); // like the real vendor's 409
+    const id = crypto.randomUUID();
+    mockPeople.set(idNumber, id);
+    return Promise.resolve(reply(201, id, "text/plain"));
+  }
 
   if (method === "POST" && p === "/Consents") {
     // Replace-on-write per (personId, consentTypeId), like the real vendor (P11).
