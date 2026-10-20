@@ -37,6 +37,8 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 - [ ] **MortgageMAX People domain** (row 6i): Louis's token audience + the three reference ids, the
       `MMAX_PEOPLE_*` secrets set (UAT first, then the production host), migration `20261007`, one UAT run
       with Good2 showing the consent against the person record.
+- [ ] **ID copies:** every record that will be checked has the client's ID copy attached (row 6j: the
+      database refuses a check without it).
 - [ ] **People:** the real consultant logins created and given roles, each with their details added.
 - [ ] **Address:** `check.promortgagesa.co.za` live (handover row 7), so clients never get a github.io link.
 - [ ] **First check:** a consenting person for step 4 (Liz or Michael). It is billed and leaves an

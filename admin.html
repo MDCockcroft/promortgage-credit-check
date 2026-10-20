@@ -795,6 +795,9 @@
   function plainStatus(r) {
     var n = r.idvAttempts || 0, max = PMStore.MAX_IDV_ROUNDS;
     if (isStalled(r)) return { head: 'This application has stalled.', detail: 'Open it again in a minute; if it stays like this, ask your administrator.' };
+    if (!r.idDocument && ['idv_passed', 'idv_waived', 'manual_verified', 'check_failed'].indexOf(r.status) !== -1) {
+      return { head: 'Attach the client’s ID copy, then run the credit check.', detail: 'A credit check cannot run without a copy of the client’s ID document on the record.' };
+    }
     switch (r.status) {
       case 'consent_confirmed': return { head: 'Waiting for the client.', detail: 'They submitted the form but have not reached the identity questions. If nothing changes, use “Retry consent registration” below, then send them a new identity link.' };
       case 'consent_registered': return { head: 'Waiting for the client to answer the identity questions.', detail: 'Nothing to do yet. If they closed the page, send them a new link below.' };
@@ -867,6 +870,8 @@
     registration_in_progress: 'A consent registration for this record is already in progress. Wait a moment, then close and reopen the record.',
     consent_stale: 'The consent wording this client agreed to is no longer current at MortgageMAX, so it can’t be registered. Ask the client to complete the form again.',
     consent_not_presented: 'No consent wording was recorded for this application, so it can’t be registered. Ask the client to complete the form again.',
+    id_copy_required: 'The client’s ID copy must be attached to this record first — see the “Client’s ID copy” section. A credit check cannot run without it.',
+    manual_confirmation_changed: 'The identity confirmation wording was updated since this page loaded. Reload the page, read the new wording and confirm again.',
     manual_attestation_changed: 'The Experian statement was updated since this page loaded. Reload the page, read the new statement, and confirm it again.',
     manual_consent_form_changed: 'MortgageMAX’s consent form was updated since this page loaded. Reload the page, send the client the current form, and upload the signed copy of that one.',
     'manual_not_allowed:not_sa_id': 'Manual verification is for South African ID numbers only — there is no credit check for foreign nationals.',
@@ -1186,6 +1191,7 @@
       ['Expenses', rand(r.monthlyExpenses)], ['Rent / bond', rand(r.housingPayment)]
     ]));
     f.appendChild(formDownloadRow());
+    f.appendChild(idCopySection(r));
 
     if (!plainView()) {
       f.appendChild(h3('Consent audit trail'));
@@ -1723,27 +1729,108 @@
     });
   }
 
-  /* ---------- b2. manual identity verification (signed consent form + photo of the client + Experian statement) ----------
+  /* ---------- a1. the client's ID copy (Michael, 2026-10-20) ----------
+     A copy of the client's ID document is attached to EVERY record by the consultant, and no credit
+     check runs without it: the Run button says so, mm-staff refuses, and the database refuses the
+     claim itself (migration 20261008). Replace is allowed, not while a check is running. */
+  var DOC_ACCEPT = 'application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png';
+  var pickerOpen = false; /* a file picker (ID copy or signed form) is up: hold live refreshes until it returns */
+  function docInput(id) {
+    var input = el('input', { type: 'file', id: id, accept: DOC_ACCEPT, 'aria-describedby': id + 'Err' });
+    input.addEventListener('click', function () { pickerOpen = true; });
+    input.addEventListener('change', function () { pickerOpen = false; });
+    input.addEventListener('cancel', function () { pickerOpen = false; });
+    return input;
+  }
+  function idCopySection(r) {
+    var s = el('section', { className: 'dsec', 'aria-labelledby': 'secIdCopyH' });
+    s.appendChild(h3('Client’s ID copy', 'secIdCopyH'));
+    var d = r.idDocument;
+    var TYPES = { 'application/pdf': 'PDF', 'image/jpeg': 'JPG', 'image/png': 'PNG' };
+    if (d) {
+      s.appendChild(kv([
+        ['File', (TYPES[d.type] || d.type) + ', ' + Math.max(1, Math.round(Number(d.bytes) / 1024)) + ' KB'],
+        ['Attached', fmtDate(d.uploadedAt) + (d.uploadedBy ? ' by ' + consultantName(d.uploadedBy) : '')]
+      ]));
+      var row = el('div', { className: 'dsec-actions' });
+      if (d.path && PMStore.mode === 'live') {
+        row.appendChild(btn('Open ID copy', 'btn btn-ghost btn-sm', function (ev) { onOpenStoredDoc(ev, r.ref, d.path, 'id'); }, 'idCopyOpenBtn'));
+      }
+      s.appendChild(row);
+      s.appendChild(el('p', { className: 'small', text: 'To replace it, choose the new file and click Replace. The old file is deleted.' }));
+    } else {
+      s.appendChild(el('div', { className: 'callout callout-error', role: 'alert' }, [
+        el('span', { className: 'callout-tag', text: 'Required' }),
+        el('p', { text: 'A credit check cannot run until a copy of the client’s ID document or driver’s licence is attached here.' })
+      ]));
+    }
+    s.appendChild(el('div', { className: 'field' }, [
+      el('label', { 'for': 'idCopyFile', text: (d ? 'Replacement' : 'The client’s ID document or driver’s licence') + ' (PDF, JPG or PNG, up to 10 MB)' }),
+      docInput('idCopyFile')
+    ]));
+    s.appendChild(el('span', { className: 'err', id: 'idCopyFileErr' }));
+    s.appendChild(el('div', { className: 'dsec-actions' }, btn(d ? 'Replace ID copy' : 'Attach ID copy', 'btn ' + (d ? 'btn-ghost' : 'btn-primary') + ' btn-sm', onAttachIdCopy, 'idCopyBtn')));
+    s.appendChild(msgRegion('idCopyMsg'));
+    return s;
+  }
+  function onAttachIdCopy(e) {
+    var b = e.currentTarget;
+    if (busy || !currentRec) return;
+    var ref = currentRec.ref;
+    var f = $('idCopyFile'), errN = $('idCopyFileErr');
+    var file = f && f.files && f.files[0];
+    var problem = PMStore.checkDocFile(file, 'ID copy');
+    if (problem) { errN.textContent = problem + '.'; f.focus(); return; }
+    errN.textContent = '';
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Attaching…';
+    setMsg('idCopyMsg', 'Uploading the ID copy…');
+    var here = function () { return dlg.open && currentRef === ref; };
+    safe(function () { return PMStore.attachIdCopy(ref, file); }).then(function (d) {
+      busy = false;
+      render();
+      if (here()) {
+        pushFlash('dlgMsg', d && d.idDocument && d.idDocument.replaced ? 'ID copy replaced.' : 'ID copy attached.', 'ok');
+        reloadDetail(ref, 'secIdCopyH');
+      }
+    }).catch(function (err) {
+      busy = false;
+      var m = staffError(err, 'idcopy');
+      if (here()) {
+        b.disabled = false;
+        b.textContent = currentRec && currentRec.idDocument ? 'Replace ID copy' : 'Attach ID copy';
+        setMsg('idCopyMsg', m.text, 'err', m.sub);
+      } else {
+        setMsg('pageMsg', ref + ': ID copy not attached — ' + m.text, 'err', m.sub);
+      }
+    });
+  }
+
+  /* ---------- b2. manual identity verification (signed consent form + the two statements) ----------
      MortgageMAX (2026-10-01): the identity questions may be bypassed only once the client has signed
      its Consent Form. The consultant sends the form, the client signs page 1, and the signed copy is
-     uploaded here. MortgageMAX (Bennie Vermeulen, 2026-10-12): the proof that the consultant verified
-     the person is a photo of the client, taken by the consultant in person, with the client holding
-     their ID document (it replaced the uploaded ID copy). On a phone the input opens the camera
-     (`capture`); a desktop browser offers a file instead. The server and the database both refuse
-     without both files, and a PDF is never accepted as the photo. */
-  var DOC_ACCEPT = 'application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png';
-  var PHOTO_ACCEPT = 'image/jpeg,image/png,.jpg,.jpeg,.png';
-  var photoPickerOpen = false; /* the camera or picker for #manualFile is up (see manualBlock) */
+     uploaded here. Michael (2026-10-20): the consultant's own identity confirmation, ticked with the
+     Experian statement, replaced the photo of the client; the client's ID copy lives on the record
+     (section above) and must be there before this can be saved. The server and the database both
+     refuse without the form, the confirmation or the ID copy. */
   function manualBlock(r, mode) {
     if (r.manualVerifiedAt) return evidenceBlock(r);
     if (!PMStore.manualVerifyCheck(r).ok || PMStore.allowedFrom(mode).indexOf(r.status) !== -1) return null;
     var att = sysCfg.attestation || PMStore.ATTESTATION;
+    var conf = sysCfg.identityConfirmation || PMStore.IDENTITY_CONFIRMATION;
     var formVersion = (sysCfg.consentForm || PMStore.CONSENT_FORM).version;
-    var box = el('fieldset', { className: 'verify-set', id: 'manualSet', 'data-version': att.version, 'data-form-version': formVersion });
+    var box = el('fieldset', { className: 'verify-set', id: 'manualSet', 'data-version': att.version, 'data-form-version': formVersion, 'data-confirm-version': conf.version });
     box.appendChild(el('legend', { text: 'Verify identity manually' }));
     box.appendChild(el('p', { className: 'small', text: 'Use this when the client couldn’t pass the identity questions, or none were available. ' +
-      'MortgageMAX allows it only once the client has signed its consent form and you have verified the client in person. ' +
-      'All three steps are kept as evidence for MortgageMAX’s audits.' }));
+      'MortgageMAX allows it only once the client has signed its consent form and you have verified the client’s identity yourself. ' +
+      'The signed form, your confirmation and the client’s ID copy are kept as evidence for MortgageMAX’s audits.' }));
+    if (!r.idDocument) {
+      box.appendChild(el('div', { className: 'callout callout-error', role: 'alert' }, [
+        el('span', { className: 'callout-tag', text: 'ID copy first' }),
+        el('p', { text: 'Attach the client’s ID copy in the “Client’s ID copy” section above before verifying manually.' })
+      ]));
+    }
     var step1 = el('p', { className: 'small' }, [
       el('strong', { text: '1. Send the client the consent form. ' }),
       'They fill in and sign page 1 and send it back to you (a scan or a clear photo is fine). '
@@ -1753,26 +1840,22 @@
     box.appendChild(step1);
     box.appendChild(el('div', { className: 'field' }, [
       el('label', { 'for': 'manualForm', text: '2. The MortgageMAX consent form, signed by the client (PDF, JPG or PNG, up to 10 MB)' }),
-      el('input', { type: 'file', id: 'manualForm', accept: DOC_ACCEPT, 'aria-describedby': 'manualErr' })
+      docInput('manualForm')
     ]));
-    var photoInput = el('input', { type: 'file', id: 'manualFile', accept: PHOTO_ACCEPT, capture: 'environment', 'aria-describedby': 'manualErr' });
-    /* While the camera (or the file picker) is open the input still has no file, so a live refresh
-       would rebuild the panel under it and lose the photo and the signed form. Hold refreshes from
-       the tap until the picker returns a file or is dismissed. */
-    photoInput.addEventListener('click', function () { photoPickerOpen = true; });
-    photoInput.addEventListener('change', function () { photoPickerOpen = false; });
-    photoInput.addEventListener('cancel', function () { photoPickerOpen = false; });
-    box.appendChild(el('div', { className: 'field' }, [
-      el('label', { 'for': 'manualFile', text: '3. A photo of the client, taken by you now, holding the ID document or driver’s licence you checked (JPG or PNG, up to 10 MB). On a phone this opens the camera.' }),
-      photoInput
+    box.appendChild(el('p', { className: 'small' }, [el('strong', { text: '3. Confirm the statements below.' }),
+      ' You have checked the client’s ID document yourself; the copy is attached to this record.']));
+    box.appendChild(el('blockquote', { className: 'attest', id: 'manualStatement' }, [
+      el('p', { text: att.text }),
+      el('p', { text: conf.text })
     ]));
-    box.appendChild(el('blockquote', { className: 'attest', id: 'manualStatement', text: att.text }));
     box.appendChild(el('label', { className: 'check-row', 'for': 'manualChk' }, [
       el('input', { type: 'checkbox', id: 'manualChk', 'aria-describedby': 'manualStatement' }),
-      'I confirm the statement above.'
+      'I confirm the statements above.'
     ]));
     box.appendChild(el('span', { className: 'err', id: 'manualErr' }));
-    box.appendChild(el('div', { className: 'dsec-actions' }, btn('Save manual verification', 'btn btn-primary btn-sm', onManualVerify, 'manualBtn')));
+    var save = btn('Save manual verification', 'btn btn-primary btn-sm', onManualVerify, 'manualBtn');
+    save.disabled = !r.idDocument;
+    box.appendChild(el('div', { className: 'dsec-actions' }, save));
     box.appendChild(msgRegion('manualMsg'));
     return box;
   }
@@ -1794,20 +1877,23 @@
         return deletedAt ? 'Deleted ' + fmtDate(Date.parse(deletedAt))
           : (TYPES[type] || type) + ', ' + Math.max(1, Math.round(Number(bytes) / 1024)) + ' KB';
       };
-      /* a verification from before 1 Oct 2026 has no signed consent form, and one from before
-         12 Oct 2026 holds an ID copy where later ones hold the photo: say so, never hide it */
+      /* older verifications differ: before 1 Oct 2026 no signed consent form; 12–20 Oct a photo of
+         the client; before 12 Oct an ID copy on the evidence row. Say what is there, never hide it. */
       var hasForm = !!e.consent_form_type;
       var isPhoto = e.document_kind === 'client_photo';
-      var docLabel = isPhoto ? 'Photo of the client' : 'ID copy (verified before the photo was required)';
-      holder.appendChild(kv([
+      var rows = [
         ['Verified by', e.verified_by_label],
         ['When', fmtDate(Date.parse(e.created_at))],
         ['Signed MortgageMAX consent form', hasForm ? fileLine(e.consent_form_type, e.consent_form_bytes, e.consent_form_deleted_at)
-          : 'None (verified before the signed form was required)'],
-        [docLabel, fileLine(e.document_type, e.document_bytes, e.document_deleted_at)],
-        ['Statement version', e.attestation_version, 'mono']
-      ].concat(hasForm ? [['Consent form version', e.consent_form_version, 'mono']] : [])));
-      holder.appendChild(el('blockquote', { className: 'attest', text: e.attestation_text }));
+          : 'None (verified before the signed form was required)']
+      ];
+      if (e.document_type) rows.push([isPhoto ? 'Photo of the client' : 'ID copy (on the evidence row)', fileLine(e.document_type, e.document_bytes, e.document_deleted_at)]);
+      rows.push(['Statement version', e.attestation_version, 'mono']);
+      if (hasForm) rows.push(['Consent form version', e.consent_form_version, 'mono']);
+      if (e.confirmation_version) rows.push(['Confirmation version', e.confirmation_version, 'mono']);
+      holder.appendChild(kv(rows));
+      holder.appendChild(el('blockquote', { className: 'attest' }, [el('p', { text: e.attestation_text })]
+        .concat(e.confirmation_text ? [el('p', { text: e.confirmation_text })] : [])));
       var opens = [];
       if (e.consent_form_path && !e.consent_form_deleted_at && PMStore.mode === 'live') {
         opens.push(btn('Open signed MortgageMAX consent form', 'btn btn-ghost btn-sm',
@@ -1831,34 +1917,27 @@
     var b = e.currentTarget;
     if (busy || !currentRec) return;
     var ref = currentRec.ref;
-    var g = $('manualForm'), f = $('manualFile'), c = $('manualChk'), errN = $('manualErr');
+    var g = $('manualForm'), c = $('manualChk'), errN = $('manualErr');
     var formFile = g && g.files && g.files[0];
-    var file = f && f.files && f.files[0];
     var problem = null, target = null;
-    var checkDoc = function (doc, input, what, types, accepted, verb) {
-      if (problem) return;
-      if (!doc) problem = verb + ' the ' + what + '.';
-      else if (types.indexOf(doc.type) === -1) problem = 'The ' + what + ' must be a ' + accepted + '.';
-      else if (doc.size > 10 * 1024 * 1024) problem = 'The ' + what + ' is larger than 10 MB.';
-      if (problem) target = input;
-    };
-    checkDoc(formFile, g, 'signed MortgageMAX consent form', ['application/pdf', 'image/jpeg', 'image/png'], 'PDF, JPG or PNG', 'Choose');
-    checkDoc(file, f, 'photo of the client', PMStore.PHOTO_TYPES, 'JPG or PNG', 'Take');
-    if (!problem && !c.checked) { problem = 'Tick the box to confirm the Experian statement.'; target = c; }
+    if (!currentRec.idDocument) { problem = 'Attach the client’s ID copy first (section above).'; target = $('idCopyFile') || g; }
+    if (!problem) { var p = PMStore.checkDocFile(formFile, 'signed MortgageMAX consent form'); if (p) { problem = p + '.'; target = g; } }
+    if (!problem && !c.checked) { problem = 'Tick the box to confirm the statements.'; target = c; }
     if (problem) {
       errN.textContent = problem;
-      target.focus();
+      if (target) target.focus();
       return;
     }
     errN.textContent = '';
     var version = $('manualSet').getAttribute('data-version');
     var formVersion = $('manualSet').getAttribute('data-form-version');
+    var confirmVersion = $('manualSet').getAttribute('data-confirm-version');
     busy = true;
     b.disabled = true;
     b.textContent = 'Saving…';
-    setMsg('manualMsg', 'Uploading the signed MortgageMAX consent form and the photo, and recording your confirmation…');
+    setMsg('manualMsg', 'Uploading the signed MortgageMAX consent form and recording your confirmation…');
     var here = function () { return dlg.open && currentRef === ref; };
-    safe(function () { return PMStore.manualVerify(ref, file, formFile, version, formVersion); }).then(function () {
+    safe(function () { return PMStore.manualVerify(ref, formFile, version, formVersion, confirmVersion); }).then(function () {
       busy = false;
       render();
       if (here()) {
@@ -1873,8 +1952,8 @@
       render();
       if (here()) {
         if (err && err.code === 'bad_request') {
-          /* the server refused a file or the statement: nothing was saved, so keep the chosen
-             files (a camera photo is costly to retake) and say what to fix */
+          /* the server refused the file or the statement: nothing was saved, so keep the chosen
+             file and say what to fix */
           $('manualErr').textContent = m.text;
           $('manualBtn').disabled = false;
           $('manualBtn').textContent = 'Save manual verification';
@@ -1882,7 +1961,7 @@
         } else {
           /* reload: after a dropped connection the save may still have landed */
           pushFlash('dlgMsg', m.text, 'err', m.sub);
-          reloadDetail(ref, 'manualFile');
+          reloadDetail(ref, 'manualForm');
         }
       } else {
         setMsg('pageMsg', ref + ': manual verification not saved — ' + m.text, 'err', m.sub);
@@ -2326,7 +2405,7 @@
   }
   function whyNot(st, mode, r) {
     if (mode === 'required' && r && PMStore.manualVerifyCheck(r).ok) {
-      return 'The client’s identity isn’t verified yet. Verify it manually in the Identity check section above (signed MortgageMAX consent form, photo of the client and Experian statement), then run the check.';
+      return 'The client’s identity isn’t verified yet. Verify it manually in the Identity check section above (signed MortgageMAX consent form and your confirmation of the statements), then run the check.';
     }
     switch (st) {
       case 'check_in_flight':
@@ -2354,11 +2433,13 @@
     var st = r.status;
     var mode = sysCfg.idvMode;
     var allowed = PMStore.allowedFrom(mode).indexOf(st) !== -1;
+    var hasIdCopy = !!r.idDocument;
     var run = $('dlgRun');
     run.hidden = NEVER_RUN.indexOf(st) !== -1;
     run.textContent = st === 'check_in_flight' ? 'Credit check running…' : 'Run credit check';
-    run.disabled = !allowed;
-    $('runHint').textContent = run.hidden ? '' : allowed ? '' : whyNot(st, mode, r);
+    run.disabled = !allowed || !hasIdCopy;
+    $('runHint').textContent = run.hidden ? '' : !allowed ? whyNot(st, mode, r)
+      : !hasIdCopy ? 'Attach the client’s ID copy first (see “Client’s ID copy” above). A credit check cannot run without it.' : '';
 
     /* mirrors the server's delete guard: not while a check runs, nor while the PDF is being
        stored (unless that fetch has plainly been interrupted) */
@@ -2456,7 +2537,7 @@
       render();
       if (dlg.open && currentRef === p.ref) {
         pushFlash('dlgMsg', m.text, 'err', m.sub);
-        reloadDetail(p.ref, ['dlgRun', 'manualFile']);
+        reloadDetail(p.ref, ['dlgRun', 'manualForm']);
       } else {
         setMsg('pageMsg', 'Credit check for ' + p.ref + ': ' + m.text, 'err', m.sub);
       }
@@ -2489,13 +2570,13 @@
 
   /* ================= live refresh ================= */
   function isMidInteraction() {
-    /* a chosen signed form or photo, a camera that is still open, or a ticked statement would be
-       lost by a re-render */
-    var f = $('manualFile'), g = $('manualForm'), c = $('manualChk');
-    if (!f) photoPickerOpen = false; /* the panel is gone: nothing to hold for */
+    /* a chosen ID copy or signed form, a file picker that is still open, or a ticked statement
+       would be lost by a re-render */
+    var f = $('idCopyFile'), g = $('manualForm'), c = $('manualChk');
+    if (!f && !g) pickerOpen = false; /* neither input is on screen: nothing to hold for */
     /* ...and so would a freshly re-issued link, which is shown only once */
     var a = $('assignTo');
-    return busy || !!pending || withdrawOpen || photoPickerOpen || !!(f && f.files && f.files.length) ||
+    return busy || !!pending || withdrawOpen || pickerOpen || !!(f && f.files && f.files.length) ||
       !!(g && g.files && g.files.length) || !!(c && c.checked) || !!$('linkUrl') || !!(a && a.value);
   }
   function updateStatusChip(r) {

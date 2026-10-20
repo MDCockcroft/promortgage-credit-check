@@ -97,10 +97,14 @@
      bypassed (MortgageMAX, 2026-10-01). version mirrors the server (manual.ts, parity-tested); href
      is the blank form a consultant sends to the client. */
   var CONSENT_FORM = { version: 'mmax-consent-form-2025-11', href: 'assets/docs/MortgageMAX-Consent-Form.pdf' };
-  /* Bennie Vermeulen, 2026-10-12: the consultant's photo of the client (in person, holding their ID)
-     replaced the uploaded ID copy. Images only - a PDF is never a photo. Mirrors manual.ts. */
-  var CLIENT_PHOTO = { kind: 'client_photo' };
-  var PHOTO_TYPES = ['image/jpeg', 'image/png'];
+  /* Michael, 2026-10-20: the consultant's own identity confirmation replaced the photo of the client in
+     the manual route; the client's ID copy is attached to EVERY record and no credit check runs without
+     it. Mirrors manual.ts (the Deno parity test checks the wording). */
+  var IDENTITY_CONFIRMATION = {
+    version: 'idv-confirm-2026-10-20',
+    text: 'I confirm that I have verified this applicant\'s identity document myself and that it belongs to ' +
+      'the person whose credit report is being requested.'
+  };
   var ID_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
   var ID_DOC_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -136,20 +140,24 @@
   var ROLE_COLUMNS = ', consultant_id, assigned_at';
   var roleColumns = true;
   var rolesConfirmed = false; /* the server has said roles are installed: the columns must exist */
-  /* The MortgageMAX person columns (migration 20261007) are optional the same way. */
+  /* The MortgageMAX person columns (migration 20261007) and the ID-copy columns (20261008) are optional
+     the same way: the page works either side of each migration. */
   var PERSON_COLUMNS = ', bt_person_id, bt_person_env';
   var personColumns = true;
+  var ID_COLUMNS = ', id_document_path, id_document_type, id_document_bytes, id_document_sha256, id_document_uploaded_by, id_document_uploaded_at';
+  var idColumns = true;
   function selectChecks(columns, build) {
-    function run(withRoles, withPerson) {
-      return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : '') + (withPerson ? PERSON_COLUMNS : '')));
+    function run(withRoles, withPerson, withId) {
+      return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : '') + (withPerson ? PERSON_COLUMNS : '') + (withId ? ID_COLUMNS : '')));
     }
-    return run(roleColumns, personColumns).then(function (res) {
+    return run(roleColumns, personColumns, idColumns).then(function (res) {
       /* Only for OUR columns, and never once roles are confirmed: then a missing column is a
          real fault, and reading without ownership would show every record as unassigned. */
       var msg = String((res.error && res.error.message) || '');
-      if (res.error && res.error.code === '42703' && /bt_person_/.test(msg) && personColumns) { personColumns = false; return run(roleColumns, false); }
+      if (res.error && res.error.code === '42703' && /id_document_/.test(msg) && idColumns) { idColumns = false; return run(roleColumns, personColumns, false); }
+      if (res.error && res.error.code === '42703' && /bt_person_/.test(msg) && personColumns) { personColumns = false; return run(roleColumns, false, idColumns); }
       var ours = res.error && res.error.code === '42703' && /consultant_id|assigned_at/.test(msg);
-      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false, personColumns); }
+      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false, personColumns, idColumns); }
       return res;
     });
   }
@@ -267,6 +275,11 @@
       mmConsentsSnapshot: r.mm_consents_snapshot || null,
       mmConsentsSyncedAt: ts(r.mm_consents_synced_at),
       btPersonId: r.bt_person_id || '',
+      /* the client's ID copy on the record (20 Oct 2026): required before any credit check */
+      idDocument: r.id_document_path ? {
+        path: r.id_document_path, type: r.id_document_type, bytes: r.id_document_bytes, sha256: r.id_document_sha256,
+        uploadedBy: r.id_document_uploaded_by || null, uploadedAt: ts(r.id_document_uploaded_at)
+      } : null,
       consentWithdrawnAt: ts(r.consent_withdrawn_at),
       idvAttempts: r.idv_attempts || 0,
       idvStartedAt: ts(r.idv_started_at),
@@ -516,9 +529,9 @@
     idv_in_progress: 'The client is answering the identity questions (5-minute limit). Nothing to do.',
     idv_passed: 'The client passed the identity questions. You can run the credit check.',
     idv_waived: 'Consent is registered and identity questions aren’t required. You can run the credit check.',
-    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a photo of the client you took in person (holding their ID) and confirm the Experian statement.',
-    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: the client signs MortgageMAX’s consent form, then you upload it with a photo of the client you took in person (holding their ID) and confirm the Experian statement.',
-    manual_verified: 'The client’s identity was verified manually (signed consent form, photo of the client and Experian statement, shown below). You can run the credit check.',
+    idv_failed: 'The client didn’t pass the identity questions. To go ahead, verify their identity manually below: the client signs MortgageMAX’s consent form, then you upload it and confirm the statements. The client’s ID copy must be attached to the record first.',
+    idv_unavailable: 'The credit bureau couldn’t produce identity questions for this ID number. To go ahead, verify the client’s identity manually below: the client signs MortgageMAX’s consent form, then you upload it and confirm the statements. The client’s ID copy must be attached to the record first.',
+    manual_verified: 'The client’s identity was verified manually (signed consent form, Experian statement and identity confirmation, shown below). You can run the credit check.',
     check_in_flight: 'The credit check is running. This usually takes under a minute.',
     report_ready: 'The credit report is ready — see below.',
     check_failed: 'The credit check didn’t complete. See the error below, then run it again.',
@@ -680,8 +693,7 @@
     idvLinkCheck: idvLinkCheck,
     ATTESTATION: ATTESTATION,
     CONSENT_FORM: CONSENT_FORM,
-    CLIENT_PHOTO: CLIENT_PHOTO,
-    PHOTO_TYPES: PHOTO_TYPES,
+    IDENTITY_CONFIRMATION: IDENTITY_CONFIRMATION,
     buildFormPdf: buildFormPdf,
     BUCKETS: BUCKETS,
     bucketOf: bucketOf,
@@ -944,6 +956,7 @@
       if (allowedFrom(DEMO_IDV).indexOf(rec.status) === -1) {
         return demoFail('invalid_state', 'A credit check cannot run from status ' + rec.status);
       }
+      if (!rec.idDocument) return demoFail('invalid_state', 'id_copy_required'); /* the database refuses too (20261008) */
       var rep = demoReport();
       demoUpdate(ref, {
         status: 'report_ready', groupId: 'DEMO-GROUP-0001', bureauEnquiryId: rep.summary.enquiryId,
@@ -1034,36 +1047,53 @@
         return PMStore.logAccess(rec.ref, 'download_pdf').then(function () { return res.data.signedUrl; });
       });
     },
-    /* Manual identity verification (the only route past failed / unavailable identity questions):
-       the signed consent form AND the consultant's photo of the client are uploaded (each to a path
-       the server chose), then the consultant's confirmation is recorded. Both files are required;
-       the versions must be the ones shown. → {status:'manual_verified'}. */
-    manualVerify: function (ref, photoFile, formFile, attestationVersion, consentFormVersion) {
-      var check = function (file, what, types, accepted) {
-        if (!file) return 'Choose the ' + what + ' to upload';
-        if (types.indexOf(file.type) === -1) return 'The ' + what + ' must be a ' + accepted;
-        if (!file.size || file.size > ID_DOC_MAX_BYTES) return 'The ' + what + ' is empty or larger than 10 MB';
-        return null;
-      };
-      var problem = check(formFile, 'signed MortgageMAX consent form', ID_DOC_TYPES, 'PDF, JPG or PNG')
-        || check(photoFile, 'photo of the client', PHOTO_TYPES, 'JPG or PNG');
+    /* A file check shared by the ID copy and the signed form: an accepted type, not empty, within 10 MB. */
+    checkDocFile: function (file, what) {
+      if (!file) return 'Choose the ' + what + ' to upload';
+      if (ID_DOC_TYPES.indexOf(file.type) === -1) return 'The ' + what + ' must be a PDF, JPG or PNG';
+      if (!file.size || file.size > ID_DOC_MAX_BYTES) return 'The ' + what + ' is empty or larger than 10 MB';
+      return null;
+    },
+    /* Upload one document through a one-time URL mm-staff issues for a path IT chooses; → the path. */
+    uploadDoc: function (ref, file, kind) {
+      return invoke('mm-staff', { action: 'manual-upload-url', ref: ref, contentType: file.type, kind: kind }).then(function (u) {
+        return sb.storage.from('id-documents').uploadToSignedUrl(u.path, u.token, file, { contentType: file.type })
+          .then(function (res) {
+            if (res.error) throw mkErr({ code: 'server_error', message: 'The upload failed — try again' });
+            return u.path;
+          });
+      });
+    },
+    /* The client's ID copy on the record (Michael, 2026-10-20): attach or replace; required before any
+       credit check. → {idDocument:{path,type,bytes,sha256,replaced}} */
+    attachIdCopy: function (ref, file) {
+      var problem = PMStore.checkDocFile(file, 'ID copy');
       if (problem) return demoFail('bad_request', problem);
       if (mode === 'live') {
-        var upload = function (file, kind) {
-          return invoke('mm-staff', { action: 'manual-upload-url', ref: ref, contentType: file.type, kind: kind }).then(function (u) {
-            return sb.storage.from('id-documents').uploadToSignedUrl(u.path, u.token, file, { contentType: file.type })
-              .then(function (res) {
-                if (res.error) throw mkErr({ code: 'server_error', message: 'The upload failed — try again' });
-                return u.path;
-              });
-          });
-        };
-        return upload(formFile, 'consent').then(function (formPath) {
-          return upload(photoFile, 'photo').then(function (photoPath) {
-            return invoke('mm-staff', {
-              action: 'manual-verify', ref: ref, path: photoPath, consentFormPath: formPath,
-              attestationVersion: attestationVersion, consentFormVersion: consentFormVersion, attested: true
-            });
+        return PMStore.uploadDoc(ref, file, 'idcopy').then(function (path) {
+          return invoke('mm-staff', { action: 'attach-id-copy', ref: ref, path: path });
+        });
+      }
+      var rec = demoRecover(ref);
+      if (!rec) return demoFail('bad_request', 'No such record');
+      if (rec.status === 'check_in_flight') return demoFail('invalid_state', 'A credit check is running — attach the ID copy once it finishes');
+      var replaced = !!rec.idDocument;
+      demoUpdate(ref, { idDocument: { path: null, type: file.type, bytes: file.size, sha256: null, uploadedBy: DEMO_ME, uploadedAt: Date.now() } },
+        replaced ? 'Client’s ID copy replaced by demo user' : 'Client’s ID copy attached by demo user');
+      return Promise.resolve({ idDocument: { path: null, type: file.type, bytes: file.size, replaced: replaced } });
+    },
+    /* Manual identity verification (the only route past failed / unavailable identity questions):
+       the signed consent form is uploaded (to a path the server chose) and the consultant's two
+       confirmations are recorded; the client's ID copy must already be on the record. The versions
+       must be the ones shown. → {status:'manual_verified'}. */
+    manualVerify: function (ref, formFile, attestationVersion, consentFormVersion, confirmationVersion) {
+      var problem = PMStore.checkDocFile(formFile, 'signed MortgageMAX consent form');
+      if (problem) return demoFail('bad_request', problem);
+      if (mode === 'live') {
+        return PMStore.uploadDoc(ref, formFile, 'consent').then(function (formPath) {
+          return invoke('mm-staff', {
+            action: 'manual-verify', ref: ref, consentFormPath: formPath,
+            attestationVersion: attestationVersion, consentFormVersion: consentFormVersion, confirmationVersion: confirmationVersion, attested: true
           });
         });
       }
@@ -1071,18 +1101,21 @@
       if (!rec) return demoFail('bad_request', 'No such record');
       if (attestationVersion !== ATTESTATION.version) return demoFail('invalid_state', 'manual_attestation_changed');
       if (consentFormVersion !== CONSENT_FORM.version) return demoFail('invalid_state', 'manual_consent_form_changed');
+      if (confirmationVersion !== IDENTITY_CONFIRMATION.version) return demoFail('invalid_state', 'manual_confirmation_changed');
       var can = manualVerifyCheck(rec);
       if (!can.ok) return demoFail('invalid_state', 'manual_not_allowed:' + can.reason);
+      if (!rec.idDocument) return demoFail('invalid_state', 'id_copy_required');
       demoUpdate(ref, {
         status: 'manual_verified', manualVerifiedAt: Date.now(), manualVerificationId: 1,
         demoEvidence: {
           created_at: new Date().toISOString(), verified_by_label: 'demo user', attestation_version: ATTESTATION.version,
-          attestation_text: ATTESTATION.text, document_kind: CLIENT_PHOTO.kind, document_type: photoFile.type, document_bytes: photoFile.size,
+          attestation_text: ATTESTATION.text, document_kind: null, document_type: null, document_bytes: null,
           document_path: null, document_deleted_at: null,
           consent_form_version: CONSENT_FORM.version, consent_form_type: formFile.type, consent_form_bytes: formFile.size,
-          consent_form_path: null, consent_form_deleted_at: null
+          consent_form_path: null, consent_form_deleted_at: null,
+          confirmation_version: IDENTITY_CONFIRMATION.version, confirmation_text: IDENTITY_CONFIRMATION.text
         }
-      }, 'Identity verified manually by demo user (signed consent form + photo of the client + Experian attestation)');
+      }, 'Identity verified manually by demo user (signed consent form + Experian statement + identity confirmation; ID copy on record)');
       return Promise.resolve({ status: 'manual_verified' });
     },
     /* Staff: a fresh identity-check session for a client whose 30-minute session lapsed. The token
@@ -1105,14 +1138,15 @@
       if (mode !== 'live') return Promise.resolve(rec && rec.demoEvidence ? [rec.demoEvidence] : []);
       return sb.from('manual_verifications')
         .select('id, created_at, verified_by_label, attestation_version, attestation_text, document_kind, document_path, document_type, document_bytes, document_sha256, document_deleted_at, ' +
-          'consent_form_version, consent_form_path, consent_form_type, consent_form_bytes, consent_form_deleted_at')
+          'consent_form_version, consent_form_path, consent_form_type, consent_form_bytes, consent_form_deleted_at, ' +
+          'confirmation_version, confirmation_text')
         .eq('ref', rec.ref).order('created_at', { ascending: false }).limit(10)
         .then(function (res) {
           if (res.error) throw new Error(res.error.message);
           return res.data || [];
         });
     },
-    /* Short-lived (60 s) signed URL for the stored photo of the client; logs the access. */
+    /* Short-lived (60 s) signed URL for a photo stored by a verification between 12 and 20 Oct 2026; logs the access. */
     clientPhotoUrl: function (ref, path) {
       if (mode !== 'live') return demoFail('invalid_state', 'No stored photo in demo mode');
       return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {
@@ -1120,7 +1154,7 @@
         return PMStore.logAccess(ref, 'view_client_photo').then(function () { return res.data.signedUrl; });
       });
     },
-    /* The same for an ID copy stored by a verification from before 12 Oct 2026. */
+    /* The client's ID copy on the record (and an ID copy stored by a verification from before 12 Oct 2026). */
     idDocumentUrl: function (ref, path) {
       if (mode !== 'live') return demoFail('invalid_state', 'No stored ID copy in demo mode');
       return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {

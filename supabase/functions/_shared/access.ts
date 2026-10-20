@@ -20,7 +20,7 @@ export const ADMIN_ONLY_ACTIONS = ["delete-record", "assign", "staff-list", "sta
  */
 export const CONSULTANT_ACTIONS = [
   "config", "recover", "clear-config-error", "register-consent", "run-check", "fetch-pdf", "refresh-consents",
-  "record-withdrawal", "manual-upload-url", "manual-verify", "reissue-idv-link",
+  "record-withdrawal", "manual-upload-url", "manual-verify", "reissue-idv-link", "attach-id-copy",
 ];
 
 export type Access = "ok" | "inactive" | "admin_only" | "not_yours";

@@ -1,8 +1,10 @@
 // Manual identity verification — the only route to a credit check without passing the identity
 // questions (MortgageMAX, 2026-09-28: IDV is mandatory). The evidence is the client's SIGNED consent
-// form plus a PHOTO OF THE CLIENT taken by the consultant in person (Bennie Vermeulen, 2026-10-12;
-// it replaced the uploaded ID copy) and the consultant's Experian attestation. Shared by mm-staff
-// and checked for parity against assets/store.js.
+// form plus the consultant's confirmations: the Experian attestation (verbatim) and the identity
+// confirmation (Michael, 2026-10-20 — it replaced the photo of the client of 2026-10-12). The client's
+// ID COPY is no longer part of the override: since 2026-10-20 it is attached to EVERY record and no
+// credit check runs without it (page, function and database all refuse). Shared by mm-staff and
+// checked for parity against assets/store.js.
 
 /**
  * The consultant's statement, VERBATIM from MortgageMAX (Bennie Vermeulen, 2026-09-28) — Experian
@@ -25,18 +27,18 @@ export const ATTESTATION = {
 export const CONSENT_FORM = { version: "mmax-consent-form-2025-11" } as const;
 
 /**
- * The photo of the client (Bennie Vermeulen, 2026-10-12): taken by the consultant, in person, with the
- * client holding their ID document - so the attestation's "validated their identity documents" stays
- * true and the image shows who was verified. The phone's camera is used wherever the page can ask for
- * it. Images only: a PDF is never a photo. The kind is stored on the evidence row, because rows from
- * before this date hold an uploaded ID copy instead.
+ * The consultant's own confirmation for the manual route (Michael, 2026-10-20), shown under the Experian
+ * statement and ticked with it. Versioned like the attestation: any change of wording is a new version.
  */
-export const CLIENT_PHOTO = { kind: "client_photo" } as const;
-export const PHOTO_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png" };
+export const IDENTITY_CONFIRMATION = {
+  version: "idv-confirm-2026-10-20",
+  text: "I confirm that I have verified this applicant's identity document myself and that it belongs to " +
+    "the person whose credit report is being requested.",
+} as const;
 
 export const ID_DOC_BUCKET = "id-documents";
 export const ID_DOC_MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's file_size_limit
-/** What the bucket accepts; the signed consent form may be any of them, the photo only the images. */
+/** What the bucket accepts: the signed consent form and the client's ID copy may be any of them. */
 export const ID_DOC_TYPES: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png" };
 
 /** Statuses where consent is registered and no identity step or check is running. */
@@ -57,16 +59,16 @@ export function manualVerifyCheck(row: Record<string, unknown>): { ok: true } | 
   return { ok: false, reason: `status_${status}` };
 }
 
-/** Server-chosen object path for the photo of the client; the browser never names it. */
-export function clientPhotoPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
-  const ext = PHOTO_TYPES[contentType];
-  return ext ? `${ref}/photo-${id}.${ext}` : null;
+/** Server-chosen object path for the client's ID copy on a record; the browser never names it. */
+export function idCopyPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
+  const ext = ID_DOC_TYPES[contentType];
+  return ext ? `${ref}/idcopy-${id}.${ext}` : null;
 }
 
-/** The path must be one clientPhotoPath() could have issued for THIS ref (never an old ID copy's). */
-export function validClientPhotoPath(ref: string, path: unknown): path is string {
+/** The path must be one idCopyPath() could have issued for THIS ref (never a form's, never an old photo's). */
+export function validIdCopyPath(ref: string, path: unknown): path is string {
   if (typeof path !== "string" || !path.startsWith(`${ref}/`)) return false;
-  return /^photo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png)$/.test(path.slice(ref.length + 1));
+  return /^idcopy-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png)$/.test(path.slice(ref.length + 1));
 }
 
 /**

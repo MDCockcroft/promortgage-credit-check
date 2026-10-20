@@ -46,11 +46,11 @@ questions. Live status: `HANDOVER-2026-09-26.md`. Go-live procedure afterwards: 
    "Open credit report (PDF)" = the bureau's own document. "Download the client's application form
    (PDF)" = what the client completed, with the consent they accepted.
 6. **The override path (B then A).** A second application with another test ID; answer wrongly →
-   "Identity check failed". In A: the plain status says what to do; "Verify identity manually":
-   download the blank MortgageMAX form, upload a signed specimen, the photo of the client — on the
-   phone, show the camera opening; on the Mac, choose the photo file. Confirm the Experian statement,
-   save → "Verified manually", the evidence block (who, when, the two files, the statement). Then run
-   the check as before.
+   "Identity check failed". In A: the plain status says what to do; attach the client's ID copy in
+   the "Client's ID copy" section (every record needs one before a check); "Verify identity manually":
+   download the blank MortgageMAX form, upload a signed specimen, tick the confirmation under the two
+   statements, save → "Verified manually", the evidence block (who, when, the signed form, both
+   statements). Then run the check as before.
 7. **What the administrator sees (admin).** The same record: the consent audit trail, MortgageMAX's
    read-back, consent events, the identity result codes, the raw report data, the access log (every
    view of a report or evidence file is logged with who and when). Staff screen: roles, who owns what.
@@ -65,8 +65,9 @@ questions. Live status: `HANDOVER-2026-09-26.md`. Go-live procedure afterwards: 
   client's completed form as evidence.
 - **Identity**: MortgageMAX's knowledge-based questions, pass mark 60 (MortgageMAX's own practice),
   two rounds per application and per ID number per day; the only alternative is the manual override
-  with the signed form, the consultant's photo of the client and the verbatim Experian statement,
-  all kept as audit evidence. Passports: no credit check (Experian covers SA IDs only).
+  with the signed form and the consultant's confirmations (the verbatim Experian statement and the
+  identity confirmation), kept as audit evidence. A copy of the client's ID is attached to every
+  record and no check runs without it. Passports: no credit check (Experian covers SA IDs only).
 - **Access**: every consultant sees only their own clients; administrators see everything; only
   administrators delete; every report view, PDF open and evidence file open is logged.
 - **Abuse limits**: applications only through an active consultant's link; 5 per person per link,

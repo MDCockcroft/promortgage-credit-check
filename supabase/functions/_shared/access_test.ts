@@ -7,7 +7,7 @@ const admin: Member = { role: "admin", linkCode: "abc23456" };
 const consultant: Member = { role: "consultant", linkCode: "def56789" };
 // Every action mm-staff knows that works on a record.
 const RECORD_ACTIONS = ["recover", "clear-config-error", "register-consent", "run-check", "fetch-pdf", "refresh-consents",
-  "record-withdrawal", "manual-upload-url", "manual-verify", "reissue-idv-link"];
+  "record-withdrawal", "manual-upload-url", "manual-verify", "reissue-idv-link", "attach-id-copy"];
 
 Deno.test("no active membership: nothing at all", () => {
   for (const a of ["config", ...RECORD_ACTIONS, ...ADMIN_ONLY_ACTIONS]) {
