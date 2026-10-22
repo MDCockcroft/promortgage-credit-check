@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
   // C4/C15: the number sent is the one id_type names; mm_person_id is also redacted from logs.
   const personId: string = personIdFor(row);
   const log = (api: Api, method: string, path: string, result: VendorResult) =>
-    logCall(sb, { ref, requestId, api, method, path, result, redactValues: [personId, row.mm_person_id], env: cfg.env });
+    logCall(sb, { ref, requestId, api, method, path, result, redactValues: [personId, row.mm_person_id, row.cell, row.email], env: cfg.env });
   const ctx: Ctx = { sb, cfg, mode, fetchImpl, log };
   const configFailure = async (r: VendorResult, from: string[], restore: Record<string, unknown> = {}) => {
     // 401/403 from the vendor = our credentials/config, never the client's fault. mm-staff

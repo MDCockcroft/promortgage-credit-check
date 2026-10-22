@@ -40,8 +40,24 @@ export function peopleRefs(cfg: MmConfig): PeopleRefs {
   };
 }
 
+/**
+ * The cellphone in the one form the People API accepts (UAT, 22 Oct 2026): international with the plus
+ * sign and no spaces — "+27821234567". The form stores the local form ("0821234567"); anything else
+ * (a foreign or malformed number) is left out rather than refused by the vendor.
+ */
+export function internationalCell(v: unknown): string | null {
+  const t = typeof v === "string" ? v.replace(/[\s()-]/g, "") : "";
+  if (/^0[6-8][0-9]{8}$/.test(t)) return "+27" + t.slice(1);
+  if (/^\+27[6-8][0-9]{8}$/.test(t)) return t;
+  if (/^27[6-8][0-9]{8}$/.test(t)) return "+" + t;
+  return null;
+}
+
 /** The create body: name + ID document, the cellphone and email as primary contacts. Nothing else. */
-export function buildCreatePerson(row: Record<string, unknown>, idNumber: string, refs: PeopleRefs, opts: { contacts: boolean } = { contacts: true }): Record<string, unknown> {
+export function buildCreatePerson(
+  row: Record<string, unknown>, idNumber: string, refs: PeopleRefs,
+  opts: { phones: boolean; emails: boolean } = { phones: true, emails: true },
+): Record<string, unknown> {
   const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const body: Record<string, unknown> = {
     name: { givenName: s(row.first_names), familyName: s(row.surname) },
@@ -53,10 +69,11 @@ export function buildCreatePerson(row: Record<string, unknown>, idNumber: string
       isVerified: false,
     },
   };
-  if (opts.contacts && s(row.cell)) {
-    body.phoneNumbers = [{ value: s(row.cell), isPrimary: true, ...(refs.phoneNumberTypeId ? { phoneNumberTypeId: refs.phoneNumberTypeId } : {}) }];
+  const cell = internationalCell(row.cell);
+  if (opts.phones && cell) {
+    body.phoneNumbers = [{ value: cell, isPrimary: true, ...(refs.phoneNumberTypeId ? { phoneNumberTypeId: refs.phoneNumberTypeId } : {}) }];
   }
-  if (opts.contacts && s(row.email)) {
+  if (opts.emails && s(row.email)) {
     body.emailAddresses = [{ value: s(row.email), isPrimary: true, ...(refs.emailAddressTypeId ? { emailAddressTypeId: refs.emailAddressTypeId } : {}) }];
   }
   return body;
@@ -118,7 +135,8 @@ export interface PeopleCtx {
  * another MortgageMAX system created under the other type must still be found, not duplicated. The
  * type is used only when WE create the person.
  * 409 on the lookup = duplicate persons at the vendor; 409 on the create = someone made the person in
- * between (one re-read); 400 on the create = retried once without the contacts, then a person decides.
+ * between (one re-read); 400 on the create = retried once with the email alone (the vendor insists on a
+ * mobile or an email, so "no contacts" can never succeed), then a person decides.
  */
 export async function resolvePersonId(ctx: PeopleCtx, row: Record<string, unknown>, idNumber: string): Promise<ResolveOutcome> {
   const refs = peopleRefs(ctx.cfg);
@@ -142,8 +160,8 @@ export async function resolvePersonId(ctx: PeopleCtx, row: Record<string, unknow
   if (found.http === 409) return { ok: false, code: "manual", reason: "duplicate_person", http: 409, vendorCode: found.vendorCode, vendorMessage: found.vendorMessage };
   if (found.http !== 404) return { ok: false, code: "vendor_error", http: found.http, vendorCode: found.vendorCode, traceId: found.traceId, step: "find" };
 
-  const create = async (contacts: boolean): Promise<VendorResult> => {
-    const body = buildCreatePerson(row, idNumber, refs, { contacts });
+  const create = async (phones: boolean): Promise<VendorResult> => {
+    const body = buildCreatePerson(row, idNumber, refs, { phones, emails: true });
     const r = await callVendor(ctx.cfg, "people", "POST", "/People", { body, timeoutMs: 20_000, fetchImpl: ctx.fetchImpl });
     await ctx.log("POST", "/People", r);
     return r;

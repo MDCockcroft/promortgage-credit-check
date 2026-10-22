@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
   const requestId = crypto.randomUUID();
   const staffLabel = user.email ?? user.id;
   const log = (api: Api, method: string, path: string, result: VendorResult) =>
-    logCall(sb, { ref, requestId, api, method, path, result, redactValues: [personId, row.mm_person_id], env: cfg.env });
+    logCall(sb, { ref, requestId, api, method, path, result, redactValues: [personId, row.mm_person_id, row.cell, row.email], env: cfg.env });
 
   const ctx: Ctx = { sb, cfg, mode, fetchImpl, log };
   const startedAtMs = Date.now();

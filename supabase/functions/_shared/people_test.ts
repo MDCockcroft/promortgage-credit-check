@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { buildCreatePerson, peopleRefs, personIdFrom, plausiblePersonId, resolvePersonId } from "./people.ts";
+import { buildCreatePerson, peopleRefs, personIdFrom, plausiblePersonId, resolvePersonId, internationalCell } from "./people.ts";
 import type { MmConfig, VendorResult } from "./mmax.ts";
 
 const refs = { sourceSystemTypeId: 7, identityDocumentTypeId: 1, countryOfOriginId: "ZA", phoneNumberTypeId: 2, emailAddressTypeId: 1 };
@@ -42,11 +42,21 @@ Deno.test("buildCreatePerson: name, ID document and primary contacts; contacts c
   assertEquals(buildCreatePerson(row, ID, refs), {
     name: { givenName: "Bongani", familyName: "Stoffel" }, sourceSystemTypeId: 7,
     identityDocument: { identityDocumentTypeId: 1, identityNumber: ID, countryOfOriginId: "ZA", isVerified: false },
-    phoneNumbers: [{ value: "0820000001", isPrimary: true, phoneNumberTypeId: 2 }],
+    phoneNumbers: [{ value: "+27820000001", isPrimary: true, phoneNumberTypeId: 2 }], // international, the only form UAT accepts
     emailAddresses: [{ value: "b@example.com", isPrimary: true, emailAddressTypeId: 1 }],
   });
-  const bare = buildCreatePerson(row, ID, refs, { contacts: false });
+  const bare = buildCreatePerson(row, ID, refs, { phones: false, emails: false });
   assertEquals("phoneNumbers" in bare || "emailAddresses" in bare, false);
+  const emailOnly = buildCreatePerson(row, ID, refs, { phones: false, emails: true });
+  assertEquals("phoneNumbers" in emailOnly, false);
+  assertEquals(Array.isArray(emailOnly.emailAddresses), true);
+  // A number the vendor would refuse is left out rather than sent.
+  assertEquals("phoneNumbers" in buildCreatePerson({ ...row, cell: "+44 7700 900123" }, ID, refs), false);
+  assertEquals(internationalCell("082 000 0001"), "+27820000001");
+  assertEquals(internationalCell("27820000001"), "+27820000001");
+  assertEquals(internationalCell("+27820000001"), "+27820000001");
+  assertEquals(internationalCell("0520000001"), null);
+  assertEquals(internationalCell(null), null);
 });
 
 Deno.test("plausiblePersonId / personIdFrom: a GUID or a real id, never a word, never a bare string on a find", () => {
@@ -72,7 +82,7 @@ Deno.test("resolvePersonId: known ID number → found, nothing created; the pers
   assertEquals(r.ok, false); if (!r.ok) assertEquals(r.code === "manual" && r.reason, "person_mismatch");
 });
 
-Deno.test("resolvePersonId: unknown → created with contacts; a 400 retries once without them; a second 400 goes to a person", async () => {
+Deno.test("resolvePersonId: unknown → created with contacts; a 400 retries once with the email alone; a second 400 goes to a person", async () => {
   const a = fakeFetch([
     { m: "GET", path: FIND, status: 404, body: "Person not found", text: true },
     { m: "POST", path: CREATE, status: 201, body: "P-new-0001", text: true, bodyCheck: (b) => assertEquals(Array.isArray((b as Record<string, unknown>).phoneNumbers), true) },
@@ -81,7 +91,10 @@ Deno.test("resolvePersonId: unknown → created with contacts; a 400 retries onc
   const b = fakeFetch([
     { m: "GET", path: FIND, status: 404, body: "x", text: true },
     { m: "POST", path: CREATE, status: 400, body: { title: "phone invalid" } },
-    { m: "POST", path: CREATE, status: 201, body: "P-new-0002", text: true, bodyCheck: (bd) => assertEquals("phoneNumbers" in (bd as Record<string, unknown>), false) },
+    { m: "POST", path: CREATE, status: 201, body: "P-new-0002", text: true, bodyCheck: (bd) => {
+      assertEquals("phoneNumbers" in (bd as Record<string, unknown>), false);
+      assertEquals(Array.isArray((bd as Record<string, unknown>).emailAddresses), true); // the email stays
+    } },
   ]);
   assertEquals(await resolvePersonId(ctx(b.f), row, ID), { ok: true, personId: "P-new-0002", created: true });
   assertEquals(b.calls.length, 3);
