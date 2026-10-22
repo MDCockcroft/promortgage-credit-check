@@ -34,9 +34,10 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 - [ ] **Legal:** Liz's placeholders in the form's notice filled in; the adviser's review done; the
       Operator Agreement signed; a decision on backing up the stored evidence files (photos of
       clients, signed consent forms — Supabase backups do not cover stored files).
-- [ ] **MortgageMAX People domain** (row 6i): Louis's token audience + the three reference ids, the
-      `MMAX_PEOPLE_*` secrets set (UAT first, then the production host), migration `20261007`, one UAT run
-      with Good2 showing the consent against the person record.
+- [x] **MortgageMAX People domain** (row 6i): done in UAT 22 Oct (scope, ids, secrets, migration `20261007`,
+      Good2 run PM-CAA25E with the consent against the person record). **Still for production:** the production
+      `SourceSystemType` id from Louis (UAT uses 1 = "Test") in `MMAX_PEOPLE_SOURCE_SYSTEM_ID`, and the production
+      People base URL in `MMAX_PEOPLE_BASE_URL`.
 - [ ] **ID copies:** every record that will be checked has the client's ID copy attached (row 6j: the
       database refuses a check without it). Clients can add it on the form, front and back (row 6k);
       otherwise the consultant attaches it.
