@@ -17,6 +17,8 @@
 // POST { action: 'consultant', code }               → { name } (first name for a personal link, or null)
 // POST { action: 'submit', payload, consultant_code } → { ref, idv_token }
 // POST { ref, idv_token, action: 'register-consent' | 'idv-start' | 'idv-answer' | 'idv-expire', answers? }
+// POST { ref, idv_token, action: 'id-upload-url', side: 'front' | 'back', contentType } → one-time upload URL
+// POST { ref, idv_token, action: 'id-attach', front, back? }  → the client's own ID copy on the record
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { fail, ok, preflight } from "../_shared/http.ts";
@@ -29,6 +31,10 @@ import { idvIdType, personIdFor } from "../_shared/idnumber.ts";
 import { IDV_ANSWER_WINDOW_MS, MAX_IDV_ROUNDS } from "../_shared/states.ts";
 import { isMissingFunction, validLinkCode } from "../_shared/access.ts";
 import { productionStopped, STOPPED } from "../_shared/stop.ts";
+import {
+  clientIdCopyCheck, ID_DOC_BUCKET, ID_DOC_MAX_BYTES, ID_DOC_TYPES, idBackPath, idCopyPath, sha256HexBytes, sniffDocType,
+  validIdBackPath, validIdCopyPath,
+} from "../_shared/manual.ts";
 
 const APP_NAME = "promortgage-credit-check";
 const APP_VERSION = "2026.09.26";
@@ -39,6 +45,9 @@ const SOURCE_SYSTEM = "PMSA-CreditCheck";
 // per 24 hours. A third round would only be refused by the vendor, so hand over to manual first.
 const MAX_IDV_ROUNDS_PER_PERSON_24H = 2;
 // submit_application's own refusals — safe to pass to the form as codes (it maps them to copy).
+// The client's own ID copy: how many of their objects (front / back, including abandoned uploads) one
+// record may hold before further upload URLs are refused — a brake on anonymous uploads.
+const CLIENT_UPLOAD_SLOTS = 6;
 const SUBMIT_REFUSALS = new Set([
   "invalid_id_number", "invalid_passport_number", "invalid_id_type", "invalid_cell", "too_many_submissions",
   "too_many_applications", "consent_required", "consultant_link_required",
@@ -51,7 +60,7 @@ Deno.serve(async (req) => {
 
   let body: {
     ref?: string; idv_token?: string; action?: string; answers?: unknown; payload?: unknown;
-    code?: unknown; consultant_code?: unknown;
+    code?: unknown; consultant_code?: unknown; side?: unknown; contentType?: unknown; front?: unknown; back?: unknown;
   };
   try {
     body = await req.json();
@@ -201,6 +210,109 @@ Deno.serve(async (req) => {
   try {
     // C1: stale-state recovery for this caller's own record, before any action.
     const { recovered } = await recoverStale(sb, row);
+
+    // ======================================================================================
+    // The client's own ID copy (Michael, 2026-10-20, late): optional on the form — the front, and the
+    // back of a smart ID card or driver's licence as a second picture. Uploaded through one-time signed
+    // URLs for paths WE choose, then checked byte by byte before anything counts. It is the ID copy every
+    // record needs before a credit check (migration 20261008); the consultant may replace it. ONE attach
+    // per application, only while it is still the client's turn (manual.ts clientIdCopyCheck; the
+    // database refuses the same way) — so a copy a consultant has opened cannot be swapped under them.
+    if (action === "id-upload-url") {
+      const side = body.side === "front" || body.side === "back" ? body.side : null;
+      if (!side) return fail("bad_request", "side must be front or back", origin);
+      const can = clientIdCopyCheck(row);
+      if (!can.ok) return fail("invalid_state", can.reason, origin);
+      const contentType = String(body.contentType ?? "");
+      const path = side === "front" ? idCopyPath(ref, contentType) : idBackPath(ref, contentType);
+      if (!path) return fail("bad_request", "The ID copy must be a PDF, JPG or PNG", origin);
+      // A brake on anonymous uploads: a record holds at most CLIENT_UPLOAD_SLOTS of the client's own
+      // objects (a front and a back, plus a retry or two — abandoned uploads count until the record is
+      // deleted). Beyond that no URL is issued.
+      const { data: objects, error: listErr } = await sb.storage.from(ID_DOC_BUCKET).list(ref, { limit: 100 });
+      if (listErr) {
+        console.error(JSON.stringify({ event: "client_id_doc_list_failed", ref, message: listErr.message }));
+        return fail("server_error", "Could not prepare the upload", origin);
+      }
+      const mine = (objects ?? []).filter((o) => /^id(copy|back)-/.test(String(o?.name ?? ""))).length;
+      if (mine >= CLIENT_UPLOAD_SLOTS) return fail("invalid_state", "too_many_uploads", origin);
+      const { data: up, error: upErr } = await sb.storage.from(ID_DOC_BUCKET).createSignedUploadUrl(path);
+      if (upErr || !up) return fail("server_error", "Could not prepare the upload", origin);
+      return ok({ path: up.path, token: up.token, maxBytes: ID_DOC_MAX_BYTES }, origin);
+    }
+
+    if (action === "id-attach") {
+      const front = body.front;
+      const back = body.back == null || body.back === "" ? null : body.back;
+      if (!validIdCopyPath(ref, front)) return fail("bad_request", "Upload the front of the ID first", origin);
+      if (back !== null && !validIdBackPath(ref, back)) return fail("bad_request", "The back of the ID was not uploaded", origin);
+      const uploaded: string[] = back === null ? [front] : [front, back];
+      const current = (r: Record<string, unknown> | null | undefined) =>
+        [r?.id_document_path, r?.id_document_back_path].filter((p): p is string => typeof p === "string" && !!p);
+      // The same call again (a retry after a lost response): the copy is there — say so, touch nothing.
+      if (row.id_document_path === front && (row.id_document_back_path ?? null) === back) {
+        return ok({
+          idDocument: { path: front, type: row.id_document_type, bytes: row.id_document_bytes, sha256: row.id_document_sha256 },
+          idDocumentBack: back ? { path: back, type: row.id_document_back_type, bytes: row.id_document_back_bytes, sha256: row.id_document_back_sha256 } : null,
+        }, origin);
+      }
+      // A refused or failed attach discards the uploads — but NEVER a file the record points at (a replayed
+      // call naming the committed paths must not remove the evidence). Re-read, so a concurrent attach counts.
+      const discard = async () => {
+        const { data: now } = await sb.from("credit_checks").select("id_document_path, id_document_back_path").eq("ref", ref).maybeSingle();
+        const keep = new Set([...current(row), ...current(now)]);
+        const doomed = uploaded.filter((p) => !keep.has(p));
+        if (!doomed.length) return;
+        const rm = await sb.storage.from(ID_DOC_BUCKET).remove(doomed);
+        if (rm.error) console.error(JSON.stringify({ event: "client_id_doc_discard_failed", ref, message: rm.error.message }));
+      };
+      const can = clientIdCopyCheck(row);
+      if (!can.ok) { await discard(); return fail("invalid_state", can.reason, origin); }
+      // Each file must really be there, within the limit, and of the type its name claims. A storage
+      // fault is ours (server_error, logged), never blamed on the file.
+      type Inspected = { ok: true; type: string; bytes: number; sha256: string } | { ok: false; storage: boolean };
+      const inspect = async (path: string): Promise<Inspected> => {
+        const { data: blob, error: dlErr } = await sb.storage.from(ID_DOC_BUCKET).download(path);
+        if (dlErr) {
+          const status = String((dlErr as { statusCode?: unknown }).statusCode ?? "");
+          const missing = status === "404" || /not found/i.test(dlErr.message ?? "");
+          if (!missing) console.error(JSON.stringify({ event: "client_id_doc_download_failed", ref, message: dlErr.message }));
+          return { ok: false, storage: !missing };
+        }
+        if (!blob) return { ok: false, storage: false };
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (bytes.length === 0 || bytes.length > ID_DOC_MAX_BYTES) return { ok: false, storage: false };
+        const type = sniffDocType(bytes);
+        if (!type || ID_DOC_TYPES[type] !== path.split(".").pop()) return { ok: false, storage: false };
+        return { ok: true, type, bytes: bytes.length, sha256: await sha256HexBytes(bytes) };
+      };
+      const badFile = (side: string) => fail("bad_request", `The ${side} of the ID is missing, empty, over 10 MB or not a readable PDF, JPG or PNG`, origin);
+      const f = await inspect(front);
+      if (!f.ok) { await discard(); return f.storage ? fail("server_error", "Could not read the upload", origin) : badFile("front"); }
+      const b = back === null ? null : await inspect(back);
+      if (b && !b.ok) { await discard(); return b.storage ? fail("server_error", "Could not read the upload", origin) : badFile("back"); }
+      const bk = b && b.ok ? b : null;
+      const { error: rpcErr } = await sb.rpc("attach_id_copy_client", {
+        p_ref: ref, p_front_path: front, p_front_type: f.type, p_front_bytes: f.bytes, p_front_sha256: f.sha256,
+        p_back_path: back, p_back_type: bk?.type ?? null, p_back_bytes: bk?.bytes ?? null, p_back_sha256: bk?.sha256 ?? null,
+      });
+      if (rpcErr) {
+        await discard();
+        const m = rpcErr.message ?? "";
+        const refused = (m.match(/id_copy_(busy|locked|present)/) ?? [])[0];
+        if (refused) return fail("invalid_state", refused, origin);
+        if (isMissingFunction(rpcErr)) {
+          // Migration 20261009 not applied yet: nothing was written. Never silent.
+          console.error(JSON.stringify({ event: "attach_id_copy_client_missing" }));
+          return fail("config_error", "Service is not configured", origin);
+        }
+        throw new Error(`server_error: ${m}`);
+      }
+      return ok({
+        idDocument: { path: front, type: f.type, bytes: f.bytes, sha256: f.sha256 },
+        idDocumentBack: bk ? { path: back, type: bk.type, bytes: bk.bytes, sha256: bk.sha256 } : null,
+      }, origin);
+    }
 
     // ======================================================================================
     if (action === "register-consent") {

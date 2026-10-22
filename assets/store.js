@@ -84,6 +84,19 @@
     return DEMO_ROLE === 'admin' || (DEMO_ROLE === 'consultant' && !!rec && rec.consultantId === DEMO_ME);
   }
 
+  /* While the application is still the client's turn they may add their own ID copy from the form —
+     once per application: any copy on the record closes the client's window. Demo copy of
+     _shared/manual.ts CLIENT_ID_COPY_FROM / clientIdCopyCheck (parity-tested). */
+  var CLIENT_ID_COPY_FROM = ['consent_confirmed', 'consent_registered', 'idv_in_progress', 'idv_passed', 'idv_failed',
+    'idv_unavailable', 'manual_required', 'idv_waived'];
+  function clientIdCopyCheck(rec) {
+    var status = String((rec && rec.status) || '');
+    if (status === 'check_in_flight') return { ok: false, reason: 'id_copy_busy' };
+    if (CLIENT_ID_COPY_FROM.indexOf(status) === -1) return { ok: false, reason: 'id_copy_locked' };
+    if (rec && rec.idDocument) return { ok: false, reason: 'id_copy_present' };
+    return { ok: true };
+  }
+
   /* Demo copy of _shared/manual.ts ATTESTATION (parity-tested). In live mode the page shows the
      wording mm-staff returns from 'config' — the text the server stores. */
   var ATTESTATION = {
@@ -146,18 +159,26 @@
   var personColumns = true;
   var ID_COLUMNS = ', id_document_path, id_document_type, id_document_bytes, id_document_sha256, id_document_uploaded_by, id_document_uploaded_at';
   var idColumns = true;
+  /* The client's own upload (migration 20261009): who attached the copy, and the back of the card. Its own
+     group, so a page pushed before that migration still reads the ID copies that are there. */
+  var ID_BACK_COLUMNS = ', id_document_source, id_document_back_path, id_document_back_type, id_document_back_bytes, id_document_back_sha256';
+  var idBackColumns = true;
   function selectChecks(columns, build) {
-    function run(withRoles, withPerson, withId) {
-      return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : '') + (withPerson ? PERSON_COLUMNS : '') + (withId ? ID_COLUMNS : '')));
+    function run(withRoles, withPerson, withId, withBack) {
+      return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : '') + (withPerson ? PERSON_COLUMNS : '')
+        + (withId ? ID_COLUMNS : '') + (withId && withBack ? ID_BACK_COLUMNS : '')));
     }
-    return run(roleColumns, personColumns, idColumns).then(function (res) {
+    return run(roleColumns, personColumns, idColumns, idBackColumns).then(function (res) {
       /* Only for OUR columns, and never once roles are confirmed: then a missing column is a
          real fault, and reading without ownership would show every record as unassigned. */
       var msg = String((res.error && res.error.message) || '');
-      if (res.error && res.error.code === '42703' && /id_document_/.test(msg) && idColumns) { idColumns = false; return run(roleColumns, personColumns, false); }
-      if (res.error && res.error.code === '42703' && /bt_person_/.test(msg) && personColumns) { personColumns = false; return run(roleColumns, false, idColumns); }
+      /* The back-of-card group is the only one named: drop it alone. A caller that raced another's
+         fallback simply retries with the flags as they now stand (the retry cannot hit this again). */
+      if (res.error && res.error.code === '42703' && /id_document_(source|back_)/.test(msg)) { idBackColumns = false; return run(roleColumns, personColumns, idColumns, false); }
+      if (res.error && res.error.code === '42703' && /id_document_(?!source|back_)/.test(msg) && idColumns) { idColumns = false; return run(roleColumns, personColumns, false, idBackColumns); }
+      if (res.error && res.error.code === '42703' && /bt_person_/.test(msg) && personColumns) { personColumns = false; return run(roleColumns, false, idColumns, idBackColumns); }
       var ours = res.error && res.error.code === '42703' && /consultant_id|assigned_at/.test(msg);
-      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false, personColumns, idColumns); }
+      if (ours && roleColumns && !rolesConfirmed) { roleColumns = false; return run(false, personColumns, idColumns, idBackColumns); }
       return res;
     });
   }
@@ -275,10 +296,16 @@
       mmConsentsSnapshot: r.mm_consents_snapshot || null,
       mmConsentsSyncedAt: ts(r.mm_consents_synced_at),
       btPersonId: r.bt_person_id || '',
-      /* the client's ID copy on the record (20 Oct 2026): required before any credit check */
+      /* the client's ID copy on the record (20 Oct 2026): required before any credit check. Attached by a
+         consultant (source 'staff') or by the client on the form (source 'client', with the back of the card
+         as a second file when they gave one). */
       idDocument: r.id_document_path ? {
         path: r.id_document_path, type: r.id_document_type, bytes: r.id_document_bytes, sha256: r.id_document_sha256,
-        uploadedBy: r.id_document_uploaded_by || null, uploadedAt: ts(r.id_document_uploaded_at)
+        uploadedBy: r.id_document_uploaded_by || null, uploadedAt: ts(r.id_document_uploaded_at),
+        source: r.id_document_source || (r.id_document_uploaded_by ? 'staff' : null)
+      } : null,
+      idDocumentBack: r.id_document_path && r.id_document_back_path ? {
+        path: r.id_document_back_path, type: r.id_document_back_type, bytes: r.id_document_back_bytes, sha256: r.id_document_back_sha256
       } : null,
       consentWithdrawnAt: ts(r.consent_withdrawn_at),
       idvAttempts: r.idv_attempts || 0,
@@ -689,6 +716,8 @@
     hasConsultantCode: !!consultantCode,
     STATUS: STATUS,
     allowedFrom: allowedFrom,
+    CLIENT_ID_COPY_FROM: CLIENT_ID_COPY_FROM,
+    clientIdCopyCheck: clientIdCopyCheck,
     manualVerifyCheck: manualVerifyCheck,
     idvLinkCheck: idvLinkCheck,
     ATTESTATION: ATTESTATION,
@@ -1064,8 +1093,9 @@
           });
       });
     },
-    /* The client's ID copy on the record (Michael, 2026-10-20): attach or replace; required before any
-       credit check. → {idDocument:{path,type,bytes,sha256,replaced}} */
+    /* The client's ID copy on the record (Michael, 2026-10-20): the consultant attaches or replaces it
+       with one file (a back the client added goes with the old front); required before any credit
+       check. → {idDocument:{path,type,bytes,sha256,replaced}} */
     attachIdCopy: function (ref, file) {
       var problem = PMStore.checkDocFile(file, 'ID copy');
       if (problem) return demoFail('bad_request', problem);
@@ -1078,9 +1108,48 @@
       if (!rec) return demoFail('bad_request', 'No such record');
       if (rec.status === 'check_in_flight') return demoFail('invalid_state', 'A credit check is running — attach the ID copy once it finishes');
       var replaced = !!rec.idDocument;
-      demoUpdate(ref, { idDocument: { path: null, type: file.type, bytes: file.size, sha256: null, uploadedBy: DEMO_ME, uploadedAt: Date.now() } },
-        replaced ? 'Client’s ID copy replaced by demo user' : 'Client’s ID copy attached by demo user');
+      demoUpdate(ref, {
+        idDocument: { path: null, type: file.type, bytes: file.size, sha256: null, uploadedBy: DEMO_ME, uploadedAt: Date.now(), source: 'staff' },
+        idDocumentBack: null
+      }, replaced ? 'Client’s ID copy replaced by demo user' : 'Client’s ID copy attached by demo user');
       return Promise.resolve({ idDocument: { path: null, type: file.type, bytes: file.size, replaced: replaced } });
+    },
+    /* The client's own ID copy from the form (Michael, 2026-10-20, late; optional): the front, and the
+       back of a smart ID card or driver's licence as a second picture. Uploaded with the client's own
+       session token right after submitting; it is the ID copy the record needs. Once per application,
+       only while it is still the client's turn (clientIdCopyCheck). → {idDocument, idDocumentBack}.
+       Throws Error{code}: bad_request (a file problem), invalid_state (id_copy_busy | id_copy_locked |
+       id_copy_present | too_many_uploads), forbidden, network. */
+    clientAttachIdCopy: function (ref, frontFile, backFile) {
+      var problem = PMStore.checkDocFile(frontFile, 'front of your ID') || (backFile ? PMStore.checkDocFile(backFile, 'back of your ID') : null);
+      if (problem) return demoFail('bad_request', problem);
+      var token = getToken(ref);
+      if (!token) return demoFail('forbidden', 'Your session has expired');
+      if (mode === 'live') {
+        var up = function (file, side) {
+          return invoke('mm-client', { action: 'id-upload-url', ref: ref, idv_token: token, side: side, contentType: file.type }).then(function (u) {
+            return sb.storage.from('id-documents').uploadToSignedUrl(u.path, u.token, file, { contentType: file.type })
+              .then(function (res) {
+                if (res.error) throw mkErr({ code: 'server_error', message: 'The upload failed — try again' });
+                return u.path;
+              });
+          });
+        };
+        return up(frontFile, 'front').then(function (front) {
+          return (backFile ? up(backFile, 'back') : Promise.resolve(null)).then(function (back) {
+            return invoke('mm-client', { action: 'id-attach', ref: ref, idv_token: token, front: front, back: back });
+          });
+        });
+      }
+      var rec = demoRecover(ref);
+      if (!rec) return demoFail('bad_request', 'No such record');
+      var can = clientIdCopyCheck(rec);
+      if (!can.ok) return demoFail('invalid_state', can.reason);
+      var front = { path: null, type: frontFile.type, bytes: frontFile.size, sha256: null, uploadedBy: null, uploadedAt: Date.now(), source: 'client' };
+      var back = backFile ? { path: null, type: backFile.type, bytes: backFile.size, sha256: null } : null;
+      demoUpdate(ref, { idDocument: front, idDocumentBack: back },
+        'Client’s ID copy attached by the client on the online form' + (back ? ' (front and back)' : ''));
+      return Promise.resolve({ idDocument: front, idDocumentBack: back });
     },
     /* Manual identity verification (the only route past failed / unavailable identity questions):
        the signed consent form is uploaded (to a path the server chose) and the consultant's two
@@ -1154,12 +1223,14 @@
         return PMStore.logAccess(ref, 'view_client_photo').then(function () { return res.data.signedUrl; });
       });
     },
-    /* The client's ID copy on the record (and an ID copy stored by a verification from before 12 Oct 2026). */
-    idDocumentUrl: function (ref, path) {
+    /* The client's ID copy on the record (and an ID copy stored by a verification from before 12 Oct 2026).
+       side 'back' logs the back of the card as such; download:true hands the file over instead of opening
+       it in the tab (used for a PDF the client supplied: not rendered straight into a staff browser). */
+    idDocumentUrl: function (ref, path, side, download) {
       if (mode !== 'live') return demoFail('invalid_state', 'No stored ID copy in demo mode');
-      return sb.storage.from('id-documents').createSignedUrl(path, 60).then(function (res) {
+      return sb.storage.from('id-documents').createSignedUrl(path, 60, download ? { download: true } : undefined).then(function (res) {
         if (res.error || !res.data) throw mkErr({ code: 'server_error', message: 'Could not open the ID copy' });
-        return PMStore.logAccess(ref, 'view_id_document').then(function () { return res.data.signedUrl; });
+        return PMStore.logAccess(ref, side === 'back' ? 'view_id_document_back' : 'view_id_document').then(function () { return res.data.signedUrl; });
       });
     },
     /* The same for a stored signed consent form (same private store, same access rule). */
@@ -1170,8 +1241,8 @@
         return PMStore.logAccess(ref, 'view_signed_consent_form').then(function () { return res.data.signedUrl; });
       });
     },
-    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document' | 'view_signed_consent_form' | 'view_client_photo'
-       | 'download_form'.
+    /* action: 'view' | 'download_pdf' | 'view_raw' | 'view_id_document' | 'view_id_document_back'
+       | 'view_signed_consent_form' | 'view_client_photo' | 'download_form'.
        Never throws — access logging must not block viewing. */
     logAccess: function (ref, action) {
       if (mode !== 'live') return Promise.resolve();

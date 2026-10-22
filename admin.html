@@ -616,7 +616,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261012-1"></script>
+<script src="assets/store.js?v=20261020-1"></script>
 <script>
 (function () {
   'use strict';
@@ -1745,19 +1745,32 @@
   function idCopySection(r) {
     var s = el('section', { className: 'dsec', 'aria-labelledby': 'secIdCopyH' });
     s.appendChild(h3('Client’s ID copy', 'secIdCopyH'));
-    var d = r.idDocument;
+    var d = r.idDocument, b = r.idDocumentBack;
     var TYPES = { 'application/pdf': 'PDF', 'image/jpeg': 'JPG', 'image/png': 'PNG' };
+    function fileDesc(f) { return (TYPES[f.type] || f.type) + ', ' + Math.max(1, Math.round(Number(f.bytes) / 1024)) + ' KB'; }
     if (d) {
-      s.appendChild(kv([
-        ['File', (TYPES[d.type] || d.type) + ', ' + Math.max(1, Math.round(Number(d.bytes) / 1024)) + ' KB'],
-        ['Attached', fmtDate(d.uploadedAt) + (d.uploadedBy ? ' by ' + consultantName(d.uploadedBy) : '')]
-      ]));
+      /* Attached by a consultant, or by the client on the online form (with the back of the card as a
+         second file when they gave one). */
+      var who = d.source === 'client' ? 'by the client, on the online form' : d.uploadedBy ? 'by ' + consultantName(d.uploadedBy) : '';
+      var rows = [[b ? 'Front' : 'File', fileDesc(d)]];
+      if (b) rows.push(['Back', fileDesc(b)]);
+      rows.push(['Attached', fmtDate(d.uploadedAt) + (who ? ' ' + who : '')]);
+      s.appendChild(kv(rows));
+      if (d.source === 'client') {
+        /* The copy counts for the credit check, but nobody has looked at it yet: say so. */
+        s.appendChild(el('p', { className: 'note', text: 'Supplied by the client on the form. Open it and check that it is a clear copy of this person’s ID before running the credit check.' }));
+      }
       var row = el('div', { className: 'dsec-actions' });
       if (d.path && PMStore.mode === 'live') {
-        row.appendChild(btn('Open ID copy', 'btn btn-ghost btn-sm', function (ev) { onOpenStoredDoc(ev, r.ref, d.path, 'id'); }, 'idCopyOpenBtn'));
+        /* A PDF the client supplied is handed over as a file rather than rendered straight into the tab. */
+        var fromClient = d.source === 'client';
+        row.appendChild(btn(b ? 'Open front' : 'Open ID copy', 'btn btn-ghost btn-sm',
+          function (ev) { onOpenStoredDoc(ev, r.ref, d.path, 'id', fromClient && d.type === 'application/pdf'); }, 'idCopyOpenBtn'));
+        if (b && b.path) row.appendChild(btn('Open back', 'btn btn-ghost btn-sm',
+          function (ev) { onOpenStoredDoc(ev, r.ref, b.path, 'idback', fromClient && b.type === 'application/pdf'); }, 'idBackOpenBtn'));
       }
       s.appendChild(row);
-      s.appendChild(el('p', { className: 'small', text: 'To replace it, choose the new file and click Replace. The old file is deleted.' }));
+      s.appendChild(el('p', { className: 'small', text: 'To replace it, choose the new file and click Replace. ' + (b ? 'The old front and back are deleted.' : 'The old file is deleted.') }));
     } else {
       s.appendChild(el('div', { className: 'callout callout-error', role: 'alert' }, [
         el('span', { className: 'callout-tag', text: 'Required' }),
@@ -1969,16 +1982,18 @@
     });
   }
 
-  function onOpenStoredDoc(e, ref, path, kind) {
+  function onOpenStoredDoc(e, ref, path, kind, download) {
     var b = e.currentTarget;
-    var name = kind === 'form' ? 'the signed MortgageMAX consent form' : kind === 'photo' ? 'the photo of the client' : 'the ID copy';
+    var name = kind === 'form' ? 'the signed MortgageMAX consent form' : kind === 'photo' ? 'the photo of the client'
+      : kind === 'idback' ? 'the back of the ID copy' : 'the ID copy';
     if (busy) return;
     busy = true;
     b.disabled = true;
     setMsg('evidenceMsg', 'Preparing a secure link…');
     safe(function () {
       return kind === 'form' ? PMStore.consentFormUrl(ref, path)
-        : kind === 'photo' ? PMStore.clientPhotoUrl(ref, path) : PMStore.idDocumentUrl(ref, path);
+        : kind === 'photo' ? PMStore.clientPhotoUrl(ref, path)
+        : PMStore.idDocumentUrl(ref, path, kind === 'idback' ? 'back' : 'front', !!download);
     }).then(function (url) {
       if (typeof url !== 'string' || !/^https:\/\//i.test(url)) throw new Error('The link was not valid');
       busy = false;
@@ -2247,7 +2262,8 @@
         logBox.appendChild(el('ul', { className: 'access-list' }, rows.slice(0, 20).map(function (x) {
           var what = x.action === 'download_pdf' ? 'Opened credit report PDF' : x.action === 'view_raw' ? 'Viewed raw data'
             : x.action === 'view_client_photo' ? 'Opened photo of the client' : x.action === 'view_signed_consent_form' ? 'Opened signed MortgageMAX consent form'
-            : x.action === 'view_id_document' ? 'Opened ID copy' : x.action === 'download_form' ? 'Downloaded the application form' : 'Viewed report';
+            : x.action === 'view_id_document' ? 'Opened ID copy' : x.action === 'view_id_document_back' ? 'Opened the back of the ID copy'
+            : x.action === 'download_form' ? 'Downloaded the application form' : 'Viewed report';
           return el('li', { text: fmtDate(x.created_at) + ' · ' + what + ' · ' + (x.name ? x.name : 'user ' + shortId(x.user_id)) });
         })));
       });

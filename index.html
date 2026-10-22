@@ -110,6 +110,13 @@
   .err-summary a { color: var(--error); font-weight: 600; }
   .err-summary ul { margin: var(--s2) 0 0; padding-left: 1.2em; }
 
+  /* --- the client's own ID copy (optional) --- */
+  .idcopy-intro { font-size: var(--fs-small); color: var(--ink-muted); margin: 0 0 var(--s3); }
+  .field input[type="file"] { display: block; width: 100%; max-width: 100%; font: 400 0.95rem var(--font-body); padding: var(--s2) 0; }
+  .doc-preview { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2); font-size: var(--fs-small); color: var(--ink-muted); }
+  .doc-preview img { max-height: 96px; max-width: 160px; border: 1px solid var(--border-input); border-radius: var(--r-s); background: var(--surface-sunken); }
+  .doc-preview .btn { flex: none; }
+
   /* --- done panel --- */
   .ref-badge {
     display: inline-block;
@@ -359,6 +366,25 @@
               </div>
             </div>
 
+            <div class="field" id="idCopyBlock">
+              <span id="idCopyLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">A copy of your ID <span style="font-weight:400;color:var(--ink-muted)">(optional)</span></span>
+              <p class="idcopy-intro" id="idCopyIntro">If you have your ID document or driver&rsquo;s licence at hand, add a clear photo or scan of it now &mdash; on a phone you can take the photo here. Your consultant needs a copy before the credit check and will otherwise ask you for it. JPG, PNG or PDF, up to 10&nbsp;MB each.</p>
+              <div class="grid-2">
+                <div class="field">
+                  <label for="idFront">Front of your ID</label>
+                  <input id="idFront" name="idFront" type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" aria-describedby="idCopyIntro">
+                  <span class="err" id="idFront-err"></span>
+                  <div class="doc-preview" id="idFront-preview" hidden></div>
+                </div>
+                <div class="field">
+                  <label for="idBack">Back of your ID <span class="hint">Smart ID card or driver&rsquo;s licence only</span></label>
+                  <input id="idBack" name="idBack" type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" aria-describedby="idCopyIntro">
+                  <span class="err" id="idBack-err"></span>
+                  <div class="doc-preview" id="idBack-preview" hidden></div>
+                </div>
+              </div>
+            </div>
+
             <div class="grid-2">
               <div class="field">
                 <label for="email">Email address <span class="req" aria-hidden="true">*</span></label>
@@ -495,6 +521,7 @@
                 <li>Pro Mortgages SA (Pro Mortgage (Pty) Ltd, registration number 2022/366749/07, Wildersview Estate, 4 Damaskus Road, Protea Hoogte, Brackenfell) is collecting the information on this form. Contact us on 083&nbsp;399&nbsp;2096.</li>
                 <li>Pro Mortgages SA is a MortgageMAX licensee. MortgageMAX, a division of BetterLife Origination Services (Pty) Ltd, obtains your credit report from Experian on your behalf.</li>
                 <li>We use your information only to pre-qualify you for a home loan and to originate your home loan.</li>
+                <li>If you add a copy of your identity document, we keep it with your application as proof of your identity for the credit check, as the credit bureau requires.</li>
                 <li>Your information is stored on secure cloud infrastructure, which may be located outside South Africa.</li>
                 <li>You may ask us at any time for access to your information, or to correct or delete it.</li>
                 <li>Giving consent is voluntary, but we cannot check your credit or pre-qualify you without it.</li>
@@ -575,6 +602,7 @@
         <p class="lede">Your details are with Pro Mortgage. Your reference number is:</p>
         <p class="ref-badge" id="doneRef"></p>
         <p id="doneMsg">Your consultant will request your credit report and contact you with the outcome.</p>
+        <p id="doneIdNote" hidden></p>
         <p>Please quote your reference number in any queries. You can close this page.</p>
       </section>
 
@@ -586,7 +614,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261012-1"></script>
+<script src="assets/store.js?v=20261020-1"></script>
 <script>
 (function () {
   'use strict';
@@ -670,6 +698,179 @@
       derivedBox.hidden = true;
     }
   });
+
+  /* --- the client's own ID copy (optional; Michael, 2026-10-20) ---
+     A phone's camera photo is large (3-8 MB): images are shrunk in the browser to at most 1800 px on
+     the long edge and re-encoded as JPEG before upload - smaller on mobile data, and the re-encoding
+     leaves the camera's metadata (location, device) behind; only when a browser cannot decode the image
+     is the original sent as it is. PDFs pass through. The chosen files live here, not in the inputs: the
+     input is reset after every choice, so a browser that restores file inputs on reload, or cannot clear
+     one, never blocks the form, and the shrunk copy stands in for the original. */
+  var ID_FILE_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+  var ID_MAX_BYTES = 10 * 1024 * 1024;
+  var ID_MAX_EDGE = 1800;
+  var SHRINK_TIMEOUT_MS = 15000;
+  var ID_UPLOAD_TIMEOUT_MS = 90000;
+  var BACK_NEEDS_FRONT = 'Add the front of your ID as well, or remove the back.';
+  var idFiles = { idFront: null, idBack: null };
+  var idPending = { idFront: false, idBack: false };
+  var idSeq = { idFront: 0, idBack: 0 };
+  var idPreviewUrls = {};
+  var idCopyOutcome = null; /* 'saved' | 'failed' | 'unknown' | null (no copy offered) */
+  function withTimeout(promise, ms, what) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = setTimeout(function () { if (!settled) { settled = true; reject(new Error(what + ' timed out')); } }, ms);
+      Promise.resolve(promise).then(function (v) { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+        function (e) { if (!settled) { settled = true; clearTimeout(timer); reject(e); } });
+    });
+  }
+  /* The file's real type from its first bytes (the declared type is only what the picker says). */
+  function magicType(file) {
+    return file.slice(0, 8).arrayBuffer().then(function (buf) {
+      var b = new Uint8Array(buf);
+      if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+      if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+      if (b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d) return 'application/pdf';
+      return null;
+    }).catch(function () { return null; });
+  }
+  function loadImage(file) {
+    if (typeof createImageBitmap === 'function') {
+      return createImageBitmap(file, { imageOrientation: 'from-image' })
+        .catch(function () { return createImageBitmap(file); }); /* an older browser without the option */
+    }
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('not an image')); };
+      img.src = url;
+    });
+  }
+  /* → a JPEG at most ID_MAX_EDGE px on the long edge. Rejects when the image cannot be decoded. */
+  function shrinkImage(file) {
+    return loadImage(file).then(function (img) {
+      var w = img.width, h = img.height;
+      if (!w || !h) throw new Error('empty image');
+      var scale = Math.min(1, ID_MAX_EDGE / Math.max(w, h));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      var ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('no canvas');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      if (typeof img.close === 'function') img.close();
+      return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (blob) {
+          if (!blob) return reject(new Error('encode failed'));
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+      });
+    });
+  }
+  /* → the file to upload, or null when it is not a readable image / PDF. A shrink that fails or
+     stalls falls back to the original, provided its bytes really are an image. */
+  function prepareIdFile(file) {
+    if (file.type === 'application/pdf') {
+      return magicType(file).then(function (m) { return m === 'application/pdf' ? file : null; });
+    }
+    return withTimeout(shrinkImage(file), SHRINK_TIMEOUT_MS, 'preparing the image').catch(function () {
+      return magicType(file).then(function (m) { return m === 'image/jpeg' || m === 'image/png' ? file : null; });
+    });
+  }
+  function setIdPreview(id, file) {
+    var box = document.getElementById(id + '-preview');
+    if (idPreviewUrls[id]) { URL.revokeObjectURL(idPreviewUrls[id]); delete idPreviewUrls[id]; }
+    box.textContent = '';
+    if (!file) { box.hidden = true; return; }
+    if (/^image\//.test(file.type)) {
+      var url = URL.createObjectURL(file);
+      idPreviewUrls[id] = url;
+      var img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      box.appendChild(img);
+    }
+    var txt = document.createElement('span');
+    txt.textContent = (file.type === 'application/pdf' ? 'PDF' : 'Photo') + ', ' + Math.max(1, Math.round(file.size / 1024)) + ' KB';
+    box.appendChild(txt);
+    var rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn btn-ghost btn-sm';
+    rm.textContent = 'Remove';
+    rm.addEventListener('click', function () { clearIdFile(id); });
+    box.appendChild(rm);
+    box.hidden = false;
+  }
+  function resetIdInput(id) {
+    try { document.getElementById(id).value = ''; } catch (e) { /* a browser that cannot clear a file input */ }
+  }
+  /* Every way out of a choice goes through here: a Remove, a rejected file, an empty picker. The
+     sequence bump makes any shrink still running stale. */
+  function clearIdFile(id, errText) {
+    idFiles[id] = null;
+    idPending[id] = false;
+    idSeq[id] += 1;
+    resetIdInput(id);
+    setIdPreview(id, null);
+    setErr(id, errText || '');
+    if (id === 'idBack' && document.getElementById('idFront-err').textContent === BACK_NEEDS_FRONT) setErr('idFront', '');
+  }
+  ['idFront', 'idBack'].forEach(function (id) {
+    var input = document.getElementById(id);
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      if (!file) { clearIdFile(id); return; }
+      var what = id === 'idFront' ? 'front of your ID' : 'back of your ID';
+      if (ID_FILE_TYPES.indexOf(file.type) === -1) return clearIdFile(id, 'Use a JPG, PNG or PDF file for the ' + what + '.');
+      if (!file.size) return clearIdFile(id, 'That file is empty. Choose another one.');
+      idFiles[id] = null;
+      setIdPreview(id, null);
+      setErr(id, '');
+      resetIdInput(id); /* the File object stays readable; the input itself holds nothing from here on */
+      var seq = ++idSeq[id];
+      idPending[id] = true;
+      prepareIdFile(file).then(function (out) {
+        if (idSeq[id] !== seq) return; /* a newer choice, or Remove, won */
+        idPending[id] = false;
+        if (!out) return clearIdFile(id, 'We couldn’t read that file. Try another photo, or a PDF.');
+        if (out.size > ID_MAX_BYTES) return clearIdFile(id, 'This file is larger than 10 MB. Choose a smaller one.');
+        idFiles[id] = out;
+        setIdPreview(id, out);
+      }, function () {
+        if (idSeq[id] !== seq) return;
+        idPending[id] = false;
+        clearIdFile(id, 'We couldn’t read that file. Try another photo, or a PDF.');
+      });
+    });
+  });
+  /* After the application is accepted: send the copy with the client's own session. Never a dead end
+     and never a rejection - the consultant can attach a copy later, and the done page says what
+     happened. A stalled upload is given 90 seconds, then the consent step goes ahead without it. */
+  function uploadIdCopy(chosen) {
+    if (!chosen || !chosen.front) return Promise.resolve();
+    return new Promise(function (resolve) {
+      try {
+        setWork('Step 2 · Your ID copy', 'Saving the copy of your ID', 'Uploading the copy of your ID…');
+        showPanel(workPanel);
+        withTimeout(PMStore.clientAttachIdCopy(currentRef, chosen.front, chosen.back), ID_UPLOAD_TIMEOUT_MS, 'the upload').then(function () {
+          idCopyOutcome = 'saved';
+        }, function (err) {
+          /* A lost response or a stalled connection: the copy may well be there - say so, not "failed". */
+          var code = err && err.code;
+          idCopyOutcome = code === 'network' || /timed out/.test(String(err && err.message)) ? 'unknown' : 'failed';
+          console.error('id copy upload failed:', code || 'unknown', err && err.message);
+        }).then(resolve, resolve);
+      } catch (e) {
+        idCopyOutcome = 'failed';
+        console.error('id copy upload failed:', e && e.message);
+        resolve();
+      }
+    });
+  }
 
   /* --- currency formatting on blur --- */
   function parseAmount(v) { return Number(String(v).replace(/[^\d]/g, '')) || 0; }
@@ -846,6 +1047,11 @@
     check('maritalStatus', v('maritalStatus') !== '', 'Select your marital status.');
     check('grossIncome', parseAmount(v('grossIncome')) > 0, 'Enter your gross monthly income.');
     check('monthlyExpenses', parseAmount(v('monthlyExpenses')) > 0, 'Enter your total monthly expenses.');
+    /* The ID copy is optional: a rejected file has already been dropped from its input. Only a file
+       still being prepared, or a back without its front, holds the form. */
+    check('idBack', !idPending.idBack, 'Your photo of the back is still being prepared - try again in a moment.');
+    check('idFront', !idPending.idFront, 'Your ID photo is still being prepared - try again in a moment.');
+    if (!idPending.idFront && !idPending.idBack) check('idFront', !(idFiles.idBack && !idFiles.idFront), BACK_NEEDS_FRONT);
     check('consent', document.getElementById('consent').checked, 'Please accept the notice and the consent to continue.');
     return problems;
   }
@@ -877,6 +1083,8 @@
 
     var v = function (id) { return document.getElementById(id).value.trim(); };
     var kind = idType();
+    /* What goes up is what was on screen at Submit; a change during the round trip does not count. */
+    var chosenIdFiles = { front: idFiles.idFront, back: idFiles.idBack };
     submitting = true;
     syncSubmit();
     PMStore.submit({
@@ -902,8 +1110,13 @@
       /* No SMS code (2026-10-12): the application is accepted with its consent, and the identity
          questions that follow are what verify the person. */
       currentRef = res.ref;
-      startPostConsent();
+      /* From here the application is accepted: nothing below may fall into the submit error handler
+         (which would invite a second submission). */
+      uploadIdCopy(chosenIdFiles).then(function () {
+        try { startPostConsent(); } catch (e) { showDone(doneForError(e)); }
+      });
     }).catch(function (err) {
+      if (currentRef) { console.error('after submit:', err && err.message); return; }
       var m = String((err && err.message) || '');
       errSummary.hidden = false;
       /* Server-side checks (hardening migration) — static copy only, never the raw message. */
@@ -961,6 +1174,11 @@
     stopIdvTimer();
     document.getElementById('doneRef').textContent = currentRef || '';
     document.getElementById('doneMsg').textContent = msg;
+    var note = document.getElementById('doneIdNote');
+    note.textContent = idCopyOutcome === 'saved' ? 'The copy of your ID was saved with your application.'
+      : idCopyOutcome === 'failed' ? 'We couldn\u2019t save the copy of your ID. Your consultant will ask you for it.'
+      : idCopyOutcome === 'unknown' ? 'We couldn\u2019t confirm that the copy of your ID was saved. Your consultant will check, and ask you for it if needed.' : '';
+    note.hidden = !note.textContent;
     showPanel(donePanel);
   }
   /* Client-safe copy for a failed post-consent step. Codes go to the console only. */

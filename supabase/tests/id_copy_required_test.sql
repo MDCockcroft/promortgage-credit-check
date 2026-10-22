@@ -6,7 +6,7 @@ insert into credit_checks (ref, status, first_names, surname, id_type, email, ce
 do $$
 declare
   u constant uuid := '00000000-0000-0000-0000-0000000000c3';
-  prev text; n int; r record;
+  prev text[]; n int; r record;
 begin
   -- 1. No credit check without the ID copy: the database refuses the claim itself.
   begin
@@ -19,14 +19,14 @@ begin
 
   -- 2. Attach: first time returns null (nothing to delete) and audits; a replace returns the previous path.
   prev := attach_id_copy('PM-ID1', u, 'tester', 'PM-ID1/idcopy-a.pdf', 'application/pdf', 100, 'aaa');
-  if prev is not null then raise exception 'T19 FAIL: first attach returned %', prev; end if;
+  if prev <> '{}'::text[] then raise exception 'T19 FAIL: first attach returned %', prev; end if;
   select * into r from credit_checks where ref = 'PM-ID1';
   if r.id_document_path <> 'PM-ID1/idcopy-a.pdf' or r.id_document_uploaded_by <> u or r.id_document_uploaded_at is null
      or (r.audit -> -1 ->> 'event') not like 'Client''s ID copy attached by tester%' then
     raise exception 'T19 FAIL: attach did not record the copy: %', row_to_json(r);
   end if;
   prev := attach_id_copy('PM-ID1', u, 'tester', 'PM-ID1/idcopy-b.jpg', 'image/jpeg', 200, 'bbb');
-  if prev <> 'PM-ID1/idcopy-a.pdf' then raise exception 'T19 FAIL: replace returned %', prev; end if;
+  if prev <> array['PM-ID1/idcopy-a.pdf'] then raise exception 'T19 FAIL: replace returned %', prev; end if;
   if (select audit -> -1 ->> 'event' from credit_checks where ref = 'PM-ID1') not like 'Client''s ID copy replaced by%' then
     raise exception 'T19 FAIL: replace not audited';
   end if;

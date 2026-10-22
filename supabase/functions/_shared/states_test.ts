@@ -12,7 +12,7 @@ import {
   STALE_IN_FLIGHT_MS,
   staleState,
 } from "./states.ts";
-import { ATTESTATION, CONSENT_FORM, IDENTITY_CONFIRMATION, manualVerifyCheck } from "./manual.ts";
+import { ATTESTATION, CLIENT_ID_COPY_FROM, clientIdCopyCheck, CONSENT_FORM, IDENTITY_CONFIRMATION, manualVerifyCheck } from "./manual.ts";
 import { validLinkCode } from "./access.ts";
 
 function loadStore() {
@@ -27,6 +27,8 @@ function loadStore() {
     CONSENT_FORM: { version: string; href: string };
     IDENTITY_CONFIRMATION: { version: string; text: string };
     manualVerifyCheck: (rec: Record<string, unknown>) => { ok: boolean; reason?: string };
+    CLIENT_ID_COPY_FROM: string[];
+    clientIdCopyCheck: (rec: Record<string, unknown>) => { ok: boolean; reason?: string };
     idvLinkCheck: (rec: Record<string, unknown>, mode: string) => { ok: boolean; reason?: string };
     MAX_IDV_ROUNDS: number;
     validLinkCode: (v: unknown) => boolean;
@@ -117,6 +119,19 @@ Deno.test("store.js attestation wording and manual-verification rule === server 
           assertEquals(browser, server, `${status}/${idType}/${registered}/${withdrawn}`);
         }
       }
+    }
+  }
+});
+
+Deno.test("store.js client ID-copy window === server (manual.ts)", () => {
+  // Michael, 2026-10-20 (late): the client may add their ID on the form while it is still their turn.
+  const store = loadStore();
+  assertEquals(store.CLIENT_ID_COPY_FROM, [...CLIENT_ID_COPY_FROM]);
+  for (const status of [...ALL_STATUSES, "check_in_flight"]) {
+    for (const source of [null, "client", "staff"]) {
+      const server = clientIdCopyCheck({ status, id_document_path: source ? "PM-X/idcopy-a.jpg" : null, id_document_source: source });
+      const browser = store.clientIdCopyCheck({ status, idDocument: source ? { source, path: null } : null });
+      assertEquals(browser, server, `${status}/${source}`);
     }
   }
 });

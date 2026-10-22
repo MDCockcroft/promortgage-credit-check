@@ -1,7 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
-  ATTESTATION, CONSENT_FORM, consentFormPath, idCopyPath, IDENTITY_CONFIRMATION, manualVerifyCheck,
-  sha256HexBytes, sniffDocType, validConsentFormPath, validIdCopyPath,
+  ATTESTATION, CLIENT_ID_COPY_FROM, clientIdCopyCheck, CONSENT_FORM, consentFormPath, idBackPath, idCopyPath,
+  IDENTITY_CONFIRMATION, manualVerifyCheck, sha256HexBytes, sniffDocType, validConsentFormPath, validIdBackPath,
+  validIdCopyPath,
 } from "./manual.ts";
 
 const said = (extra: Record<string, unknown>) => ({ id_type: "said", consent_registered_at: "2026-09-28T10:00:00Z", ...extra });
@@ -43,6 +44,35 @@ Deno.test("the client's ID copy: server-chosen path on the record, bound to the 
   assertEquals(validIdCopyPath("PM-ABC123", "PM-ABC123/photo-1b4e28ba-2fa1-11d2-883f-0016d3cca427.jpg"), false);
   assertEquals(validIdCopyPath("PM-ABC123", "PM-ABC123/consent-1b4e28ba-2fa1-11d2-883f-0016d3cca427.pdf"), false);
   assertEquals(validIdCopyPath("PM-ABC123", 42), false);
+});
+
+Deno.test("the client's own ID copy: the back has its own path; only while it is the client's turn, never over a consultant's", () => {
+  // Michael, 2026-10-20 (late): the client may add their ID on the form — front, and the back as a second picture.
+  const back = idBackPath("PM-ABC123", "image/jpeg")!;
+  const front = idCopyPath("PM-ABC123", "image/jpeg")!;
+  assertEquals(validIdBackPath("PM-ABC123", back), true);
+  assertEquals(validIdBackPath("PM-OTHER1", back), false);
+  // A back can never stand in for the front the credit-check gate looks for, nor the other way round.
+  assertEquals(validIdCopyPath("PM-ABC123", back), false);
+  assertEquals(validIdBackPath("PM-ABC123", front), false);
+  assertEquals(idBackPath("PM-ABC123", "image/gif"), null);
+  assertEquals(validIdBackPath("PM-ABC123", "PM-ABC123/idback-not-a-uuid.jpg"), false);
+  assertEquals(validIdBackPath("PM-ABC123", "PM-ABC123/../PM-X/idback-1b4e28ba-2fa1-11d2-883f-0016d3cca427.jpg"), false);
+  assertEquals(validIdBackPath("PM-ABC123", undefined), false);
+  for (const st of CLIENT_ID_COPY_FROM) assertEquals(clientIdCopyCheck({ status: st }).ok, true, st);
+  assertEquals(clientIdCopyCheck({ status: "check_in_flight" }), { ok: false, reason: "id_copy_busy" });
+  for (const st of ["manual_verified", "report_ready", "check_failed", "consent_withdrawn", "expired", "config_error", "report_requested"]) {
+    assertEquals(clientIdCopyCheck({ status: st }), { ok: false, reason: "id_copy_locked" }, st);
+  }
+  // One attach per application: any copy on the record, whoever attached it, closes the client's window.
+  assertEquals(clientIdCopyCheck({ status: "idv_passed", id_document_path: "PM-X/idcopy-a.jpg", id_document_source: "staff" }), { ok: false, reason: "id_copy_present" });
+  assertEquals(clientIdCopyCheck({ status: "idv_passed", id_document_path: "PM-X/idcopy-a.jpg", id_document_source: "client" }), { ok: false, reason: "id_copy_present" });
+  assertEquals(clientIdCopyCheck({ status: "idv_passed", id_document_path: null, id_document_source: null }).ok, true);
+  // A declared type is looked up as an own key only — never an inherited one.
+  for (const bad of ["constructor", "__proto__", "toString", "hasOwnProperty", ""]) {
+    assertEquals(idCopyPath("PM-ABC123", bad), null, bad);
+    assertEquals(idBackPath("PM-ABC123", bad), null, bad);
+  }
 });
 
 Deno.test("signed consent form: its own path, never interchangeable with the ID copy", () => {

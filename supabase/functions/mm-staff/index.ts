@@ -612,13 +612,16 @@ Deno.serve(async (req) => {
 
     // ======================================================================================
     if (action === "attach-id-copy") {
-      // Michael, 2026-10-20: a copy of the client's ID document is attached to EVERY record, by the
-      // consultant, and no credit check runs without it. Replacing it is allowed (the old file goes);
-      // not while a check is running. Opening it later is logged (view_id_document).
+      // Michael, 2026-10-20: a copy of the client's ID document is attached to EVERY record, and no credit
+      // check runs without it. The client may have added it on the form (front and back — mm-client);
+      // the consultant attaches or replaces it here with one file (the old front and back go); not while
+      // a check is running. Opening it later is logged (view_id_document).
       if (!validIdCopyPath(ref, body.path)) return fail("bad_request", "Upload the ID copy first", origin);
       if (row.status === "check_in_flight") return fail("invalid_state", "A credit check is running — attach the ID copy once it finishes", origin);
       const idPath = body.path;
       const discardNew = async () => {
+        // Never the file the record points at: a replayed call naming the committed path must not remove it.
+        if (idPath === row.id_document_path || idPath === row.id_document_back_path) return;
         const rm = await sb.storage.from(ID_DOC_BUCKET).remove([idPath]);
         if (rm.error) console.error(JSON.stringify({ event: "id_doc_discard_failed", ref, message: rm.error.message }));
       };
@@ -637,12 +640,16 @@ Deno.serve(async (req) => {
         if (/id_copy_busy/.test(rpcErr.message)) return fail("invalid_state", "A credit check is running — attach the ID copy once it finishes", origin);
         throw new Error(`server_error: ${rpcErr.message}`);
       }
-      if (typeof previous === "string" && previous && previous !== idPath) {
-        // The replaced file: gone from storage; the record now points at the new one.
-        const rm = await sb.storage.from(ID_DOC_BUCKET).remove([previous]);
+      // The replaced files — the old front, and the back the client may have added (migration 20261009
+      // returns both; before it, the one path as a string): gone from storage; the record now points at
+      // the new file alone.
+      const gone = (Array.isArray(previous) ? previous : typeof previous === "string" && previous ? [previous] : [])
+        .filter((p): p is string => typeof p === "string" && !!p && p !== idPath);
+      if (gone.length) {
+        const rm = await sb.storage.from(ID_DOC_BUCKET).remove(gone);
         if (rm.error) console.error(JSON.stringify({ event: "id_doc_replace_cleanup_failed", ref, message: rm.error.message }));
       }
-      return ok({ idDocument: { path: idPath, type, bytes: bytes.length, sha256: sha, replaced: !!previous } }, origin);
+      return ok({ idDocument: { path: idPath, type, bytes: bytes.length, sha256: sha, replaced: gone.length > 0 } }, origin);
     }
 
     // ======================================================================================

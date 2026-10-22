@@ -3,8 +3,9 @@
 // form plus the consultant's confirmations: the Experian attestation (verbatim) and the identity
 // confirmation (Michael, 2026-10-20 — it replaced the photo of the client of 2026-10-12). The client's
 // ID COPY is no longer part of the override: since 2026-10-20 it is attached to EVERY record and no
-// credit check runs without it (page, function and database all refuse). Shared by mm-staff and
-// checked for parity against assets/store.js.
+// credit check runs without it (page, function and database all refuse). The client may add it
+// themselves on the form (front and back, 2026-10-20 late) — mm-client — or the consultant attaches
+// it — mm-staff. Shared by both and checked for parity against assets/store.js.
 
 /**
  * The consultant's statement, VERBATIM from MortgageMAX (Bennie Vermeulen, 2026-09-28) — Experian
@@ -59,9 +60,14 @@ export function manualVerifyCheck(row: Record<string, unknown>): { ok: true } | 
   return { ok: false, reason: `status_${status}` };
 }
 
+/** The declared type's extension — an own key only (a type named "constructor" is not a type). */
+function extFor(contentType: string): string | null {
+  return Object.prototype.hasOwnProperty.call(ID_DOC_TYPES, contentType) ? ID_DOC_TYPES[contentType] : null;
+}
+
 /** Server-chosen object path for the client's ID copy on a record; the browser never names it. */
 export function idCopyPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
-  const ext = ID_DOC_TYPES[contentType];
+  const ext = extFor(contentType);
   return ext ? `${ref}/idcopy-${id}.${ext}` : null;
 }
 
@@ -72,11 +78,48 @@ export function validIdCopyPath(ref: string, path: unknown): path is string {
 }
 
 /**
+ * The BACK of a smart ID card or driver's licence, when the client adds their ID on the form
+ * (Michael, 2026-10-20: two separate pictures). Its own name, so a back can never be passed off as
+ * the front that the credit-check gate looks for.
+ */
+export function idBackPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
+  const ext = extFor(contentType);
+  return ext ? `${ref}/idback-${id}.${ext}` : null;
+}
+
+/** The path must be one idBackPath() could have issued for THIS ref. */
+export function validIdBackPath(ref: string, path: unknown): path is string {
+  if (typeof path !== "string" || !path.startsWith(`${ref}/`)) return false;
+  return /^idback-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png)$/.test(path.slice(ref.length + 1));
+}
+
+/**
+ * While the application is still the client's turn they may add their own ID copy: from the form,
+ * right after submitting, through to the identity questions' outcome. ONE attach per application:
+ * once any copy is on the record (theirs or a consultant's) the client can no longer change it, so
+ * what a consultant opened and checked cannot be swapped under them. After a manual verification, a
+ * check or a withdrawal the copy is the staff's business. Mirrors attach_id_copy_client (migration
+ * 20261009); the page's demo mode copies it (parity-tested).
+ */
+export const CLIENT_ID_COPY_FROM = [
+  "consent_confirmed", "consent_registered", "idv_in_progress", "idv_passed", "idv_failed", "idv_unavailable",
+  "manual_required", "idv_waived",
+] as const;
+
+export function clientIdCopyCheck(row: Record<string, unknown>): { ok: true } | { ok: false; reason: string } {
+  const status = String(row.status ?? "");
+  if (status === "check_in_flight") return { ok: false, reason: "id_copy_busy" };
+  if (!(CLIENT_ID_COPY_FROM as readonly string[]).includes(status)) return { ok: false, reason: "id_copy_locked" };
+  if (row.id_document_path) return { ok: false, reason: "id_copy_present" };
+  return { ok: true };
+}
+
+/**
  * The signed consent form lives in the same folder under its own name, so an upload made as one
  * kind can never be passed off as the other.
  */
 export function consentFormPath(ref: string, contentType: string, id: string = crypto.randomUUID()): string | null {
-  const ext = ID_DOC_TYPES[contentType];
+  const ext = extFor(contentType);
   return ext ? `${ref}/consent-${id}.${ext}` : null;
 }
 
