@@ -11,7 +11,7 @@ const vr = (http: number, data: unknown, kind = "json"): VendorResult => ({
 });
 function cfg(people: MmConfig["people"] = refs): MmConfig {
   return { creditBaseUrl: "https://x/credit", consentBaseUrl: "https://x/consent", peopleBaseUrl: "https://x/PeopleManagement/v2",
-    subscriptionKey: "k", apiClientId: "c", env: "uat", people, peopleScope: "api://People/.default" };
+    subscriptionKey: "k", apiClientId: "c", env: "uat", people, peopleScope: "api://PeopleManagementAPI/.default" };
 }
 type Step = { m: string; path: RegExp; status: number; body: unknown; text?: boolean; bodyCheck?: (b: unknown) => void };
 function fakeFetch(script: Step[]) {
@@ -29,7 +29,7 @@ function fakeFetch(script: Step[]) {
   return { f, calls };
 }
 const ctx = (f: typeof fetch, c = cfg()) => ({ cfg: c, fetchImpl: f, log: async () => {} });
-const FIND = /\/People\/IdentityNumber\?IdentityNumber=7805230055084&IdentityDocumentTypeId=1$/;
+const FIND = /\/People\/IdentityNumber\?IdentityNumber=7805230055084$/; // by the number alone — never the document type
 const CREATE = /\/People$/;
 
 Deno.test("peopleRefs: a base URL without the three reference ids is a config error on the People path", () => {
@@ -124,6 +124,6 @@ Deno.test("configFromEnv: a half-set or odd People configuration never throws; w
   assertEquals(half.peopleBaseUrl, "https://x/PeopleManagement/v2");
   assertEquals(half.people?.sourceSystemTypeId, undefined);
   assertEquals(half.people?.identityDocumentTypeId, 3);
-  assertEquals(half.peopleScope, "api://People/.default");
+  assertEquals(half.peopleScope, "api://PeopleManagementAPI/.default");
   assertThrows(() => peopleRefs(half), Error, "MMAX_PEOPLE_SOURCE_SYSTEM_ID");
 });

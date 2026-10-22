@@ -70,7 +70,7 @@ export function configFromEnv(get: (k: string) => string | undefined = (k) => De
     creditBaseUrl: need("MMAX_CREDIT_BASE_URL").replace(/\/+$/, ""),
     consentBaseUrl: need("MMAX_CONSENT_BASE_URL").replace(/\/+$/, ""),
     peopleBaseUrl,
-    peopleScope: peopleBaseUrl ? ((get("MMAX_PEOPLE_SCOPE") ?? "").trim() || "api://People/.default") : undefined,
+    peopleScope: peopleBaseUrl ? ((get("MMAX_PEOPLE_SCOPE") ?? "").trim() || "api://PeopleManagementAPI/.default") : undefined,
     people,
     subscriptionKey: need("MMAX_SUBSCRIPTION_KEY"),
     apiClientId: need("MMAX_API_CLIENT_ID"),
@@ -288,9 +288,9 @@ const SCOPES: Record<Exclude<Api, "people">, string> = {
   credit: "api://CreditCheckManagement/.default",
   consent: "api://ConsentManagement/.default",
 };
-/** The People API's audience is configuration (MMAX_PEOPLE_SCOPE) until MortgageMAX names it. */
+/** The People API's audience (Louis Pires, 2026-10-22); MMAX_PEOPLE_SCOPE overrides it if it ever changes. */
 function scopeFor(cfg: MmConfig, api: Api): string {
-  if (api === "people") return cfg.peopleScope || "api://People/.default";
+  if (api === "people") return cfg.peopleScope || "api://PeopleManagementAPI/.default";
   return SCOPES[api];
 }
 const tokenCache = new Map<Api, { token: string; expiresAt: number }>();

@@ -113,12 +113,16 @@ export interface PeopleCtx {
 
 /**
  * Find the person by ID number, else create them. The ID number never goes into a logged path.
+ * The lookup is by the NUMBER ALONE (the document-type filter is optional in the spec and UAT answers
+ * without it, 22 Oct): a green ID book and a smart ID card carry the same 13-digit number, and a person
+ * another MortgageMAX system created under the other type must still be found, not duplicated. The
+ * type is used only when WE create the person.
  * 409 on the lookup = duplicate persons at the vendor; 409 on the create = someone made the person in
  * between (one re-read); 400 on the create = retried once without the contacts, then a person decides.
  */
 export async function resolvePersonId(ctx: PeopleCtx, row: Record<string, unknown>, idNumber: string): Promise<ResolveOutcome> {
   const refs = peopleRefs(ctx.cfg);
-  const query: Record<string, string> = { IdentityNumber: idNumber, IdentityDocumentTypeId: String(refs.identityDocumentTypeId) };
+  const query: Record<string, string> = { IdentityNumber: idNumber };
   const find = async (): Promise<VendorResult> => {
     const r = await callVendor(ctx.cfg, "people", "GET", "/People/IdentityNumber", { query, timeoutMs: 20_000, fetchImpl: ctx.fetchImpl });
     await ctx.log("GET", "/People/IdentityNumber", r);
