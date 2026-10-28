@@ -28,16 +28,18 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 
 ## 0. Before the day — all must be true
 
-- [ ] **MortgageMAX:** written acceptance of our UAT testing (Addendum clause 4) and the production
-      details: credit and consent base URLs, and a production subscription key. The Entra app
-      registration is shared with UAT (tenant, client ID and client secret unchanged): confirm.
+- [x] **MortgageMAX:** production details received 28 Oct (Louis via Bennie): gateway
+      `master-prod-za-apimanagement.azure-api.net`, Credit `/CreditManagement/v1`, Consent `/ConsentManagement/v3`,
+      People `/people/v2`, subscription key by one-time link; Entra unchanged (confirmed: the UAT token works on
+      production). §2 run the same day: PASS. Written UAT acceptance: the production access itself (Bennie forwarded
+      it after the 20 Oct demo and the 22 Oct People run).
 - [ ] **Legal:** Liz's placeholders in the form's notice filled in; the adviser's review done; the
       Operator Agreement signed; a decision on backing up the stored evidence files (photos of
       clients, signed consent forms — Supabase backups do not cover stored files).
 - [x] **MortgageMAX People domain** (row 6i): done in UAT 22 Oct (scope, ids, secrets, migration `20261007`,
-      Good2 run PM-CAA25E with the consent against the person record). **Still for production:** the production
-      `SourceSystemType` id from Louis (UAT uses 1 = "Test") in `MMAX_PEOPLE_SOURCE_SYSTEM_ID`, and the production
-      People base URL in `MMAX_PEOPLE_BASE_URL`.
+      Good2 run PM-CAA25E with the consent against the person record). Production (28 Oct, read-only lookups):
+      `SourceSystemType` 16 = "ProMortgage", base URL `/people/v2`; the other ids identical to UAT — all in
+      `supabase/.env.mmax.prod`.
 - [ ] **ID copies:** every record that will be checked has the client's ID copy attached (row 6j: the
       database refuses a check without it). Clients can add it on the form, front and back (row 6k);
       otherwise the consultant attaches it.
@@ -52,8 +54,8 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 
 | # | Who | Do | Worked when |
 |---|---|---|---|
-| 2.1 | Michael | Create `supabase/.env.mmax.prod` (git-ignored) as a copy of `supabase/.env.mmax`, then change: `MMAX_SUBSCRIPTION_KEY`, `MMAX_CREDIT_BASE_URL`, `MMAX_CONSENT_BASE_URL` (production values), `MMAX_ENV=prod`. **Keep `MM_MODE=mock`.** | The file holds the full intended live state, except `MM_MODE` |
-| 2.2 | Claude | Run the private smoke test against it: client folder `tools/prod-smoke.ts` (read-only `GET /ConsentTypes`; its first two lines print the mode switches) | `HTTP 200`, and `PASS: every MM_CONSENT_TYPES id is an active consent type here` |
+| 2.1 | Michael | ~~Create `supabase/.env.mmax.prod`~~ **Done 28 Oct:** the file holds the production key, the three production base URLs (credit, consent, people), `MMAX_ENV=prod`, the People ids (source system 16) and `MM_MODE=mock`. | The file holds the full intended live state, except `MM_MODE` |
+| 2.2 | Claude | ~~Run the private smoke test~~ **Done 28 Oct: HTTP 200, PASS** (`Broad consent MM` v6, same id as UAT); `tools/people-probe.ts` against the same file: token OK, lookups OK, source system 16. | `HTTP 200`, and `PASS: every MM_CONSENT_TYPES id is an active consent type here` |
 | 2.3 | — | If it says **FAIL**: production's Broad consent MM has a different ID. Put the ID it lists into `MM_CONSENT_TYPES` in the prod file and run 2.2 again. **Never** pick a "Broad consent BB" type: that is BetterBond's consent, the wrong originator. | PASS |
 
 A `401` means the key or the token is wrong (check the Entra details still apply in production). A
