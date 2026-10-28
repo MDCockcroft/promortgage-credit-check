@@ -43,6 +43,11 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 - [ ] **ID copies:** every record that will be checked has the client's ID copy attached (row 6j: the
       database refuses a check without it). Clients can add it on the form, front and back (row 6k);
       otherwise the consultant attaches it.
+- [ ] **Retention and backups** (Operator Agreement commitments, built 28 Oct): migration `20261010` applied,
+      `mm-maintenance` deployed, `MAINTENANCE_TOKEN` set and stored in the vault, the two cron jobs scheduled
+      (`supabase/cron/retention.sql`), one manual run of each seen in the logs.
+- [ ] **MFA:** multi-factor authentication switched on for Michael's Supabase account (Account → Security)
+      and GitHub account (Settings → Password and authentication) — Annexure B of the agreement states it.
 - [ ] **People:** the real consultant logins created and given roles, each with their details added.
 - [ ] **Address:** `check.promortgagesa.co.za` live (handover row 7), so clients never get a github.io link.
 - [ ] **First check:** a consenting person for step 4 (Liz or Michael). It is billed and leaves an
@@ -94,6 +99,12 @@ credit check blindly: each one is billed and leaves an enquiry.
 - **Daily:** function logs (the four searches in 4.5); the register's **Needs attention** tile.
 - **Clean-up job:** `select status, start_time from cron.job_run_details order by start_time desc limit 5;`
   shows `succeeded` every hour.
+- **Retention jobs** (Operator Agreement clauses 10, 11 and Annexure A; `supabase/cron/retention.sql`):
+  `retention-sweep-daily` at 02:30 UTC deletes applications that expired 30+ days ago and purges credit
+  reports received 12+ months ago (band and enquiry reference kept); `file-backup-weekly` on Sunday 03:00 UTC
+  copies the stored files into the private `file-backups` bucket and prunes copies older than 30 days. Both
+  call `mm-maintenance` with `MAINTENANCE_TOKEN`. Check: `cron.job_run_details` for the two job names, and
+  the function's log line `retention_sweep` / `file_backup` (Dashboard → Edge Functions → mm-maintenance).
 - **MortgageMAX's question limit** is global (two rounds per ID number per 24 hours, across all its
   systems). A client who reaches it goes to "Identity check unavailable"; the consultant verifies manually.
 - Keep `supabase/.env.mmax.prod` as the record of the live settings; keep `supabase/.env.mmax` for UAT

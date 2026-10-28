@@ -163,12 +163,17 @@
      group, so a page pushed before that migration still reads the ID copies that are there. */
   var ID_BACK_COLUMNS = ', id_document_source, id_document_back_path, id_document_back_type, id_document_back_bytes, id_document_back_sha256';
   var idBackColumns = true;
+  /* Retention (migration 20261010): when an application expired, when a report was purged. Own group. */
+  var RETENTION_COLUMNS = ', expired_at, report_purged_at';
+  var retentionColumns = true;
   function selectChecks(columns, build) {
     function run(withRoles, withPerson, withId, withBack) {
       return build(sb.from('credit_checks').select(columns + (withRoles ? ROLE_COLUMNS : '') + (withPerson ? PERSON_COLUMNS : '')
-        + (withId ? ID_COLUMNS : '') + (withId && withBack ? ID_BACK_COLUMNS : '')));
+        + (withId ? ID_COLUMNS : '') + (withId && withBack ? ID_BACK_COLUMNS : '') + (retentionColumns ? RETENTION_COLUMNS : '')));
     }
     return run(roleColumns, personColumns, idColumns, idBackColumns).then(function (res) {
+      var msg0 = String((res.error && res.error.message) || '');
+      if (res.error && res.error.code === '42703' && /expired_at|report_purged_at/.test(msg0)) { retentionColumns = false; return run(roleColumns, personColumns, idColumns, idBackColumns); }
       /* Only for OUR columns, and never once roles are confirmed: then a missing column is a
          real fault, and reading without ownership would show every record as unassigned. */
       var msg = String((res.error && res.error.message) || '');
@@ -324,6 +329,9 @@
       groupId: r.group_id || '',
       bureauEnquiryId: r.bureau_enquiry_id || '',
       reportJson: r.report_json || null,
+      /* retention (20261010): the report was deleted 12 months after receipt; the band and reference stay */
+      reportPurgedAt: ts(r.report_purged_at),
+      expiredAt: ts(r.expired_at),
       reportSummary: r.report_summary || null,
       affordability: r.affordability_json || null,
       reportReadyAt: ts(r.report_ready_at),

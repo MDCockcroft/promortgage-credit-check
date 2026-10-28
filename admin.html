@@ -809,7 +809,9 @@
         detail: n < max ? 'Send them a new link for another try, or verify their identity manually below.' : 'No more tries today. Verify their identity manually below.' };
       case 'idv_unavailable': return { head: 'No identity questions were available for this client.', detail: 'Verify their identity manually below.' };
       case 'check_in_flight': return { head: 'The credit check is running.', detail: 'Usually under a minute.' };
-      case 'report_ready': return { head: 'The credit report is ready.', detail: 'See below, and open the credit report PDF.' };
+      case 'report_ready': return r.reportPurgedAt
+        ? { head: 'The credit report was deleted after 12 months.', detail: 'The risk band and the enquiry reference are kept below. A new check needs a new application.' }
+        : { head: 'The credit report is ready.', detail: 'See below, and open the credit report PDF.' };
       case 'check_failed': return { head: 'The credit check did not complete.', detail: 'Run it again. If it keeps failing, ask your administrator.' };
       case 'manual_required': return r.idType === 'passport'
         ? { head: 'No credit check is possible.', detail: 'Passport applicants are not covered by Experian. Handle this application outside the system.' }
@@ -2059,6 +2061,20 @@
         : 'Sample data from MortgageMAX test mode — not a real credit report.' }));
     }
     if (r.reportReadyAt) sec.appendChild(el('p', { className: 'small', text: 'Received ' + fmtDate(r.reportReadyAt) }));
+
+    /* Retention: the report itself was deleted 12 months after receipt (Operator Agreement); what the
+       record keeps is the date, the risk band and the enquiry reference. */
+    if (r.reportPurgedAt) {
+      sec.appendChild(el('div', { className: 'callout', role: 'note' }, [
+        el('span', { className: 'callout-tag', text: 'Report deleted' }),
+        el('p', { text: 'The credit report was deleted on ' + fmtDate(r.reportPurgedAt) + ', 12 months after it was received, as agreed with Pro Mortgage. The risk band and the enquiry reference are kept.' })
+      ]));
+      sec.appendChild(kv([
+        ['Risk band', s.riskType ? (/risk\s*$/i.test(s.riskType) ? s.riskType : s.riskType + ' risk') : (s.rag || '—')],
+        ['Enquiry reference', r.bureauEnquiryId || s.enquiryId || '—']
+      ]));
+      return sec;
+    }
 
     /* Tier 1 — verdict card */
     var card = el('div', { className: 'verdict' });

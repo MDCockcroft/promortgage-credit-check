@@ -39,6 +39,7 @@ import { mockFetch } from "../_shared/mock.ts";
 import { base64ToBytes, num, pdfIsEncrypted, summarise } from "../_shared/report.ts";
 import { recoverStale } from "../_shared/recover.ts";
 import { productionStopped, STOPPED } from "../_shared/stop.ts";
+import { BACKED_UP_BUCKETS, BACKUP_BUCKET } from "../_shared/retention.ts";
 import { personIdFor } from "../_shared/idnumber.ts";
 import { accessFor, isMissingFunction, loadMember, type Member } from "../_shared/access.ts";
 import {
@@ -451,6 +452,7 @@ Deno.serve(async (req) => {
 
     // ======================================================================================
     if (action === "fetch-pdf") {
+      if (row.report_purged_at) return fail("invalid_state", "report_purged", origin);
       if (row.status !== "report_ready" || !row.group_id) {
         return fail("invalid_state", "No report to fetch a PDF for", origin);
       }
@@ -779,6 +781,25 @@ Deno.serve(async (req) => {
       if (idDocs.length) {
         const rm = await sb.storage.from(ID_DOC_BUCKET).remove(idDocs);
         if (rm.error) return fail("server_error", "Could not delete the stored identity files", origin);
+      }
+      // The weekly copies of this record's files (Operator Agreement clause 11.2): every dated folder.
+      const { data: folders, error: bfErr } = await sb.storage.from(BACKUP_BUCKET).list("", { limit: 100 });
+      if (bfErr) return fail("server_error", "Could not list the file backups", origin);
+      for (const f of folders ?? []) {
+        if (!f?.name || !/^\d{4}-\d{2}-\d{2}$/.test(f.name)) continue;
+        for (const b of BACKED_UP_BUCKETS) {
+          const copies: string[] = [];
+          for (let offset = 0; ; offset += 100) {
+            const { data, error } = await sb.storage.from(BACKUP_BUCKET).list(`${f.name}/${b}/${ref}`, { limit: 100, offset });
+            if (error) return fail("server_error", "Could not list the file backups", origin);
+            for (const o of data ?? []) if (o?.name) copies.push(`${f.name}/${b}/${ref}/${o.name}`);
+            if (!data || data.length < 100) break;
+          }
+          if (copies.length) {
+            const rm = await sb.storage.from(BACKUP_BUCKET).remove(copies);
+            if (rm.error) return fail("server_error", "Could not delete the file backups", origin);
+          }
+        }
       }
       const blank = await sb.from("mm_api_log").update({ body_head: null }).eq("ref", ref);
       if (blank.error) return fail("server_error", "Could not clear the logged vendor responses", origin);
