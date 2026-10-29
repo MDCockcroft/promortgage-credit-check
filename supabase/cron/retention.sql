@@ -45,9 +45,11 @@ select cron.schedule(
 --   select jobname, schedule, active from cron.job order by jobname;          -- both jobs, active
 --   -- run one now rather than waiting for the schedule:
 --   select cron.schedule('retention-sweep-now', '* * * * *', (select command from cron.job where jobname = 'retention-sweep-daily'));
---   -- ...wait a minute, then:
+--   -- ...wait a minute, then unschedule it ON ITS OWN (a later error in the same batch would undo it):
 --   select cron.unschedule('retention-sweep-now');
---   select jobname, status, return_message, start_time from cron.job_run_details order by start_time desc limit 5;
+--   -- the run history has no job name column; join it in:
+--   select d.jobid, j.jobname, d.status, d.return_message, d.start_time
+--     from cron.job_run_details d left join cron.job j using (jobid) order by d.start_time desc limit 8;
 --   -- the function's own line (Dashboard → Edge Functions → mm-maintenance → Logs): {"event":"retention_sweep",...}
 --   -- the weekly copy, after its first run (storage, bucket file-backups): one dated folder.
 -- ------------------------------------------------------------

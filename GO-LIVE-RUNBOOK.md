@@ -43,9 +43,9 @@ manual verification, assignments and deletes still work. Nothing advances on moc
 - [ ] **ID copies:** every record that will be checked has the client's ID copy attached (row 6j: the
       database refuses a check without it). Clients can add it on the form, front and back (row 6k);
       otherwise the consultant attaches it.
-- [ ] **Retention and backups** (Operator Agreement commitments, built 28 Oct): migration `20261010` applied,
-      `mm-maintenance` deployed, `MAINTENANCE_TOKEN` set and stored in the vault, the two cron jobs scheduled
-      (`supabase/cron/retention.sql`), one manual run of each seen in the logs.
+- [x] **Retention and backups** (Operator Agreement commitments): live 29 Oct — migration `20261010`,
+      `mm-maintenance`, `MAINTENANCE_TOKEN` in the secrets and the vault, pg_net, both cron jobs; one manual
+      run of each answered 200 `ok:true` (`net._http_response`).
 - [ ] **MFA:** multi-factor authentication switched on for Michael's Supabase account (Account → Security)
       and GitHub account (Settings → Password and authentication) — Annexure B of the agreement states it.
 - [ ] **People:** the real consultant logins created and given roles, each with their details added.
