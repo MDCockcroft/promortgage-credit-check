@@ -419,7 +419,7 @@
     gap();
     heading('Employment and household');
     pair('Employment', rec.employmentStatus); pair('Marital status', rec.maritalStatus);
-    if (rec.referral) pair('How they heard of us', rec.referral);
+    if (rec.referral) pair('Link received from', rec.referral);
     gap();
     heading('Income and commitments (monthly)');
     pair('Gross income', money(rec.grossIncome)); pair('Deductions', money(rec.totalDeductions));
@@ -1364,7 +1364,7 @@
           street: '14 Jacaranda Ave', suburb: 'Waterkloof', city: 'Pretoria',
           province: 'Gauteng', postalCode: '0181',
           employmentStatus: 'Full-time employed', maritalStatus: 'Married out of community',
-          referral: 'Estate agent referral',
+          referral: 'Estate agency: Pam Golding Properties, Waterkloof (Sarah Botha)',
           grossIncome: 52000, totalDeductions: 11400, monthlyExpenses: 18500, housingPayment: 9800,
           _age: 3 * 864e5, _status: 'report_ready', _consultant: DEMO_ME
         },
@@ -1374,7 +1374,7 @@
           street: '203 Silver Oak Close', suburb: 'Faerie Glen', city: 'Pretoria',
           province: 'Gauteng', postalCode: '0081',
           employmentStatus: 'Self-employed', maritalStatus: 'Married in community of property',
-          referral: 'Returning client',
+          referral: 'Pro Mortgage consultant: Elizabeth Cockcroft',
           grossIncome: 88000, totalDeductions: 24100, monthlyExpenses: 31000, housingPayment: 15600,
           _age: 1 * 864e5, _status: 'idv_waived', _consultant: 'demo-c2' /* a consultant who has left */
         },
@@ -1384,7 +1384,7 @@
           street: '7B Protea Street', suburb: 'Umhlanga Rocks', city: 'Durban',
           province: 'KwaZulu-Natal', postalCode: '4320',
           employmentStatus: 'Full-time employed', maritalStatus: 'Single',
-          referral: 'Google search',
+          referral: 'Friend or family',
           grossIncome: 41500, totalDeductions: 9300, monthlyExpenses: 14200, housingPayment: 8500,
           _age: 2 * 36e5, _status: 'consent_confirmed'
         }

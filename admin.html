@@ -616,7 +616,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261020-1"></script>
+<script src="assets/store.js?v=20261105-1"></script>
 <script>
 (function () {
   'use strict';
@@ -1184,7 +1184,7 @@
     f.appendChild(h3('Employment & household'));
     f.appendChild(kv([
       ['Employment', r.employmentStatus], ['Marital status', r.maritalStatus],
-      r.referral ? ['Referral', r.referral] : null
+      r.referral ? ['Link received from', r.referral] : null
     ]));
 
     f.appendChild(h3('Income & commitments (monthly)'));

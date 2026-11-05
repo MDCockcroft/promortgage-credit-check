@@ -472,13 +472,18 @@
               </div>
             </div>
             <div class="field">
-              <label for="referral">How did you hear about Pro Mortgage? <span class="hint">optional</span></label>
+              <label for="referral">Who did you receive the link from? <span class="hint">optional</span></label>
               <select id="referral" name="referral">
                 <option value="">Select&hellip;</option>
-                <option>Estate agent referral</option><option>Returning client</option>
-                <option>Friend or family</option><option>Google search</option>
-                <option>Social media</option><option>Other</option>
+                <option>Pro Mortgage consultant</option><option>Estate agency</option>
+                <option>Friend or family</option><option>Other</option>
               </select>
+              <span class="err" id="referral-err"></span>
+            </div>
+            <div class="field" id="referralNameField" hidden>
+              <label for="referralName" id="referralNameLabel">Consultant&rsquo;s name <span class="req" aria-hidden="true">*</span></label>
+              <input id="referralName" name="referralName" type="text" autocomplete="off" maxlength="80">
+              <span class="err" id="referralName-err"></span>
             </div>
           </fieldset>
 
@@ -614,7 +619,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261020-1"></script>
+<script src="assets/store.js?v=20261105-1"></script>
 <script>
 (function () {
   'use strict';
@@ -684,6 +689,31 @@
     r.addEventListener('change', syncIdType);
   });
   syncIdType();
+
+  /* --- "Who did you receive the link from?" (Michael, 5 Nov): a consultant or an estate agency
+     must be named; the name travels with the answer as one value ("Estate agency: Pam Golding"). --- */
+  var REFERRAL_NAMED = { 'Pro Mortgage consultant': 'Consultant\u2019s name', 'Estate agency': 'Estate agency and agent\u2019s name' };
+  var referralSel = document.getElementById('referral');
+  var referralNameField = document.getElementById('referralNameField');
+  var referralNameInput = document.getElementById('referralName');
+  function referralNameLabel() { return REFERRAL_NAMED[referralSel.value.trim()] || ''; }
+  function syncReferral() {
+    var label = referralNameLabel();
+    referralNameField.hidden = !label;
+    referralNameInput.required = !!label;
+    if (label) {
+      document.getElementById('referralNameLabel').firstChild.nodeValue = label + ' ';
+    } else {
+      referralNameInput.value = '';
+      setErr('referralName', '');
+    }
+  }
+  function referralValue() {
+    var who = referralSel.value.trim(), name = referralNameInput.value.trim();
+    return who && referralNameLabel() && name ? who + ': ' + name : who;
+  }
+  referralSel.addEventListener('change', syncReferral);
+  syncReferral();
 
   /* --- SA ID live derivation --- */
   var idInput = document.getElementById('idNumber');
@@ -1045,6 +1075,13 @@
     check('postalCode', /^\d{4}$/.test(v('postalCode')), 'Enter a 4-digit postal code.');
     check('employmentStatus', v('employmentStatus') !== '', 'Select your employment status.');
     check('maritalStatus', v('maritalStatus') !== '', 'Select your marital status.');
+    if (referralNameLabel()) {
+      check('referralName', v('referralName') !== '', v('referral') === 'Estate agency'
+        ? 'Enter the name of the estate agency (and the agent) who sent you the link.'
+        : 'Enter the name of the consultant who sent you the link.');
+    } else {
+      setErr('referralName', '');
+    }
     check('grossIncome', parseAmount(v('grossIncome')) > 0, 'Enter your gross monthly income.');
     check('monthlyExpenses', parseAmount(v('monthlyExpenses')) > 0, 'Enter your total monthly expenses.');
     /* The ID copy is optional: a rejected file has already been dropped from its input. Only a file
@@ -1098,7 +1135,7 @@
       street: v('street'), suburb: v('suburb'), city: v('city'),
       province: v('province'), postalCode: v('postalCode'),
       employmentStatus: v('employmentStatus'), maritalStatus: v('maritalStatus'),
-      referral: v('referral'),
+      referral: referralValue(),
       grossIncome: parseAmount(v('grossIncome')),
       totalDeductions: parseAmount(v('totalDeductions')),
       monthlyExpenses: parseAmount(v('monthlyExpenses')),
