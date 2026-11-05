@@ -476,7 +476,7 @@
               <select id="referral" name="referral">
                 <option value="">Select&hellip;</option>
                 <option>Pro Mortgage consultant</option><option>Estate agency</option>
-                <option>Friend or family</option><option>Other</option>
+                <option>Other</option>
               </select>
               <span class="err" id="referral-err"></span>
             </div>
@@ -619,7 +619,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261105-1"></script>
+<script src="assets/store.js?v=20261105-2"></script>
 <script>
 (function () {
   'use strict';
@@ -690,9 +690,19 @@
   });
   syncIdType();
 
-  /* --- "Who did you receive the link from?" (Michael, 5 Nov): a consultant or an estate agency
-     must be named; the name travels with the answer as one value ("Estate agency: Pam Golding"). --- */
-  var REFERRAL_NAMED = { 'Pro Mortgage consultant': 'Consultant\u2019s name', 'Estate agency': 'Estate agency and agent\u2019s name' };
+  /* --- "Who did you receive the link from?" (Michael, 5 Nov): every answer must be named — the
+     consultant, the estate agency, or where else the link came from; the detail travels with the
+     answer as one value ("Estate agency: Pam Golding", "Other: Pro Mortgage website"). --- */
+  var REFERRAL_NAMED = {
+    'Pro Mortgage consultant': 'Consultant\u2019s name',
+    'Estate agency': 'Estate agency and agent\u2019s name',
+    'Other': 'Where did you get the link?'
+  };
+  var REFERRAL_ERR = {
+    'Pro Mortgage consultant': 'Enter the name of the consultant who sent you the link.',
+    'Estate agency': 'Enter the name of the estate agency (and the agent) who sent you the link.',
+    'Other': 'Tell us where you got the link.'
+  };
   var referralSel = document.getElementById('referral');
   var referralNameField = document.getElementById('referralNameField');
   var referralNameInput = document.getElementById('referralName');
@@ -1076,9 +1086,7 @@
     check('employmentStatus', v('employmentStatus') !== '', 'Select your employment status.');
     check('maritalStatus', v('maritalStatus') !== '', 'Select your marital status.');
     if (referralNameLabel()) {
-      check('referralName', v('referralName') !== '', v('referral') === 'Estate agency'
-        ? 'Enter the name of the estate agency (and the agent) who sent you the link.'
-        : 'Enter the name of the consultant who sent you the link.');
+      check('referralName', v('referralName') !== '', REFERRAL_ERR[v('referral')]);
     } else {
       setErr('referralName', '');
     }

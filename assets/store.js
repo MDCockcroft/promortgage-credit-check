@@ -1384,7 +1384,7 @@
           street: '7B Protea Street', suburb: 'Umhlanga Rocks', city: 'Durban',
           province: 'KwaZulu-Natal', postalCode: '4320',
           employmentStatus: 'Full-time employed', maritalStatus: 'Single',
-          referral: 'Friend or family',
+          referral: 'Other: Pro Mortgage website',
           grossIncome: 41500, totalDeductions: 9300, monthlyExpenses: 14200, housingPayment: 8500,
           _age: 2 * 36e5, _status: 'consent_confirmed'
         }
