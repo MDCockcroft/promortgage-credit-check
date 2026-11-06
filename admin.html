@@ -2771,17 +2771,23 @@
     var mb = $('modeBadge');
     var eb = $('envBadge');
     if (PMStore.mode !== 'live') { eb.hidden = true; return; }
-    mb.textContent = 'Live — Supabase';
-    eb.hidden = false;
+    /* Production-normal shows no badge at all (Michael, 6 Nov): the bar warns only when something is
+       not as it should be — MortgageMAX stopped (mock), a non-production environment, or settings
+       that could not be read. */
+    mb.hidden = true;
     eb.classList.remove('badge-quiet');
     if (!cfgLoaded) {
-      eb.textContent = 'MortgageMAX: unknown';
+      eb.textContent = 'Settings unavailable';
       eb.classList.add('badge-quiet');
+      eb.hidden = false;
     } else if (sysCfg.mode === 'mock') {
-      eb.textContent = 'MortgageMAX: mock';
-      eb.classList.add('badge-quiet');
+      eb.textContent = 'MortgageMAX stopped (mock)';
+      eb.hidden = false;
+    } else if (sysCfg.env && sysCfg.env !== 'prod') {
+      eb.textContent = 'MortgageMAX: live (' + sysCfg.env.toUpperCase() + ')';
+      eb.hidden = false;
     } else {
-      eb.textContent = 'MortgageMAX: live' + (sysCfg.env ? ' (' + sysCfg.env.toUpperCase() + ')' : '');
+      eb.hidden = true;
     }
     eb.title = 'Identity questions: ' + sysCfg.idvMode;
   }
@@ -3074,7 +3080,7 @@
   buildFilter();
 
   if (PMStore.mode === 'live') {
-    $('modeBadge').textContent = 'Live — Supabase';
+    $('modeBadge').hidden = true; /* production-normal shows no badge; updateBadges() warns when needed */
     $('emptyText').textContent = '';
     $('emptyText').appendChild(el('strong', { text: 'No submissions yet.' }));
     $('emptyText').appendChild(document.createElement('br'));

@@ -68,6 +68,10 @@ A `401` means the key or the token is wrong (check the Entra details still apply
 
 ## 3. Load production settings, still in mock mode
 
+**Done 6 Nov 2026:** file read (prod / mock / required / 60), loaded, 18/18 digests match, direct call to
+`mm-client` refused with `config_error` "MortgageMAX calls are stopped" (HTTP 500). From this moment the live form
+refuses new applications until step 4.1.
+
 | # | Who | Do | Worked when |
 |---|---|---|---|
 | 3.1 | Michael | Read aloud the prod file's `MM_MODE=mock`, `MM_IDV_MODE=required`, `MM_IDV_PASS_SCORE=60`, `MMAX_ENV=prod` | All four as listed |
@@ -76,6 +80,9 @@ A `401` means the key or the token is wrong (check the Entra details still apply
 | 3.4 | Claude | One form submission through a consultant's link | **Refused** ("couldn't reach the server"; function log `stopped_in_production`): with a production `MMAX_ENV` nothing runs until `MM_MODE=live`. This is the emergency stop working; nothing is written |
 
 ## 4. Live: the first real check, on a consenting person
+
+**4.1 done 6 Nov 2026 (afternoon):** `MM_MODE=live` set, confirmed by digest (`live` on `prod`); `consent-types`
+answers 200 from production MortgageMAX. Steps 4.2–4.5 follow with the consenting person.
 
 | # | Who | Do | Worked when |
 |---|---|---|---|
