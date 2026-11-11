@@ -459,11 +459,11 @@
     <p class="login-note" id="setPwLede"></p>
     <div class="field">
       <label for="newPw">New password</label>
-      <input type="password" id="newPw" autocomplete="new-password" minlength="10" required>
+      <input type="password" id="newPw" autocomplete="new-password" minlength="12" required>
     </div>
     <div class="field">
       <label for="newPw2">New password again</label>
-      <input type="password" id="newPw2" autocomplete="new-password" minlength="10" required>
+      <input type="password" id="newPw2" autocomplete="new-password" minlength="12" required>
     </div>
     <button class="btn btn-primary" type="submit" id="setPwBtn">Save password</button>
     <button class="btn btn-ghost" type="button" id="setPwCancel" hidden>Cancel</button>
@@ -3107,7 +3107,7 @@
   /* ---- passwords: a one-time password or a reset link must be replaced before anything shows ---- */
   var setPwView = $('setPwView');
   var setPwMode = null;
-  var PW_MIN = 10;
+  var PW_MIN = 12; /* matches Supabase Auth: 12+, with a lower-case letter, a capital, a digit and a symbol */
   var SET_PW_TEXT = {
     first: ['Choose your own password', 'You signed in with a one-time password. Choose your own now; the one-time password stops working.'],
     recovery: ['Set a new password', 'Choose a new password for your sign-in.'],
@@ -3119,7 +3119,7 @@
   function showSetPw(why) {
     setPwMode = why;
     $('setPwTitle').textContent = SET_PW_TEXT[why][0];
-    $('setPwLede').textContent = SET_PW_TEXT[why][1] + ' At least ' + PW_MIN + ' characters.';
+    $('setPwLede').textContent = SET_PW_TEXT[why][1] + ' At least ' + PW_MIN + ' characters, with a small letter, a capital letter, a number and a symbol.';
     $('newPw').value = ''; $('newPw2').value = ''; $('setPw-err').textContent = '';
     $('setPwCancel').hidden = why !== 'change';
     if (why !== 'change') $('signOutBtn').hidden = false; /* a way out without choosing one */
@@ -3134,6 +3134,7 @@
     if (b.disabled) return;
     var a = $('newPw').value, c = $('newPw2').value;
     if (a.length < PW_MIN) { errEl.textContent = 'Use at least ' + PW_MIN + ' characters.'; return; }
+    if (!(/[a-z]/.test(a) && /[A-Z]/.test(a) && /[0-9]/.test(a) && /[^A-Za-z0-9]/.test(a))) { errEl.textContent = 'Include a small letter, a capital letter, a number and a symbol.'; return; }
     if (a !== c) { errEl.textContent = 'The two passwords are not the same.'; return; }
     b.disabled = true;
     errEl.textContent = '';
@@ -3147,6 +3148,7 @@
     }).catch(function (err) {
       var m = String(err && err.message || '');
       errEl.textContent = /different from the old/i.test(m) ? 'Choose a password you have not used here before.'
+        : /pwned|leaked|known to be/i.test(m) ? 'That password has appeared in a known data leak. Choose a different one.'
         : /weak|at least|characters|should contain/i.test(m) ? 'That password is too weak: ' + m
         : /session|expired|invalid|jwt/i.test(m) ? 'This link or sign-in has expired. Sign out and use "Forgot password?" again.'
         : 'The password could not be saved: ' + m;

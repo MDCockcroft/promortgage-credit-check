@@ -74,7 +74,7 @@ if (!admin) { console.error(`\n✗ No login with the address ${adminEmail} — t
 const ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const LIMIT = 256 - (256 % ALPHABET.length);
 function pick() { for (;;) { const b = randomBytes(1)[0]; if (b < LIMIT) return ALPHABET[b % ALPHABET.length]; } }
-const newPassword = () => Array.from({ length: 4 }, () => Array.from({ length: 4 }, pick).join("")).join("-");
+const newPassword = () => (() => { for (;;) { const p = Array.from({ length: 4 }, () => Array.from({ length: 4 }, pick).join("")).join("-"); if (/[a-z]/.test(p) && /[A-Z]/.test(p) && /[0-9]/.test(p)) return p; } })();
 
 async function rest(path, init) {
   const r = await fetch(`${URL_BASE}${path}`, { ...init, headers: { ...H, ...(init.headers || {}) } });
