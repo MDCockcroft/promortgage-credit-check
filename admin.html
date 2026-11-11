@@ -406,6 +406,10 @@
   .login-card h2 { margin: var(--s2) 0 var(--s5); }
   .login-card .btn { width: 100%; margin-top: var(--s2); }
   .login-card .err { display: block; margin-top: var(--s3); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
+  .login-note { margin: var(--s3) 0 0; font-size: var(--fs-small); line-height: 1.5; }
+  .login-note:empty { display: none; }
+  #setPwLede { margin: 0 0 var(--s4); }
+  .login-link { display: block; margin: var(--s4) auto 0; padding: 0; background: none; border: 0; font: inherit; font-size: var(--fs-small); color: inherit; text-decoration: underline; cursor: pointer; }
   .next-step { margin: var(--s2) 0 var(--s3); font-size: 1rem; line-height: 1.5; }
   /* the manual-verification panel's message sits outside a .field, so it needs the error look too */
   .verify-set .err { display: block; margin-top: var(--s2); color: var(--error); font-size: var(--fs-small); font-weight: 600; }
@@ -443,6 +447,27 @@
     </div>
     <button class="btn btn-primary" type="submit" id="loginBtn">Sign in</button>
     <span class="err" id="login-err" role="alert"></span>
+    <p class="login-note" id="login-msg" role="status" aria-live="polite"></p>
+    <button class="login-link" type="button" id="forgotBtn">Forgot password?</button>
+  </form>
+</div>
+
+<div class="login-wrap" id="setPwView" hidden>
+  <form class="login-card" id="setPwForm" novalidate>
+    <p class="wordmark" style="color:var(--ink)">PRO<span class="gold">MORTGAGE</span></p>
+    <h2 id="setPwTitle">Set your password</h2>
+    <p class="login-note" id="setPwLede"></p>
+    <div class="field">
+      <label for="newPw">New password</label>
+      <input type="password" id="newPw" autocomplete="new-password" minlength="10" required>
+    </div>
+    <div class="field">
+      <label for="newPw2">New password again</label>
+      <input type="password" id="newPw2" autocomplete="new-password" minlength="10" required>
+    </div>
+    <button class="btn btn-primary" type="submit" id="setPwBtn">Save password</button>
+    <button class="btn btn-ghost" type="button" id="setPwCancel" hidden>Cancel</button>
+    <span class="err" id="setPw-err" role="alert"></span>
   </form>
 </div>
 
@@ -607,6 +632,7 @@
     <div class="act-row">
       <button class="btn btn-primary" id="profileSave" type="submit">Save details</button>
       <button class="btn btn-ghost" id="profileCancel" type="button">Cancel</button>
+      <button class="btn btn-ghost" id="profilePw" type="button" hidden>Change password</button>
     </div>
     <p class="msg" id="profileMsg" role="status" aria-live="polite"></p>
   </form>
@@ -616,7 +642,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261105-2"></script>
+<script src="assets/store.js?v=20261111-1"></script>
 <script>
 (function () {
   'use strict';
@@ -3064,10 +3090,11 @@
     if (b.disabled) return;
     b.disabled = true;
     errEl.textContent = '';
+    $('login-msg').textContent = '';
     PMStore.signIn(
       $('loginEmail').value.trim(),
       $('loginPassword').value
-    ).then(enter).catch(function (err) {
+    ).then(afterAuth).catch(function (err) {
       errEl.textContent = /invalid/i.test(err.message)
         ? 'Email or password incorrect.'
         : 'Sign-in failed: ' + err.message;
@@ -3075,6 +3102,79 @@
   });
   $('signOutBtn').addEventListener('click', function () {
     PMStore.signOut().then(function () { location.reload(); });
+  });
+
+  /* ---- passwords: a one-time password or a reset link must be replaced before anything shows ---- */
+  var setPwView = $('setPwView');
+  var setPwMode = null;
+  var PW_MIN = 10;
+  var SET_PW_TEXT = {
+    first: ['Choose your own password', 'You signed in with a one-time password. Choose your own now; the one-time password stops working.'],
+    recovery: ['Set a new password', 'Choose a new password for your sign-in.'],
+    change: ['Change your password', 'Choose a new password. You stay signed in.']
+  };
+  function afterAuth(session) {
+    return PMStore.passwordDue(session).then(function (why) { why ? showSetPw(why) : enter(); }, enter);
+  }
+  function showSetPw(why) {
+    setPwMode = why;
+    $('setPwTitle').textContent = SET_PW_TEXT[why][0];
+    $('setPwLede').textContent = SET_PW_TEXT[why][1] + ' At least ' + PW_MIN + ' characters.';
+    $('newPw').value = ''; $('newPw2').value = ''; $('setPw-err').textContent = '';
+    $('setPwCancel').hidden = why !== 'change';
+    if (why !== 'change') $('signOutBtn').hidden = false; /* a way out without choosing one */
+    loginView.hidden = true;
+    mainEl.hidden = true;
+    setPwView.hidden = false;
+    $('newPw').focus();
+  }
+  $('setPwForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var b = $('setPwBtn'), errEl = $('setPw-err');
+    if (b.disabled) return;
+    var a = $('newPw').value, c = $('newPw2').value;
+    if (a.length < PW_MIN) { errEl.textContent = 'Use at least ' + PW_MIN + ' characters.'; return; }
+    if (a !== c) { errEl.textContent = 'The two passwords are not the same.'; return; }
+    b.disabled = true;
+    errEl.textContent = '';
+    PMStore.setPassword(a).then(function () {
+      var was = setPwMode;
+      setPwMode = null;
+      $('newPw').value = ''; $('newPw2').value = '';
+      setPwView.hidden = true;
+      if (window.history && history.replaceState) history.replaceState(null, '', window.location.pathname);
+      if (was === 'change') { mainEl.hidden = false; } else { enter(); }
+    }).catch(function (err) {
+      var m = String(err && err.message || '');
+      errEl.textContent = /different from the old/i.test(m) ? 'Choose a password you have not used here before.'
+        : /weak|at least|characters|should contain/i.test(m) ? 'That password is too weak: ' + m
+        : /session|expired|invalid|jwt/i.test(m) ? 'This link or sign-in has expired. Sign out and use "Forgot password?" again.'
+        : 'The password could not be saved: ' + m;
+    }).finally(function () { b.disabled = false; });
+  });
+  $('setPwCancel').addEventListener('click', function () {
+    if (setPwMode !== 'change') return;
+    setPwMode = null;
+    setPwView.hidden = true;
+    mainEl.hidden = false;
+  });
+  $('profilePw').hidden = PMStore.mode !== 'live';
+  $('profilePw').addEventListener('click', function () { pdlg.close(); showSetPw('change'); });
+  $('forgotBtn').addEventListener('click', function () {
+    var b = $('forgotBtn'), errEl = $('login-err'), msg = $('login-msg');
+    var email = $('loginEmail').value.trim();
+    msg.textContent = '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Enter your email above first, then choose "Forgot password?".'; $('loginEmail').focus(); return; }
+    if (b.disabled) return;
+    b.disabled = true;
+    errEl.textContent = '';
+    PMStore.requestPasswordReset(email).then(function () {
+      msg.textContent = 'If that address has a sign-in, a link to set a new password is on its way. It can take a few minutes; check the junk folder too.';
+    }).catch(function (err) {
+      errEl.textContent = String(err && err.message) === 'rate_limited'
+        ? 'Too many reset emails were asked for just now. Try again in an hour, or ask an administrator.'
+        : 'The reset email could not be sent. Try again, or ask an administrator.';
+    }).finally(function () { b.disabled = false; });
   });
 
   buildFilter();
@@ -3087,7 +3187,7 @@
     $('emptyText').appendChild(document.createTextNode('Send clients the form link to get started.'));
     updateFootNote();
     mainEl.hidden = true;
-    PMStore.getSession().then(function (s) { s ? enter() : showLogin(); }, showLogin);
+    PMStore.getSession().then(function (s) { s ? afterAuth(s) : showLogin(); }, showLogin);
   } else if (PMStore.mode === 'error') {
     $('modeBadge').textContent = 'Backend error';
     mainEl.innerHTML = '<div class="callout callout-error"><span class="callout-tag">Backend not reachable</span>' +

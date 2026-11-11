@@ -40,10 +40,15 @@
   var live = !forceDemo && !!(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY);
   var sb = null;
   var mode = 'demo';
+  var recoveryPending = false;
 
   if (live) {
     if (window.supabase && window.supabase.createClient) {
+      /* A password-reset link lands here with type=recovery in the address; note it BEFORE the
+         client reads and clears the address. */
+      recoveryPending = /[#&?]type=recovery\b/.test(window.location.hash + window.location.search);
       sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+      sb.auth.onAuthStateChange(function (event) { if (event === 'PASSWORD_RECOVERY') recoveryPending = true; });
       mode = 'live';
     } else {
       mode = 'error'; // configured for live but the client library failed to load
@@ -900,6 +905,34 @@
       });
     },
     signOut: function () { return sb.auth.signOut(); },
+
+    /* ===== passwords (11 Nov 2026): set your own on first sign-in, reset by email, change any time ===== */
+
+    /* → 'recovery' (arrived through a reset link), 'first' (an administrator issued a one-time
+       password: must_change_password on the login), or null. Asks the server, so a flag set after
+       this browser signed in still counts; if the server cannot be asked, the saved session decides. */
+    passwordDue: function (session) {
+      if (mode !== 'live') return Promise.resolve(null);
+      if (recoveryPending) return Promise.resolve('recovery');
+      function flagged(u) { return !!(u && u.user_metadata && u.user_metadata.must_change_password === true); }
+      return sb.auth.getUser().then(function (res) {
+        var u = res && res.data && res.data.user;
+        return flagged(u || (session && session.user)) ? 'first' : null;
+      }, function () { return flagged(session && session.user) ? 'first' : null; });
+    },
+    setPassword: function (password) {
+      return sb.auth.updateUser({ password: password, data: { must_change_password: false } }).then(function (res) {
+        if (res.error) throw new Error(res.error.message);
+        recoveryPending = false;
+      });
+    },
+    /* Always resolves the same way for a known and an unknown address (no way to probe for logins). */
+    requestPasswordReset: function (email) {
+      var back = window.location.origin + window.location.pathname;
+      return sb.auth.resetPasswordForEmail(email, { redirectTo: back }).then(function (res) {
+        if (res.error && /rate|limit|seconds/i.test(res.error.message || '')) throw new Error('rate_limited');
+      });
+    },
 
     /* ===== admin register API (staff) ===== */
 

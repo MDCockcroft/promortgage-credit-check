@@ -7,6 +7,8 @@
 // The service-role key is typed HERE (hidden) and never printed, logged or saved. Each new login's
 // password is generated and shown ONCE, for you to pass on by phone. A login that already exists is
 // left alone (no new password); its role and details are still filled in if they are missing.
+// Every new login must choose its own password at first sign-in (must_change_password). Add
+// --require-change to put the same requirement on logins in the CSV that already exist.
 //
 //   node scripts/create-logins.mjs "/path/to/staff-logins.csv"
 import fs from "node:fs";
@@ -16,6 +18,7 @@ import { randomBytes } from "node:crypto";
 const URL_BASE = "https://mxakigcvckhmyppoiuds.supabase.co";
 const SITE = "https://check.promortgagesa.co.za";
 const csvPath = process.argv[2];
+const REQUIRE_CHANGE = process.argv.includes("--require-change"); // also flag logins that already exist
 if (!csvPath || !fs.existsSync(csvPath)) { console.error('usage: node scripts/create-logins.mjs "/path/to/staff-logins.csv"'); process.exit(1); }
 
 function ask(q, hidden = false) {
@@ -88,9 +91,14 @@ for (const p of people) {
     let user = byEmail.get(p.email);
     if (user) {
       line.note = "login existed — password unchanged";
+      if (REQUIRE_CHANGE) {
+        const u = await rest(`/auth/v1/admin/users/${user.id}`, { method: "PUT", body: JSON.stringify({ user_metadata: { ...(user.user_metadata || {}), must_change_password: true } }) });
+        if (!u.ok) throw new Error(`require change: HTTP ${u.status} ${u.text.slice(0, 160)}`);
+        line.note = "login existed — must choose a new password at the next sign-in";
+      }
     } else {
       const pw = newPassword();
-      const c = await rest("/auth/v1/admin/users", { method: "POST", body: JSON.stringify({ email: p.email, password: pw, email_confirm: true, user_metadata: { full_name: p.fullName } }) });
+      const c = await rest("/auth/v1/admin/users", { method: "POST", body: JSON.stringify({ email: p.email, password: pw, email_confirm: true, user_metadata: { full_name: p.fullName, must_change_password: true } }) });
       if (!c.ok) throw new Error(`create login: HTTP ${c.status} ${c.text.slice(0, 160)}`);
       user = c.json; line.password = pw; byEmail.set(p.email, user);
     }
@@ -112,7 +120,7 @@ for (const p of people) {
 }
 
 // --- the sheet to read out by phone ------------------------------------------------------------
-console.log("\nDone. Read each password out by phone (not email or WhatsApp); the link they can be sent as is.\n");
+console.log("\nDone. Each password is one-time (the register makes them choose their own at sign-in), so it may go by email with the link.\n");
 for (const r of results) {
   console.log(`${r.fullName} — ${r.email}`);
   console.log(`   link:      ${r.link}`);

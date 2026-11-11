@@ -3,7 +3,8 @@
 // the register has no "forgot password" page yet, so a recovery email would lead nowhere.
 // The service-role key is typed HERE in your terminal (hidden) and used for two calls — it is never
 // printed, logged or saved. The new password is generated, shown ONCE for you to pass on by phone,
-// and stored nowhere else. The person signs in with it as they did before.
+// and stored nowhere else. It is ONE-TIME: at the next sign-in the register makes the person choose
+// their own password before it shows anything (must_change_password on the login).
 //
 //   node scripts/reset-password.mjs liz@example.com
 import readline from "node:readline";
@@ -44,7 +45,7 @@ const LIMIT = 256 - (256 % ALPHABET.length); // rejection sampling: no modulo bi
 function pick() { for (;;) { const b = randomBytes(1)[0]; if (b < LIMIT) return ALPHABET[b % ALPHABET.length]; } }
 const password = Array.from({ length: 4 }, () => Array.from({ length: 4 }, pick).join("")).join("-");
 
-const r = await fetch(`${URL_BASE}/auth/v1/admin/users/${user.id}`, { method: "PUT", headers: H, body: JSON.stringify({ password }) });
+const r = await fetch(`${URL_BASE}/auth/v1/admin/users/${user.id}`, { method: "PUT", headers: H, body: JSON.stringify({ password, user_metadata: { ...(user.user_metadata || {}), must_change_password: true } }) });
 if (!r.ok) { console.error("\n✗ The reset failed: HTTP", r.status, (await r.text()).slice(0, 200)); process.exit(1); }
-console.log(`\n✓ New password set for ${email}. Read it out by phone (not email or WhatsApp), then have them sign in once:\n\n    ${password}\n`);
+console.log(`\n✓ New password set for ${email}. It is one-time: the register makes them choose their own at sign-in, so it may go by email:\n\n    ${password}\n`);
 console.log("Close this terminal window afterwards so the password is not left on screen.");
