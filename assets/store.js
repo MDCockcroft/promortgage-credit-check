@@ -1001,6 +1001,31 @@
       saveDemoStaff(list);
       return Promise.resolve({ member: { userId: m.userId, role: m.role, active: m.active, linkCode: m.linkCode } });
     },
+    /* An administrator creates a login, complete (sign-in, role, details). The one-time password
+       comes back ONCE, for the administrator to pass on; the person chooses their own at first sign-in.
+       → { member: {userId, email, fullName, role, active, linkCode}, oneTimePassword } */
+    staffCreate: function (fullName, email, cell, role) {
+      if (mode === 'live') return invoke('mm-staff', { action: 'staff-create', fullName: fullName, email: email, cell: cell || '', role: role });
+      if (DEMO_ROLE !== 'admin') return demoFail('forbidden', 'admin_only');
+      var list = demoStaff();
+      var addr = String(email || '').trim().toLowerCase();
+      if (list.some(function (x) { return x.email === addr; })) return demoFail('invalid_state', 'login_exists');
+      var m = { userId: 'demo-' + Date.now().toString(36), email: addr, fullName: String(fullName || '').trim(),
+        role: role === 'admin' ? 'admin' : 'consultant', active: true,
+        linkCode: 'dm' + Math.random().toString(36).replace(/[^a-hj-km-np-z2-9]/g, '').slice(0, 6).padEnd(6, 'x') };
+      list.push(m);
+      saveDemoStaff(list);
+      return Promise.resolve({ member: m, oneTimePassword: 'Demo-pass-word-2x4K' });
+    },
+    /* A new one-time password for someone who cannot get in (never for yourself: use Change password). */
+    staffResetPassword: function (userId) {
+      if (mode === 'live') return invoke('mm-staff', { action: 'staff-reset-password', userId: userId });
+      if (DEMO_ROLE !== 'admin') return demoFail('forbidden', 'admin_only');
+      if (userId === DEMO_ME) return demoFail('invalid_state', 'reset_self');
+      if (!demoMember(userId)) return demoFail('bad_request', 'No such login');
+      if (!demoMember(userId).active) return demoFail('invalid_state', 'reset_inactive');
+      return Promise.resolve({ oneTimePassword: 'Demo-pass-word-7m3Q' });
+    },
     /* Assign a record to a consultant. Clients do not move: only an unassigned record, or one whose
        consultant is no longer active. */
     assign: function (ref, consultantId) {

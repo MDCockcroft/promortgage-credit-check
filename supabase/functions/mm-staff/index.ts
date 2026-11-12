@@ -16,6 +16,8 @@
 // POST { ref, action: 'assign', consultantId }                      → { status: 'ok' }
 // POST { action: 'staff-list' }                                     → { staff: [...] }
 // POST { action: 'staff-save', userId, role, active }               → { member }
+// POST { action: 'staff-create', fullName, email, cell?, role }      → { member, oneTimePassword }
+// POST { action: 'staff-reset-password', userId }                    → { oneTimePassword }
 //
 // Roles (migration 20260930, _shared/access.ts): a consultant may act only on records assigned to
 // them; a record that is not theirs is answered exactly like one that does not exist.
@@ -42,6 +44,7 @@ import { productionStopped, STOPPED } from "../_shared/stop.ts";
 import { BACKED_UP_BUCKETS, BACKUP_BUCKET } from "../_shared/retention.ts";
 import { personIdFor } from "../_shared/idnumber.ts";
 import { accessFor, isMissingFunction, loadMember, type Member } from "../_shared/access.ts";
+import { newLoginInput, oneTimePassword } from "../_shared/password.ts";
 import {
   ATTESTATION,
   ID_DOC_BUCKET,
@@ -109,6 +112,7 @@ Deno.serve(async (req) => {
     contentType?: string; path?: string; attestationVersion?: string; attested?: boolean;
     kind?: string; consentFormPath?: string; consentFormVersion?: string; confirmationVersion?: string;
     consultantId?: string; userId?: string; role?: string; active?: boolean;
+    fullName?: string; email?: string; cell?: string;
   };
   try {
     body = await req.json();
@@ -133,9 +137,76 @@ Deno.serve(async (req) => {
   if (!member) return fail("forbidden", "account_inactive", origin);
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  if (action === "staff-list" || action === "staff-save") {
+  if (action === "staff-list" || action === "staff-save" || action === "staff-create" || action === "staff-reset-password") {
     if (accessFor(member, action, user.id) !== "ok") return fail("forbidden", "admin_only", origin);
     try {
+      // An administrator creates a login, complete: the sign-in (with a one-time password), the role
+      // (so the personal link exists at once) and the details. The password is generated HERE,
+      // returned once to the administrator who asked, and never logged or stored by us; the person
+      // must choose their own at first sign-in (must_change_password, as scripts/create-logins.mjs).
+      if (action === "staff-create") {
+        const input = newLoginInput(body);
+        if (!input.ok) return fail("bad_request", `invalid_${input.field}`, origin);
+        const password = oneTimePassword();
+        const made = await sb.auth.admin.createUser({
+          email: input.email, password, email_confirm: true,
+          user_metadata: { full_name: input.fullName, must_change_password: true },
+        });
+        if (made.error || !made.data?.user) {
+          const code = (made.error as { code?: string } | null)?.code ?? "";
+          if (code === "email_exists" || code === "user_already_exists" || /already (been )?registered|already exists/i.test(made.error?.message ?? "")) {
+            return fail("invalid_state", "login_exists", origin);
+          }
+          throw new Error(`server_error: create login: ${made.error?.message ?? "no user returned"}`);
+        }
+        const created = made.data.user;
+        // Role and details. If either fails the login is taken away again: a sign-in whose password
+        // nobody was shown, with no role, would only block the address from being used later.
+        let linkCode: string | null = null;
+        try {
+          const up = await sb.rpc("upsert_staff_member", { p_user: created.id, p_role: input.role, p_active: true, p_by: user.id });
+          if (up.error) throw new Error(`role: ${up.error.message}`);
+          linkCode = (up.data as { link_code?: string | null } | null)?.link_code ?? null;
+          const prof = await sb.from("staff_profiles").upsert(
+            { user_id: created.id, full_name: input.fullName, email: input.email, cell: input.cell, updated_at: new Date().toISOString() },
+            { onConflict: "user_id" },
+          );
+          if (prof.error) throw new Error(`details: ${prof.error.message}`);
+        } catch (e) {
+          const undo = await sb.auth.admin.deleteUser(created.id);
+          console.error(JSON.stringify({
+            event: "staff_create_undone", by: user.id, user: created.id, removed: !undo.error,
+            message: String(e instanceof Error ? e.message : e), undoError: undo.error?.message ?? null,
+          }));
+          return fail("server_error", undo.error ? "login_half_made" : "Something went wrong", origin);
+        }
+        console.log(JSON.stringify({ event: "staff_created", by: user.id, user: created.id, role: input.role }));
+        return ok({
+          member: { userId: created.id, email: input.email, fullName: input.fullName, role: input.role, active: true, linkCode },
+          oneTimePassword: password,
+        }, origin);
+      }
+      // A new one-time password for someone who cannot get in. Not for yourself (that is "Change
+      // password", which asks for nothing an open session should not already be able to do), and only
+      // for a login that has a role: this screen manages staff, not every address in the project.
+      if (action === "staff-reset-password") {
+        if (!UUID.test(String(body.userId ?? ""))) return fail("bad_request", "userId is required", origin);
+        if (body.userId === user.id) return fail("invalid_state", "reset_self", origin);
+        const [known, target] = await Promise.all([
+          sb.auth.admin.getUserById(body.userId as string),
+          sb.from("staff_members").select("user_id, active").eq("user_id", body.userId as string).maybeSingle(),
+        ]);
+        if (target.error) throw new Error(`server_error: ${target.error.message}`);
+        if (known.error || !known.data?.user || !target.data) return fail("bad_request", "No such login", origin);
+        if (target.data.active !== true) return fail("invalid_state", "reset_inactive", origin);
+        const password = oneTimePassword();
+        const set = await sb.auth.admin.updateUserById(body.userId as string, {
+          password, user_metadata: { ...(known.data.user.user_metadata ?? {}), must_change_password: true },
+        });
+        if (set.error) throw new Error(`server_error: reset password: ${set.error.message}`);
+        console.log(JSON.stringify({ event: "staff_password_reset", by: user.id, user: body.userId }));
+        return ok({ oneTimePassword: password }, origin);
+      }
       if (action === "staff-save") {
         if (!UUID.test(String(body.userId ?? "")) || (body.role !== "admin" && body.role !== "consultant") || typeof body.active !== "boolean") {
           return fail("bad_request", "userId, role and active are required", origin);

@@ -35,7 +35,7 @@ Deno.test("consultant: own records only; never a colleague's, never an unassigne
 
 Deno.test("consultant: administrator-only actions are refused on their own record", () => {
   for (const a of ["delete-record", "assign"]) assertEquals(accessFor(consultant, a, ME, { consultant_id: ME }), "admin_only", a);
-  for (const a of ["staff-list", "staff-save"]) assertEquals(accessFor(consultant, a, ME), "admin_only", a);
+  for (const a of ["staff-list", "staff-save", "staff-create", "staff-reset-password"]) assertEquals(accessFor(consultant, a, ME), "admin_only", a);
   assertEquals(ADMIN_ONLY_ACTIONS.includes("delete-record"), true); // deleting destroys audit evidence
 });
 

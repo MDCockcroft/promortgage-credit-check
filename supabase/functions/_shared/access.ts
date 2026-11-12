@@ -10,9 +10,9 @@ export interface Member {
 }
 
 /** Actions that need no record. */
-export const NO_RECORD_ACTIONS = ["config", "staff-list", "staff-save"];
+export const NO_RECORD_ACTIONS = ["config", "staff-list", "staff-save", "staff-create", "staff-reset-password"];
 /** Only an administrator: destroying evidence, handing out records, managing staff. */
-export const ADMIN_ONLY_ACTIONS = ["delete-record", "assign", "staff-list", "staff-save"];
+export const ADMIN_ONLY_ACTIONS = ["delete-record", "assign", "staff-list", "staff-save", "staff-create", "staff-reset-password"];
 /**
  * EVERYTHING a consultant may do, and only on their own record (config needs none). An action
  * that is not on this list is refused for a consultant - so a new action is closed until someone

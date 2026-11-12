@@ -373,6 +373,16 @@
   .staff-row select { width: 100%; }
   .staff-row.is-off .who strong { color: var(--ink-muted); }
   @media (max-width: 720px) { .staff-row { grid-template-columns: 1fr 1fr; } .staff-row .who { grid-column: 1 / -1; } }
+  .staff-row .row-acts { display: flex; gap: var(--s2); flex-wrap: wrap; justify-content: flex-end; }
+  .staff-add { border: 1px solid var(--border); border-radius: var(--r-s); padding: var(--s4); margin: var(--s4) 0; }
+  .staff-add h3 { margin-top: 0; }
+  .staff-add-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s4); }
+  .staff-add .err { display: inline-block; margin-left: var(--s3); color: var(--error); font-size: var(--fs-small); }
+  @media (max-width: 720px) { .staff-add-grid { grid-template-columns: 1fr; } }
+  .issued { border-color: var(--gold-deep); background: var(--gold-tint); }
+  .issued .callout-tag { color: var(--gold-deep); }
+  .issued .secret { font-family: var(--font-mono); font-size: 1.15rem; letter-spacing: 0.04em; overflow-wrap: anywhere; user-select: all; }
+  .issued .acts { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s3); }
   .assign-row { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: flex-end; margin-top: var(--s2); }
   .assign-row .field { margin: 0; flex: 1 1 220px; }
   .plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -594,7 +604,35 @@
   </div>
   <div class="dlg-body">
     <p class="small">Consultants see only their own clients. Administrators see everyone&rsquo;s, hand out unassigned applications and manage this list.
-    New logins are created by ARRABON; give each one a role here before its owner can see anything.</p>
+    Add a person below to create their login; they can sign in and send their link straight away.</p>
+    <div class="callout issued" id="staffIssued" tabindex="-1" hidden></div>
+    <form class="staff-add" id="staffAddForm" novalidate>
+      <h3 id="staffAddTitle">Add a person</h3>
+      <div class="staff-add-grid">
+        <div class="field">
+          <label for="stNewName">Full name</label>
+          <input type="text" id="stNewName" autocomplete="off" maxlength="80">
+        </div>
+        <div class="field">
+          <label for="stNewEmail">Email (their sign-in)</label>
+          <input type="email" id="stNewEmail" autocomplete="off" maxlength="254">
+        </div>
+        <div class="field">
+          <label for="stNewCell">Cellphone <span class="hint">optional</span></label>
+          <input type="tel" id="stNewCell" autocomplete="off" maxlength="16">
+        </div>
+        <div class="field">
+          <label for="stNewRole">Role</label>
+          <select id="stNewRole">
+            <option value="consultant">Consultant</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" type="submit" id="stNewBtn">Create login</button>
+      <span class="err" id="stNewErr" role="alert"></span>
+    </form>
+    <h3>Everyone</h3>
     <div id="staffList"></div>
     <p class="msg" id="staffMsg" role="status" aria-live="polite"></p>
   </div>
@@ -907,6 +945,9 @@
     assign_already_assigned: 'This client already has an active consultant. Clients stay with their consultant.',
     assign_not_staff: 'That person is not an active member of staff. Give them a role under Staff first.',
     last_admin: 'This is the only administrator. Make someone else an administrator first.',
+    login_exists: 'There is already a login with that email address. Find it in the list below and give it a role there.',
+    reset_self: 'This is your own login. Use “Change password” instead.',
+    reset_inactive: 'This person is not active. Tick Active and save first, then give them a new one-time password.',
     roles_not_installed: 'Roles are not switched on for this system yet. Contact ARRABON.',
     'manual_not_allowed:status_manual_verified': 'This record is already verified manually — the evidence is shown in the Identity check section.'
   };
@@ -2958,13 +2999,23 @@
               })()
             : null
         ]),
-        save
+        el('div', { className: 'row-acts' }, [
+          m.role && m.active && !mine(m)
+            ? (function () {
+                var rb = btn('New one-time password', 'btn btn-ghost btn-sm', function () { onStaffReset(m, rb); }, 'stReset' + i);
+                rb.setAttribute('aria-label', 'New one-time password for ' + who);
+                return rb;
+              })()
+            : null,
+          save
+        ])
       ]);
       box.appendChild(row);
     });
   }
-  function copyText(text, msgId, okText) {
-    var done = function (okCopy) { setMsg(msgId, okCopy ? okText : 'Could not copy automatically: ' + text, okCopy ? 'ok' : null); };
+  function copyText(text, msgId, okText, failText) {
+    /* failText: for a secret, which must never be repeated in the message line */
+    var done = function (okCopy) { setMsg(msgId, okCopy ? okText : (failText || 'Could not copy automatically: ' + text), okCopy ? 'ok' : null); };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
     else done(false);
   }
@@ -3001,6 +3052,104 @@
       b.focus();
     });
   }
+  function mine(m) { return !!(m.isMe || (sysCfg && sysCfg.me && m.userId === sysCfg.me.userId)); }
+  /* The one-time password, shown ONCE. It lives only in this box: closing the Staff window (or
+     issuing another) wipes it, and nothing else on the page keeps a copy. */
+  var COPY_FAIL = 'Could not copy automatically. Select the password in the box above and copy it yourself.';
+  function clearIssued() { var box = $('staffIssued'); box.textContent = ''; box.hidden = true; }
+  function showIssued(o) {
+    var box = $('staffIssued');
+    box.textContent = '';
+    var link = o.linkCode ? personalLink(o.linkCode) : '';
+    var signIn = window.location.origin + window.location.pathname;
+    box.appendChild(el('span', { className: 'callout-tag', text: o.created ? 'Login created — shown once' : 'New one-time password — shown once' }));
+    box.appendChild(el('p', null, [el('strong', { text: o.who }), ' signs in at ', signIn, ' with ', el('strong', { text: o.email }), ' and this one-time password:']));
+    box.appendChild(el('p', { className: 'secret', id: 'stIssuedPw', text: o.password }));
+    box.appendChild(el('p', { className: 'small', text: 'Pass it on now, by phone or in person if you can. It will not be shown again, and they must choose their own password the first time they sign in.' +
+      (o.created ? '' : ' Their old password no longer works.') }));
+    if (link) box.appendChild(el('p', { className: 'small' }, ['Their personal link for clients: ', el('span', { className: 'mono', text: link })]));
+    var acts = el('div', { className: 'acts' }, [
+      btn('Copy password', 'btn btn-ghost btn-sm', function () { copyText(o.password, 'staffMsg', 'Password copied.', COPY_FAIL); }, 'stIssuedCopy'),
+      btn('Copy sign-in details', 'btn btn-ghost btn-sm', function () {
+        copyText('Pro Mortgage credit check register\nSign in: ' + signIn + '\nEmail: ' + o.email + '\nOne-time password: ' + o.password +
+          '\nYou will be asked to choose your own password the first time you sign in.' + (link ? '\nYour personal link for clients: ' + link : ''),
+          'staffMsg', 'Sign-in details copied.', COPY_FAIL);
+      }),
+      btn('Done — hide it', 'btn btn-ghost btn-sm', function () { clearIssued(); setMsg('staffMsg', 'Hidden.', 'ok'); $('staffTitle').focus(); })
+    ]);
+    box.appendChild(acts);
+    box.hidden = false;
+    box.focus();
+  }
+  function onStaffReset(m, b) {
+    if (busy) return;
+    var who = m.fullName || m.email;
+    if (!window.confirm('Give ' + who + ' a new one-time password?\n\nTheir current password stops working for signing in. A browser where they are already signed in stays signed in: to shut someone out, untick Active and save instead.')) return;
+    busy = true;
+    b.disabled = true;
+    setMsg('staffMsg', '');
+    clearIssued();
+    safe(function () { return PMStore.staffResetPassword(m.userId); }).then(function (d) {
+      busy = false;
+      b.disabled = false;
+      if (!d || !d.oneTimePassword) throw { code: 'server_error', message: 'Something went wrong' };
+      showIssued({ created: false, who: who, email: m.email, password: d.oneTimePassword, linkCode: null });
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      var e2 = staffError(err, 'staff');
+      setMsg('staffMsg', e2.text, 'err', e2.sub);
+      b.focus();
+    });
+  }
+  var NEW_FIELD = { fullName: 'stNewName', email: 'stNewEmail', cell: 'stNewCell', role: 'stNewRole' };
+  var NEW_FIELD_TEXT = {
+    fullName: 'Enter the person’s full name.',
+    email: 'Enter a valid email address.',
+    cell: 'Enter a South African cellphone number (10 digits), or leave it empty.',
+    role: 'Choose a role.'
+  };
+  function newLoginProblem(v) {
+    if (v.fullName.length < 2) return 'fullName';
+    if (!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(v.email)) return 'email';
+    if (v.cell && !/^(0|\+27)\d{9}$/.test(v.cell.replace(/[\s()-]/g, ''))) return 'cell';
+    return null;
+  }
+  $('staffAddForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (busy) return;
+    var v = { fullName: $('stNewName').value.trim(), email: $('stNewEmail').value.trim(), cell: $('stNewCell').value.trim(), role: $('stNewRole').value };
+    var errEl = $('stNewErr'), b = $('stNewBtn');
+    errEl.textContent = '';
+    var bad = newLoginProblem(v);
+    if (bad) { errEl.textContent = NEW_FIELD_TEXT[bad]; $(NEW_FIELD[bad]).focus(); return; }
+    busy = true;
+    b.disabled = true;
+    b.textContent = 'Creating…';
+    setMsg('staffMsg', '');
+    clearIssued();
+    safe(function () { return PMStore.staffCreate(v.fullName, v.email, v.cell, v.role); }).then(function (d) {
+      if (!d || !d.oneTimePassword || !d.member) throw { code: 'server_error', message: 'Something went wrong' };
+      $('staffAddForm').reset();
+      /* show the password FIRST: a list that fails to reload must not cost the only sight of it */
+      showIssued({ created: true, who: d.member.fullName || v.fullName, email: d.member.email || v.email, password: d.oneTimePassword, linkCode: d.member.linkCode });
+      return loadStaff().then(function () { renderStaff(); render(); });
+    }).then(function () {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Create login';
+    }).catch(function (err) {
+      busy = false;
+      b.disabled = false;
+      b.textContent = 'Create login';
+      var m = (err && err.message) || '';
+      var field = err && err.code === 'bad_request' && /^invalid_(\w+)$/.exec(m);
+      if (field && NEW_FIELD[field[1]]) { errEl.textContent = NEW_FIELD_TEXT[field[1]]; $(NEW_FIELD[field[1]]).focus(); return; }
+      if (m === 'login_half_made') { errEl.textContent = 'The login could not be completed and could not be removed again. Contact Michael before trying this address again.'; return; }
+      errEl.textContent = staffError(err, 'staff').text;
+    });
+  });
+  sdlg.addEventListener('close', function () { clearIssued(); setMsg('staffMsg', ''); $('staffAddForm').reset(); $('stNewErr').textContent = ''; });
   $('staffBtn').addEventListener('click', function () {
     setMsg('staffMsg', '');
     $('staffList').textContent = '';
