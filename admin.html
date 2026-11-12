@@ -362,20 +362,40 @@
 
   /* --- My details dialog --- */
   #profileDlg { width: min(480px, calc(100vw - 2 * var(--s4))); }
-  #staffDlg { width: min(860px, calc(100vw - 2 * var(--s4))); }
+  #staffDlg { width: min(1000px, calc(100vw - 2 * var(--s4))); }
   .link-box { margin-bottom: var(--s4); }
   .link-box .link-row { margin-top: var(--s2); }
-  .staff-row { display: grid; grid-template-columns: minmax(0, 1.6fr) 150px 110px minmax(0, 1fr) auto; gap: var(--s3);
-    align-items: center; padding: var(--s3) 0; border-bottom: 1px solid var(--border); }
-  .staff-row .who strong { display: block; overflow-wrap: anywhere; }
-  .staff-row .who span { font-size: var(--fs-micro); color: var(--ink-muted); overflow-wrap: anywhere; }
-  .staff-row .meta { font-size: var(--fs-micro); color: var(--ink-muted); }
+  /* One grid for the whole list, each row a subgrid: every column lines up down the page, and a
+     row without a button leaves its cell empty instead of pulling the others sideways. */
+  #staffList { display: grid; grid-template-columns: minmax(0, 1fr) 150px repeat(5, auto); column-gap: var(--s3); }
+  #staffList > p { grid-column: 1 / -1; }
+  .staff-row, .staff-head { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; }
+  .staff-head { padding-bottom: var(--s2); border-bottom: 1px solid var(--border-strong); font-size: var(--fs-micro);
+    font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted); }
+  .staff-row { padding: var(--s3) 0; border-bottom: 1px solid var(--border); }
+  .staff-head .count { text-align: right; }
+  .staff-row .who { min-width: 0; }
+  .staff-row .who strong, .staff-row .who span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .staff-row .who span { font-size: var(--fs-micro); color: var(--ink-muted); }
+  .staff-row .count { font-size: var(--fs-small); color: var(--ink-muted); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
   .staff-row select { width: 100%; }
+  .staff-row .btn { white-space: nowrap; }
+  .staff-row .check-row { margin: 0; white-space: nowrap; }
   .staff-row.is-off .who strong { color: var(--ink-muted); }
-  @media (max-width: 720px) { .staff-row { grid-template-columns: 1fr 1fr; } .staff-row .who { grid-column: 1 / -1; } }
-  .staff-row .row-acts { display: flex; gap: var(--s2); flex-wrap: wrap; justify-content: flex-end; }
+  @media (max-width: 760px) {
+    #staffList { display: block; }
+    .staff-head { display: none; }
+    .staff-row { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); }
+    .staff-row .who { flex: 1 1 100%; }
+    .staff-row .who strong, .staff-row .who span { white-space: normal; overflow-wrap: anywhere; }
+    .staff-row select { flex: 0 1 160px; width: auto; }
+    .staff-row > span:empty { display: none; }
+  }
   .staff-add { border: 1px solid var(--border); border-radius: var(--r-s); padding: var(--s4); margin: var(--s4) 0; }
-  .staff-add h3 { margin-top: 0; }
+  .staff-add { padding: 0; }
+  .staff-add summary { cursor: pointer; padding: var(--s3) var(--s4); font-weight: 700; font-size: var(--fs-small); }
+  .staff-add summary:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; }
+  .staff-add form { padding: var(--s2) var(--s4) var(--s4); }
   .staff-add-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s4); }
   .staff-add .err { display: inline-block; margin-left: var(--s3); color: var(--error); font-size: var(--fs-small); }
   @media (max-width: 720px) { .staff-add-grid { grid-template-columns: 1fr; } }
@@ -606,8 +626,9 @@
     <p class="small">Consultants see only their own clients. Administrators see everyone&rsquo;s, hand out unassigned applications and manage this list.
     Add a person below to create their login; they can sign in and send their link straight away.</p>
     <div class="callout issued" id="staffIssued" tabindex="-1" hidden></div>
-    <form class="staff-add" id="staffAddForm" novalidate>
-      <h3 id="staffAddTitle">Add a person</h3>
+    <details class="staff-add" id="staffAddBox">
+    <summary>Add a person</summary>
+    <form id="staffAddForm" novalidate>
       <div class="staff-add-grid">
         <div class="field">
           <label for="stNewName">Full name</label>
@@ -632,6 +653,7 @@
       <button class="btn btn-primary btn-sm" type="submit" id="stNewBtn">Create login</button>
       <span class="err" id="stNewErr" role="alert"></span>
     </form>
+    </details>
     <h3>Everyone</h3>
     <div id="staffList"></div>
     <p class="msg" id="staffMsg" role="status" aria-live="polite"></p>
@@ -2968,6 +2990,10 @@
       box.appendChild(el('p', { className: 'small', text: 'Showing the list as it was when it last loaded:' }));
     }
     if (!staff.length) { box.appendChild(el('p', { className: 'small', text: 'No logins found.' })); return; }
+    box.appendChild(el('div', { className: 'staff-head', 'aria-hidden': 'true' }, [
+      el('span', { text: 'Person' }), el('span', { text: 'Role' }), el('span', { text: 'Access' }), el('span', { className: 'count', text: 'Clients' }),
+      el('span'), el('span'), el('span')
+    ]));
     staff.forEach(function (m, i) {
       var who = m.fullName || m.email;
       var role = el('select', { id: 'stRole' + i, 'aria-label': 'Role for ' + (m.fullName || m.email) }, [
@@ -2981,34 +3007,25 @@
       active.checked = m.role ? !!m.active : true;
       var save = btn('Save', 'btn btn-ghost btn-sm', function () { onStaffSave(m, role, active, save); }, 'stSave' + i);
       save.setAttribute('aria-label', 'Save ' + (m.fullName || m.email));
-      var meta = [m.clients === 1 ? '1 client' : m.clients + ' clients'];
+      var copyBtn = m.linkCode && m.role && m.active
+        ? btn('Copy link', 'btn btn-ghost btn-sm', function () { copyText(personalLink(m.linkCode), 'staffMsg', 'Link for ' + who + ' copied.'); })
+        : el('span');
+      if (copyBtn.tagName === 'BUTTON') { copyBtn.setAttribute('aria-label', 'Copy the personal link of ' + who); copyBtn.title = 'Copy the personal link ' + who + ' sends to clients'; }
+      var resetBtn = m.role && m.active && !mine(m)
+        ? btn('New password', 'btn btn-ghost btn-sm', function () { onStaffReset(m, resetBtn); }, 'stReset' + i)
+        : el('span');
+      if (resetBtn.tagName === 'BUTTON') { resetBtn.setAttribute('aria-label', 'New one-time password for ' + who); resetBtn.title = 'Give ' + who + ' a new one-time password'; }
       var row = el('div', { className: 'staff-row' + (m.role && !m.active ? ' is-off' : '') }, [
         el('div', { className: 'who' }, [
-          el('strong', { text: (m.fullName || m.email) + (m.isMe ? ' (you)' : '') }),
-          el('span', { text: m.fullName ? m.email : 'Has not added their details yet' })
+          el('strong', { text: (m.fullName || m.email) + (m.isMe ? ' (you)' : ''), title: m.fullName || m.email }),
+          el('span', { text: m.fullName ? m.email : 'Has not added their details yet', title: m.fullName ? m.email : null })
         ]),
         role,
         el('label', { className: 'check-row', 'for': 'stActive' + i }, [active, 'Active']),
-        el('div', { className: 'meta' }, [
-          el('div', { text: meta.join(' · ') }),
-          m.linkCode && m.role && m.active
-            ? (function () {
-                var cb = btn('Copy their link', 'btn btn-ghost btn-sm', function () { copyText(personalLink(m.linkCode), 'staffMsg', 'Link for ' + who + ' copied.'); });
-                cb.setAttribute('aria-label', 'Copy the personal link of ' + who);
-                return cb;
-              })()
-            : null
-        ]),
-        el('div', { className: 'row-acts' }, [
-          m.role && m.active && !mine(m)
-            ? (function () {
-                var rb = btn('New one-time password', 'btn btn-ghost btn-sm', function () { onStaffReset(m, rb); }, 'stReset' + i);
-                rb.setAttribute('aria-label', 'New one-time password for ' + who);
-                return rb;
-              })()
-            : null,
-          save
-        ])
+        el('span', { className: 'count', text: m.clients === 1 ? '1 client' : m.clients + ' clients' }),
+        copyBtn,
+        resetBtn,
+        save
       ]);
       box.appendChild(row);
     });
@@ -3131,6 +3148,7 @@
     safe(function () { return PMStore.staffCreate(v.fullName, v.email, v.cell, v.role); }).then(function (d) {
       if (!d || !d.oneTimePassword || !d.member) throw { code: 'server_error', message: 'Something went wrong' };
       $('staffAddForm').reset();
+      $('staffAddBox').open = false;
       /* show the password FIRST: a list that fails to reload must not cost the only sight of it */
       showIssued({ created: true, who: d.member.fullName || v.fullName, email: d.member.email || v.email, password: d.oneTimePassword, linkCode: d.member.linkCode });
       return loadStaff().then(function () { renderStaff(); render(); });
@@ -3149,7 +3167,7 @@
       errEl.textContent = staffError(err, 'staff').text;
     });
   });
-  sdlg.addEventListener('close', function () { clearIssued(); setMsg('staffMsg', ''); $('staffAddForm').reset(); $('stNewErr').textContent = ''; });
+  sdlg.addEventListener('close', function () { clearIssued(); setMsg('staffMsg', ''); $('staffAddForm').reset(); $('staffAddBox').open = false; $('stNewErr').textContent = ''; });
   $('staffBtn').addEventListener('click', function () {
     setMsg('staffMsg', '');
     $('staffList').textContent = '';
