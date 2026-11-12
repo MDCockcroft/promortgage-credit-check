@@ -864,7 +864,15 @@
     return PMStore.STATUS[status] || { label: String(status || 'Unknown'), chip: 'chip-neutral', group: '' };
   }
   /* The list, filter and tiles show five buckets; View shows the detailed status (chipEl + hint). */
-  function bucketFor(r) { return PMStore.bucketOf(r.status, sysCfg.idvMode, isStalled(r)); }
+  /* A record that could otherwise run, but has no copy of the client's ID: the server refuses the
+     check (id_copy_required), so it is staff's move, not "Ready to run". */
+  function needsIdCopy(r) {
+    return !r.idDocument && r.status !== 'check_in_flight' && PMStore.bucketOf(r.status, sysCfg.idvMode, false) === 'ready';
+  }
+  function bucketFor(r) {
+    if (!isStalled(r) && needsIdCopy(r)) return 'attention';
+    return PMStore.bucketOf(r.status, sysCfg.idvMode, isStalled(r));
+  }
   function bucketChipEl(r) {
     var b = PMStore.bucketInfo(bucketFor(r));
     return el('span', { className: 'chip ' + b.chip, text: b.label });
@@ -874,14 +882,16 @@
       var ps = plainStatus(r);
       return el('p', { className: 'next-step', id: 'dlgStatusHint' }, [el('strong', { text: ps.head }), ps.detail ? ' ' + ps.detail : '']);
     }
-    var t = PMStore.hintFor(r.status, bucketFor(r), isStalled(r));
+    var t = !isStalled(r) && needsIdCopy(r)
+      ? 'The client’s ID copy is not on this record. Attach it below, then run the credit check.'
+      : PMStore.hintFor(r.status, bucketFor(r), isStalled(r));
     return t ? el('p', { className: 'small', id: 'dlgStatusHint', text: t }) : null;
   }
   /* The consultant's one-line answer to "where is this application, and what do I do?" */
   function plainStatus(r) {
     var n = r.idvAttempts || 0, max = PMStore.MAX_IDV_ROUNDS;
     if (isStalled(r)) return { head: 'This application has stalled.', detail: 'Open it again in a minute; if it stays like this, ask your administrator.' };
-    if (!r.idDocument && ['idv_passed', 'idv_waived', 'manual_verified', 'check_failed'].indexOf(r.status) !== -1) {
+    if (needsIdCopy(r)) {
       return { head: 'Attach the client’s ID copy, then run the credit check.', detail: 'A credit check cannot run without a copy of the client’s ID document on the record.' };
     }
     switch (r.status) {
@@ -912,6 +922,7 @@
     if (plainView() && rec) return bucketChipEl(rec);
     var s = statusInfo(status);
     if (rec && isStalled(rec)) return el('span', { className: 'chip chip-attention', text: s.label + ' — stalled' });
+    if (rec && needsIdCopy(rec)) return el('span', { className: 'chip chip-attention', text: 'ID copy missing' });
     return el('span', { className: 'chip ' + s.chip, text: s.label });
   }
   /* Mirrors the server's recovery windows (states.ts): an unanswered identity round after 6 min,
