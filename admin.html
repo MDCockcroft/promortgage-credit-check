@@ -573,7 +573,7 @@
       </select>
     </div>
     <div class="field narrow" id="consultantFilterField" hidden>
-      <label for="consultantFilter">Consultant</label>
+      <label for="consultantFilter">Assigned to</label>
       <select id="consultantFilter"><option value="">All</option><option value="_none">Needs assigning</option></select>
     </div>
   </div>
@@ -585,7 +585,7 @@
         <tr>
           <th scope="col" class="fit">Reference</th>
           <th scope="col">Client</th>
-          <th scope="col" class="fit" id="thConsultant" hidden>Consultant</th>
+          <th scope="col" class="fit" id="thConsultant" hidden>Assigned to</th>
           <th scope="col" class="fit">Submitted</th>
           <th scope="col" class="fit num">Gross income</th>
           <th scope="col" class="fit num">Score</th>
@@ -1738,7 +1738,7 @@
   /* ---------- a2. whose client is this? (administrators; consultants only ever see their own) ---------- */
   function consultantSection(r) {
     var s = el('section', { className: 'dsec', 'aria-labelledby': 'secOwnerH' });
-    s.appendChild(h3('Consultant', 'secOwnerH'));
+    s.appendChild(h3('Assignment', 'secOwnerH'));
     s.appendChild(kv([
       ['Assigned to', consultantLabel(r.consultantId)],
       r.assignedAt ? ['Since', fmtDate(r.assignedAt)] : null
