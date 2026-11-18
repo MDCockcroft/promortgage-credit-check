@@ -110,6 +110,9 @@
   }
   tbody tr { border-bottom: 1px solid var(--border-hairline); }
   tbody tr:hover { background: var(--surface-sunken); }
+  /* the register list: one line per cell (a date or a reference never breaks); only names wrap */
+  #regBody td { white-space: nowrap; }
+  #regBody td.c-wrap { white-space: normal; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
   td.score-cell { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
@@ -578,7 +581,6 @@
           <th scope="col">Reference</th>
           <th scope="col">Client</th>
           <th scope="col" id="thConsultant" hidden>Consultant</th>
-          <th scope="col">ID number</th>
           <th scope="col">Submitted</th>
           <th scope="col" class="num">Gross income</th>
           <th scope="col">Score</th>
@@ -849,11 +851,6 @@
 
   /* ================= formatting ================= */
   function fullName(r) { return String((r.firstNames || '') + ' ' + (r.surname || '')).trim() || r.ref; }
-  function maskId(rec) {
-    if (rec.idType === 'passport') return 'Passport ' + (rec.passportNumber || '');
-    var id = rec.idNumber || '';
-    return id.slice(0, 6) + '•••••' + id.slice(-2);
-  }
   function rand(n) {
     return 'R ' + Number(n || 0).toLocaleString('en-ZA').replace(/,/g, ' ');
   }
@@ -1087,7 +1084,7 @@
       console.error('load failed:', err);
       var body = $('regBody');
       body.textContent = '';
-      body.appendChild(el('tr', null, el('td', { colspan: 9 },
+      body.appendChild(el('tr', null, el('td', { colspan: 8 },
         el('em', { text: 'Could not load submissions: ' + ((err && err.message) || 'unknown error') }))));
     });
   }
@@ -1120,9 +1117,8 @@
       var name = fullName(r);
       body.appendChild(el('tr', null, [
         el('td', { className: 'mono', text: r.ref }),
-        el('td', null, el('strong', { text: name })),
-        adminView() ? el('td', { className: r.consultantId ? null : 'small', text: consultantLabel(r.consultantId) }) : null,
-        el('td', { className: 'mono', text: maskId(r) }),
+        el('td', { className: 'c-wrap' }, el('strong', { text: name })),
+        adminView() ? el('td', { className: r.consultantId ? 'c-wrap' : 'c-wrap small', text: consultantLabel(r.consultantId) }) : null,
         el('td', { text: fmtDate(r.createdAt) }),
         el('td', { className: 'num', text: rand(r.grossIncome) }),
         el('td', { className: 'score-cell' }, scoreCell(r.reportSummary)),
@@ -1132,7 +1128,7 @@
       ]));
     });
     if (all.length && !rows.length) {
-      body.appendChild(el('tr', null, el('td', { colspan: adminView() ? 9 : 8 },
+      body.appendChild(el('tr', null, el('td', { colspan: adminView() ? 8 : 7 },
         el('em', { text: 'No submissions match the current search or filter.' }))));
     }
   }
