@@ -26,6 +26,12 @@
     letter-spacing: 0.02em;
   }
   .topbar .spacer { flex: 1; }
+  .topbar .brand { display: flex; align-items: center; gap: var(--s3); }
+  .topbar .brand img { width: 40px; height: 40px; flex: none; }
+  .topbar .brand .wordmark { white-space: nowrap; }
+  /* Pro Mortgage's logo always sits on black: a dark band across the top of the card */
+  .login-brand { background: var(--rail-bg); margin: calc(-1 * var(--s6)) calc(-1 * var(--s6)) var(--s5); padding: var(--s5) var(--s4); }
+  .login-logo { display: block; width: 168px; height: auto; margin: 0 auto; }
   .demo-badge {
     font-family: var(--font-mono);
     font-size: var(--fs-micro);
@@ -432,6 +438,7 @@
     box-shadow: var(--shadow-2);
     padding: var(--s6);
     width: min(400px, 100%);
+    overflow: hidden;
   }
   .login-card h2 { margin: var(--s2) 0 var(--s5); }
   .login-card .btn { width: 100%; margin-top: var(--s2); }
@@ -449,8 +456,9 @@
 <a class="skip-link" href="#main">Skip to register</a>
 
 <header class="topbar">
-  <div>
-    <p class="wordmark">PRO<span class="gold">MORTGAGE</span></p>
+  <div class="brand">
+    <img src="assets/logo-mark.png?v=20261118-1" alt="" width="192" height="193">
+    <p class="wordmark">PRO <span class="gold">MORTGAGE</span></p>
   </div>
   <h1>Credit check register</h1>
   <span class="demo-badge" id="modeBadge">Demo &mdash; local data only</span>
@@ -465,7 +473,7 @@
 
 <div class="login-wrap" id="loginView" hidden>
   <form class="login-card" id="loginForm">
-    <p class="wordmark" style="color:var(--ink)">PRO<span class="gold">MORTGAGE</span></p>
+    <div class="login-brand"><img class="login-logo" src="assets/logo.png?v=20261118-1" alt="Pro Mortgage" width="382" height="280"></div>
     <h2>Staff sign-in</h2>
     <div class="field">
       <label for="loginEmail">Email</label>
@@ -484,7 +492,7 @@
 
 <div class="login-wrap" id="setPwView" hidden>
   <form class="login-card" id="setPwForm" novalidate>
-    <p class="wordmark" style="color:var(--ink)">PRO<span class="gold">MORTGAGE</span></p>
+    <div class="login-brand"><img class="login-logo" src="assets/logo.png?v=20261118-1" alt="Pro Mortgage" width="382" height="280"></div>
     <h2 id="setPwTitle">Set your password</h2>
     <p class="login-note" id="setPwLede"></p>
     <div class="field">
@@ -702,7 +710,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261112-1"></script>
+<script src="assets/store.js?v=20261118-1"></script>
 <script>
 (function () {
   'use strict';

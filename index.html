@@ -19,6 +19,7 @@
     flex-direction: column;
     gap: var(--s6);
   }
+  .brand-logo { display: block; width: 132px; height: auto; }
   .rail .form-id {
     font-family: var(--font-mono);
     font-size: var(--fs-micro);
@@ -110,7 +111,7 @@
   .err-summary a { color: var(--error); font-weight: 600; }
   .err-summary ul { margin: var(--s2) 0 0; padding-left: 1.2em; }
 
-  /* --- the client's own ID copy (optional) --- */
+  /* --- the client's own ID copy (required on the form since 2026-11-18) --- */
   .idcopy-intro { font-size: var(--fs-small); color: var(--ink-muted); margin: 0 0 var(--s3); }
   .field input[type="file"] { display: block; width: 100%; max-width: 100%; font: 400 0.95rem var(--font-body); padding: var(--s2) 0; }
   .doc-preview { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2); font-size: var(--fs-small); color: var(--ink-muted); }
@@ -140,7 +141,7 @@
     margin-bottom: var(--s4);
   }
 
-  /* --- consent wording: Pro Mortgages SA notice + MortgageMAX consent types --- */
+  /* --- consent wording: Pro Mortgage SA notice + MortgageMAX consent types --- */
   .notice-box { max-height: none; background: var(--surface); margin-top: var(--s4); }
   .notice-box h2, .consent-type h2 {
     font-size: var(--fs-body);
@@ -245,6 +246,7 @@
   @media (min-width: 960px) {
     .shell { grid-template-columns: 300px 1fr; }
     .rail { position: sticky; top: 0; height: 100vh; }
+    .brand-logo { width: 176px; }
     .rail nav { display: block; }
     main { padding: var(--s8) var(--s7); }
   }
@@ -282,8 +284,7 @@
 
   <aside class="rail" aria-label="About this form">
     <div>
-      <p class="wordmark">PRO<span class="gold">MORTGAGE</span></p>
-      <span class="wordmark-rule" aria-hidden="true"></span>
+      <img class="brand-logo" src="assets/logo.png?v=20261118-1" alt="Pro Mortgage" width="382" height="280">
       <p class="form-id">Form PM&#8209;CC1 &middot; Credit check authorisation</p>
     </div>
     <nav aria-label="Form sections">
@@ -306,14 +307,14 @@
 
       <div class="callout callout-demo demo-banner" id="demoBanner" hidden>
         <span class="callout-tag">Demo mode</span>
-        Nothing you enter leaves this browser &mdash; it is not sent to Pro Mortgages SA. Do not enter real details.
+        Nothing you enter leaves this browser &mdash; it is not sent to Pro Mortgage SA. Do not enter real details.
       </div>
 
       <div id="formView">
         <header class="doc-head rise">
           <p class="doc-meta">Pro Mortgage SA &middot; Form PM&#8209;CC1</p>
           <h1 id="formHead" tabindex="-1">Credit check authorisation</h1>
-          <p class="lede">This form authorises Pro Mortgages SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
+          <p class="lede">This form authorises Pro Mortgage SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
           <p class="consultant-line" id="consultantLine" hidden>Your consultant: <strong id="consultantName"></strong></p>
         </header>
 
@@ -367,12 +368,12 @@
             </div>
 
             <div class="field" id="idCopyBlock">
-              <span id="idCopyLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">A copy of your ID <span style="font-weight:400;color:var(--ink-muted)">(optional)</span></span>
-              <p class="idcopy-intro" id="idCopyIntro">If you have your ID document or driver&rsquo;s licence at hand, add a clear photo or scan of it now &mdash; on a phone you can take the photo here. Your consultant needs a copy before the credit check and will otherwise ask you for it. JPG, PNG or PDF, up to 10&nbsp;MB each.</p>
+              <span id="idCopyLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">A copy of your ID <span class="req" aria-hidden="true">*</span></span>
+              <p class="idcopy-intro" id="idCopyIntro">Add a clear photo or scan of your ID document or driver&rsquo;s licence &mdash; on a phone you can take the photo here. A credit check cannot be run without a copy of your ID. JPG, PNG or PDF, up to 10&nbsp;MB each.</p>
               <div class="grid-2">
                 <div class="field">
-                  <label for="idFront">Front of your ID</label>
-                  <input id="idFront" name="idFront" type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" aria-describedby="idCopyIntro">
+                  <label for="idFront">Front of your ID <span class="req" aria-hidden="true">*</span></label>
+                  <input id="idFront" name="idFront" type="file" aria-required="true" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" aria-describedby="idCopyIntro">
                   <span class="err" id="idFront-err"></span>
                   <div class="doc-preview" id="idFront-preview" hidden></div>
                 </div>
@@ -521,12 +522,12 @@
           <fieldset id="sec-consent" class="rise">
             <legend><span class="secnum" aria-hidden="true">5</span>Consent &amp; declaration</legend>
             <section class="clause-box notice-box" aria-labelledby="noticeHead">
-              <h2 id="noticeHead">Notice from Pro Mortgages SA</h2>
+              <h2 id="noticeHead">Notice from Pro Mortgage SA</h2>
               <ul>
-                <li>Pro Mortgages SA (Pro Mortgage (Pty) Ltd, registration number 2022/366749/07, Wildersview Estate, 4 Damaskus Road, Protea Hoogte, Brackenfell) is collecting the information on this form. Contact us on 083&nbsp;399&nbsp;2096.</li>
-                <li>Pro Mortgages SA is a MortgageMAX licensee. MortgageMAX, a division of BetterLife Origination Services (Pty) Ltd, obtains your credit report from Experian on your behalf.</li>
+                <li>Pro Mortgage SA (Pro Mortgage (Pty) Ltd, registration number 2022/366749/07, Wildersview Estate, 4 Damaskus Road, Protea Hoogte, Brackenfell) is collecting the information on this form. Contact us on 083&nbsp;399&nbsp;2096.</li>
+                <li>Pro Mortgage SA is a MortgageMAX licensee. MortgageMAX, a division of BetterLife Origination Services (Pty) Ltd, obtains your credit report from Experian on your behalf.</li>
                 <li>We use your information only to pre-qualify you for a home loan and to originate your home loan.</li>
-                <li>If you add a copy of your identity document, we keep it with your application as proof of your identity for the credit check, as the credit bureau requires.</li>
+                <li>When you add a copy of your identity document, we keep it with your application as proof of your identity for the credit check, as the credit bureau requires.</li>
                 <li>Your information is stored on secure cloud infrastructure, which may be located outside South Africa.</li>
                 <li>You may ask us at any time for access to your information, or to correct or delete it.</li>
                 <li>Giving consent is voluntary, but we cannot check your credit or pre-qualify you without it.</li>
@@ -545,7 +546,7 @@
             <div class="field">
               <label class="consent-check" for="consent">
                 <input type="checkbox" id="consent" name="consent" required>
-                <span>I have read and accept the Pro Mortgages SA notice and the MortgageMAX consent above. <span class="req" aria-hidden="true">*</span></span>
+                <span>I have read and accept the Pro Mortgage SA notice and the MortgageMAX consent above. <span class="req" aria-hidden="true">*</span></span>
               </label>
               <span class="err" id="consent-err"></span>
             </div>
@@ -619,7 +620,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261112-1"></script>
+<script src="assets/store.js?v=20261118-1"></script>
 <script>
 (function () {
   'use strict';
@@ -739,7 +740,8 @@
     }
   });
 
-  /* --- the client's own ID copy (optional; Michael, 2026-10-20) ---
+  /* --- the client's own ID copy (2026-10-20; the front is required to submit since 2026-11-18,
+     at Pro Mortgage's request) ---
      A phone's camera photo is large (3-8 MB): images are shrunk in the browser to at most 1800 px on
      the long edge and re-encoded as JPEG before upload - smaller on mobile data, and the re-encoding
      leaves the camera's metadata (location, device) behind; only when a browser cannot decode the image
@@ -751,7 +753,7 @@
   var ID_MAX_EDGE = 1800;
   var SHRINK_TIMEOUT_MS = 15000;
   var ID_UPLOAD_TIMEOUT_MS = 90000;
-  var BACK_NEEDS_FRONT = 'Add the front of your ID as well, or remove the back.';
+  var BACK_NEEDS_FRONT = 'Add the front of your ID as well.';
   var idFiles = { idFront: null, idBack: null };
   var idPending = { idFront: false, idBack: false };
   var idSeq = { idFront: 0, idBack: 0 };
@@ -1015,7 +1017,7 @@
     if (PMStore.mode === 'error') {
       /* config.js points at Supabase but the client library failed to load: store.js would
          otherwise fall back to this browser's local storage and the submission would never
-         reach Pro Mortgages SA. Keep the form unsubmittable; Retry reloads the page. */
+         reach Pro Mortgage SA. Keep the form unsubmittable; Retry reloads the page. */
       p = Promise.reject(new Error('backend library failed to load'));
     } else {
       try { p = Promise.resolve(PMStore.consentTypes()); } catch (e) { p = Promise.reject(e); }
@@ -1092,11 +1094,14 @@
     }
     check('grossIncome', parseAmount(v('grossIncome')) > 0, 'Enter your gross monthly income.');
     check('monthlyExpenses', parseAmount(v('monthlyExpenses')) > 0, 'Enter your total monthly expenses.');
-    /* The ID copy is optional: a rejected file has already been dropped from its input. Only a file
-       still being prepared, or a back without its front, holds the form. */
+    /* The front of the ID is required (page rule only: the upload itself follows the accepted
+       application, so the server cannot demand it at submit - a record that still ends up without
+       one shows as "Needs attention" in the register). A rejected file has already been dropped. */
     check('idBack', !idPending.idBack, 'Your photo of the back is still being prepared - try again in a moment.');
     check('idFront', !idPending.idFront, 'Your ID photo is still being prepared - try again in a moment.');
-    if (!idPending.idFront && !idPending.idBack) check('idFront', !(idFiles.idBack && !idFiles.idFront), BACK_NEEDS_FRONT);
+    if (!idPending.idFront && !idPending.idBack) {
+      check('idFront', !!idFiles.idFront, idFiles.idBack ? BACK_NEEDS_FRONT : 'Add a photo or scan of the front of your ID.');
+    }
     check('consent', document.getElementById('consent').checked, 'Please accept the notice and the consent to continue.');
     return problems;
   }

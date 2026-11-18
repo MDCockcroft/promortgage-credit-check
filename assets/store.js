@@ -403,7 +403,7 @@
 
     newPage();
     run('F2', 16, PDF_M, 'Application form and consent'); y -= PDF_LH * 1.3;
-    run('F1', 10, PDF_M, 'Pro Mortgages SA - reference ' + pdfText(rec.ref)); y -= PDF_LH * 1.2;
+    run('F1', 10, PDF_M, 'Pro Mortgage SA - reference ' + pdfText(rec.ref)); y -= PDF_LH * 1.2;
     para('What the client completed online, including the consent declaration they accepted. ' +
       'The credit report is a separate document from the credit bureau.', 'F1', 9);
     y -= PDF_LH * 0.4;
