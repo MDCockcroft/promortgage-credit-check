@@ -110,9 +110,13 @@
   }
   tbody tr { border-bottom: 1px solid var(--border-hairline); }
   tbody tr:hover { background: var(--surface-sunken); }
-  /* the register list: one line per cell (a date or a reference never breaks); only names wrap */
-  #regBody td { white-space: nowrap; }
+  /* the register list. Text left, numbers right, headings over their own edge. Every column is as
+     wide as its content (.fit) except Client, which takes the spare width - so the gaps between
+     columns are equal and do not move with the data. One line per cell; only a client name wraps. */
+  #regTable th.fit { width: 1%; }
+  #regBody td { white-space: nowrap; font-variant-numeric: tabular-nums; }
   #regBody td.c-wrap { white-space: normal; }
+  #regBody td.score-cell, #regBody td:last-child { text-align: right; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
   td.score-cell { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
@@ -578,14 +582,14 @@
       <caption id="regCaption" tabindex="-1">Submissions</caption>
       <thead>
         <tr>
-          <th scope="col">Reference</th>
+          <th scope="col" class="fit">Reference</th>
           <th scope="col">Client</th>
-          <th scope="col" id="thConsultant" hidden>Consultant</th>
-          <th scope="col">Submitted</th>
-          <th scope="col" class="num">Gross income</th>
-          <th scope="col">Score</th>
-          <th scope="col">Status</th>
-          <th scope="col"><span class="sr-only">Actions</span></th>
+          <th scope="col" class="fit" id="thConsultant" hidden>Consultant</th>
+          <th scope="col" class="fit">Submitted</th>
+          <th scope="col" class="fit num">Gross income</th>
+          <th scope="col" class="fit num">Score</th>
+          <th scope="col" class="fit">Status</th>
+          <th scope="col" class="fit"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody id="regBody"></tbody>
@@ -1118,7 +1122,7 @@
       body.appendChild(el('tr', null, [
         el('td', { className: 'mono', text: r.ref }),
         el('td', { className: 'c-wrap' }, el('strong', { text: name })),
-        adminView() ? el('td', { className: r.consultantId ? 'c-wrap' : 'c-wrap small', text: consultantLabel(r.consultantId) }) : null,
+        adminView() ? el('td', { className: r.consultantId ? null : 'small', text: consultantLabel(r.consultantId) }) : null,
         el('td', { text: fmtDate(r.createdAt) }),
         el('td', { className: 'num', text: rand(r.grossIncome) }),
         el('td', { className: 'score-cell' }, scoreCell(r.reportSummary)),
