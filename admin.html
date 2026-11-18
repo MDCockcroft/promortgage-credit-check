@@ -115,7 +115,8 @@
      columns are equal and do not move with the data. One line per cell; only a client name wraps. */
   #regTable th.fit { width: 1%; }
   #regBody td { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  #regBody td.c-wrap { white-space: normal; }
+  #regBody td.c-wrap { white-space: normal; min-width: 190px; } /* on a narrow window the list scrolls sideways before a name is squeezed */
+  #regBody td.ref { color: var(--ink-muted); } /* a lookup code, not something read: the name leads */
   #regBody td.score-cell, #regBody td:last-child { text-align: right; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
@@ -1120,7 +1121,7 @@
     rows.forEach(function (r) {
       var name = fullName(r);
       body.appendChild(el('tr', null, [
-        el('td', { className: 'mono', text: r.ref }),
+        el('td', { className: 'mono ref', text: r.ref }),
         el('td', { className: 'c-wrap' }, el('strong', { text: name })),
         adminView() ? el('td', { className: r.consultantId ? null : 'small', text: consultantLabel(r.consultantId) }) : null,
         el('td', { text: fmtDate(r.createdAt) }),
