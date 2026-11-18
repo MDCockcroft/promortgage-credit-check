@@ -20,6 +20,14 @@
     gap: var(--s6);
   }
   .brand-logo { display: block; width: 132px; height: auto; }
+  .doc-foot { margin-top: var(--s7); padding-top: var(--s4); border-top: 1px solid var(--border-hairline);
+    font-size: var(--fs-micro); color: var(--ink-muted); line-height: 1.6; }
+  .doc-foot p { margin: 0 0 var(--s2); }
+  @media (max-width: 959px) {
+    /* on a phone the dark panel is a short banner with the logo; its small print is at the foot */
+    .rail { padding: var(--s4) var(--s5); align-items: center; }
+    .rail .form-id, .rail-foot { display: none; }
+  }
   .rail .form-id {
     font-family: var(--font-mono);
     font-size: var(--fs-micro);
@@ -60,9 +68,6 @@
   .doc { max-width: 640px; margin: 0 auto; }
   .doc-head { border-bottom: 2px solid var(--border-strong); padding-bottom: var(--s5); margin-bottom: var(--s6); }
   .doc-head .lede { color: var(--ink-muted); max-width: 54ch; margin-top: var(--s3); }
-  .consultant-line { margin: var(--s4) 0 0; padding-left: var(--s3); border-left: 3px solid var(--gold);
-    font-size: var(--fs-small); color: var(--ink-muted); }
-  .consultant-line strong { color: var(--ink); }
   .doc-meta { font-size: var(--fs-micro); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); margin: 0; }
 
   fieldset { border: 0; padding: 0; margin: 0 0 var(--s6); }
@@ -247,6 +252,7 @@
     .shell { grid-template-columns: 300px 1fr; }
     .rail { position: sticky; top: 0; height: 100vh; }
     .brand-logo { width: 176px; }
+    .doc-foot { display: none; }
     .rail nav { display: block; }
     main { padding: var(--s8) var(--s7); }
   }
@@ -315,7 +321,6 @@
           <p class="doc-meta">Pro Mortgage SA</p>
           <h1 id="formHead" tabindex="-1">Credit check authorisation</h1>
           <p class="lede">This form authorises Pro Mortgage SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
-          <p class="consultant-line" id="consultantLine" hidden>Your consultant: <strong id="consultantName"></strong></p>
         </header>
 
         <form id="ccForm" novalidate>
@@ -612,6 +617,11 @@
         <p>Please quote your reference number in any queries. You can close this page.</p>
       </section>
 
+      <footer class="doc-foot">
+        <p>Your information is used only to prepare your home-loan pre-qualification and is processed in terms of POPIA. Nothing is sent to a credit bureau until you have submitted the form with your consent.</p>
+        <p>Pro Mortgage (Pty) Ltd &middot; Registration no. 2022/366749/07<br>Wildersview Estate, 4 Damaskus Road, Protea Hoogte, Brackenfell &middot; queries: 083&nbsp;399&nbsp;2096</p>
+      </footer>
+
     </div>
   </main>
 </div>
@@ -633,20 +643,10 @@
   var currentRef = null;
   var resumed = false; /* opened from a consultant's re-issued identity-check link */
 
-  /* Opened through a consultant's personal link: say whose, so the client knows it is the right
-     one. Called by the link gate near the end of this script. */
-  function showConsultant(c) {
-    if (!c || !c.name) return;
-    var line = document.getElementById('consultantLine');
-    if (c.name === 'your consultant') {
-      /* consultant_by_code's stand-in when the consultant has not saved a name yet: avoid
-         "Your consultant: your consultant". */
-      line.textContent = 'This application goes straight to your consultant.';
-    } else {
-      document.getElementById('consultantName').textContent = c.name;
-    }
-    line.hidden = false;
-  }
+  /* The form no longer names the link's owner (2026-11-18): at Pro Mortgage the links belong to
+     administrators and several consultants share one, so the name shown was often not the client's
+     consultant. Still called by the link gate. */
+  function showConsultant() {}
   /* A link that cannot be used: one plain message, no form, and nothing about anyone's consent. */
   function showLinkProblem(msg) {
     currentRef = null;
