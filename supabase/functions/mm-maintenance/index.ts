@@ -10,6 +10,10 @@
 //                                            file-backups/<YYYY-MM-DD>/<bucket>/<path> and removes dated
 //                                            folders older than 30 days
 // POST { action: 'status' }               — what the next sweep would do, without doing it
+// POST { action: 'notify' }  every 5 min  — emails the owner of an application that became ready for its
+//                                            credit check or needs attention (rules: _shared/notify.ts;
+//                                            schedule: supabase/cron/notify.sql). Needs RESEND_API_KEY and
+//                                            NOTIFY_FROM; without them it does nothing.
 //
 // Every run logs one JSON line with its counts. A run that cannot finish inside the time budget stops
 // cleanly and finishes next time (both actions are idempotent).
@@ -21,6 +25,8 @@ import {
   BACKED_UP_BUCKETS, BACKUP_BUCKET, backupFolder, backupPath, EXPIRED_KEEP_DAYS, expiredDue, foldersToPrune,
   REPORT_KEEP_MONTHS, reportsDue,
 } from "../_shared/retention.ts";
+import { type Candidate, emailFor, type Pending, plan } from "../_shared/notify.ts";
+import { idvModeFrom } from "../_shared/states.ts";
 
 const BUDGET_MS = 120_000;        // Edge Function hard limit is 150 s — keep headroom
 const BATCH = 200;                // rows considered per run
@@ -185,6 +191,65 @@ Deno.serve(async (req) => {
       const summary = { event: "file_backup", folder, copied, skipped, pruned, problems: problems.length, ms: Date.now() - started };
       console.log(JSON.stringify(summary));
       if (problems.length) console.error(JSON.stringify({ event: "file_backup_problems", problems }));
+      return ok({ ...summary, problems }, origin);
+    }
+
+    // ======================================================================================
+    if (action === "notify") {
+      const key = (Deno.env.get("RESEND_API_KEY") ?? "").trim();
+      const from = (Deno.env.get("NOTIFY_FROM") ?? "").trim();
+      const dashboardUrl = (Deno.env.get("DASHBOARD_URL") ?? "").trim() || "https://check.promortgagesa.co.za/admin.html";
+      // Not switched on yet: do nothing at all (no clocks start, so nothing bursts out later).
+      if (!key || !from) return ok({ event: "notify", skipped: "not_configured" }, origin);
+
+      const { data: cands, error: e1 } = await sb.rpc("notification_candidates");
+      if (e1) throw new Error(`server_error: ${e1.message}`);
+      const { data: pending, error: e2 } = await sb.from("notification_log").select("ref, kind").is("sent_at", null).limit(1000);
+      if (e2) throw new Error(`server_error: ${e2.message}`);
+      const todo = plan((cands ?? []) as Candidate[], (pending ?? []) as Pending[], idvModeFrom(Deno.env.get("MM_IDV_MODE")), now());
+
+      const problems: string[] = [];
+      for (const d of todo.drop) {
+        const del = await sb.from("notification_log").delete().eq("ref", d.ref).eq("kind", d.kind).is("sent_at", null);
+        if (del.error) problems.push(`${d.ref}: drop: ${del.error.message}`);
+      }
+      if (todo.start.length) {
+        const ins = await sb.from("notification_log").upsert(todo.start, { onConflict: "ref,kind", ignoreDuplicates: true });
+        if (ins.error) problems.push(`start: ${ins.error.message}`);
+      }
+
+      let sent = 0;
+      for (const s of todo.send) {
+        if (timeLeft() < 20_000) break;
+        // Claim first (write-before-call): two overlapping runs can never both send.
+        const claim = await sb.from("notification_log").update({ sent_at: now().toISOString(), sent_to: s.ids })
+          .eq("ref", s.ref).eq("kind", s.kind).is("sent_at", null).select("ref");
+        if (claim.error) { problems.push(`${s.ref}: claim: ${claim.error.message}`); continue; }
+        if (!claim.data?.length) continue; // another run has it
+        try {
+          const mail = emailFor(s, dashboardUrl);
+          const res = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `pm-notify-${s.ref}-${s.kind}` },
+            body: JSON.stringify({ from, to: s.emails, subject: mail.subject, text: mail.text, html: mail.html }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!res.ok) throw new Error(`mail service ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          await res.body?.cancel();
+          sent++;
+        } catch (e) {
+          // Not sent: give the claim back so the next run tries again.
+          problems.push(`${s.ref}: ${String(e instanceof Error ? e.message : e)}`);
+          const back = await sb.from("notification_log").update({ sent_at: null, sent_to: null }).eq("ref", s.ref).eq("kind", s.kind);
+          if (back.error) problems.push(`${s.ref}: could not release the claim — this email is LOST: ${back.error.message}`);
+        }
+        await new Promise((r) => setTimeout(r, 600)); // the mail service allows 2 requests a second
+      }
+      const summary = { event: "notify", started: todo.start.length, dropped: todo.drop.length, due: todo.send.length, sent,
+        noRecipient: todo.noRecipient.length, problems: problems.length, ms: Date.now() - started };
+      console.log(JSON.stringify(summary));
+      if (todo.noRecipient.length) console.error(JSON.stringify({ event: "notify_no_recipient", refs: todo.noRecipient }));
+      if (problems.length) console.error(JSON.stringify({ event: "notify_problems", problems }));
       return ok({ ...summary, problems }, origin);
     }
 
