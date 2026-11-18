@@ -10,7 +10,7 @@
 //                                            file-backups/<YYYY-MM-DD>/<bucket>/<path> and removes dated
 //                                            folders older than 30 days
 // POST { action: 'status' }               — what the next sweep would do, without doing it
-// POST { action: 'notify' }  every 5 min  — emails the owner of an application that became ready for its
+// POST { action: 'notify' }  every minute — emails the owner of an application that became ready for its
 //                                            credit check or needs attention (rules: _shared/notify.ts;
 //                                            schedule: supabase/cron/notify.sql). Needs RESEND_API_KEY and
 //                                            NOTIFY_FROM; without them it does nothing.

@@ -33,30 +33,27 @@ Deno.test("nothing for what staff did themselves, or for states that need nobody
   }
 });
 
-Deno.test("plan: the clock starts first, the email goes only after the settle time, once", () => {
-  // first sight: start the clock, send nothing
+Deno.test("plan: ready goes on the run after it is first seen, once", () => {
+  // first sight: note it, send nothing
   let p = plan([cand({})], [], "required", NOW);
   assertEquals([p.start, p.send.length], [[{ ref: "PM-A1", kind: "ready" }], 0]);
-  // 9 minutes in: still waiting
-  p = plan([cand({ log: [{ kind: "ready", first_seen_at: ago(9), sent_at: null }] })], [{ ref: "PM-A1", kind: "ready" }], "required", NOW);
-  assertEquals([p.start.length, p.send.length, p.drop.length], [0, 0, 0]);
-  // 10 minutes in: send to the owner
-  p = plan([cand({ log: [{ kind: "ready", first_seen_at: ago(SETTLE_MS / 60_000), sent_at: null }] })], [{ ref: "PM-A1", kind: "ready" }], "required", NOW);
+  // the next run (a minute later): send to the owner
+  p = plan([cand({ log: [{ kind: "ready", first_seen_at: ago(1), sent_at: null }] })], [{ ref: "PM-A1", kind: "ready" }], "required", NOW);
   assertEquals(p.send.map((s) => [s.ref, s.kind, s.emails]), [["PM-A1", "ready", ["owner@test"]]]);
   // already sent: never again
   p = plan([cand({ log: [{ kind: "ready", first_seen_at: ago(60), sent_at: ago(50) }] })], [], "required", NOW);
   assertEquals([p.start.length, p.send.length], [0, 0]);
 });
 
-Deno.test("plan: a client still uploading never causes a false 'needs attention'", () => {
-  // minute 0: passed the questions, no ID yet → attention clock starts
-  // minute 4: ID uploaded → the record now calls for 'ready'; the attention clock is dropped unsent
-  const p = plan(
-    [cand({ log: [{ kind: "attention", first_seen_at: ago(4), sent_at: null }] })],
-    [{ ref: "PM-A1", kind: "attention" }], "required", NOW);
-  assertEquals(p.drop, [{ ref: "PM-A1", kind: "attention" }]);
-  assertEquals(p.start, [{ ref: "PM-A1", kind: "ready" }]);
-  assertEquals(p.send.length, 0);
+Deno.test("plan: needs attention waits 10 minutes, so a second try at the questions cancels it", () => {
+  assertEquals([SETTLE_MS.ready, SETTLE_MS.attention], [0, 600_000]);
+  const failed = (min: number) => cand({ status: "idv_failed", log: [{ kind: "attention", first_seen_at: ago(min), sent_at: null }] });
+  const clock = [{ ref: "PM-A1", kind: "attention" as const }];
+  assertEquals(plan([failed(9)], clock, "required", NOW).send.length, 0);   // still waiting
+  assertEquals(plan([failed(10)], clock, "required", NOW).send.map((s) => s.kind), ["attention"]);
+  // failed at minute 0, passed on the second try at minute 4: the attention clock is dropped unsent
+  const p = plan([cand({ log: [{ kind: "attention", first_seen_at: ago(4), sent_at: null }] })], clock, "required", NOW);
+  assertEquals([p.drop, p.start, p.send.length], [clock, [{ ref: "PM-A1", kind: "ready" }], 0]);
 });
 
 Deno.test("plan: a clock whose record has moved on (or gone) is dropped", () => {

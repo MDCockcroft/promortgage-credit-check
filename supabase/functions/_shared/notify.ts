@@ -3,8 +3,9 @@
 //   - one email when an application the client finished is READY for its credit check;
 //   - one email when it NEEDS ATTENTION because of something on the client's side;
 //   - never for something staff did themselves (they are looking at the record already);
-//   - only after the record has sat in that state for SETTLE_MS, so a client who is still uploading
-//     their ID does not cause a false "needs attention";
+//   - "ready" goes at once (the next run); "needs attention" only after the record has sat in that
+//     state for 10 minutes, because a client who fails the identity questions may try again straight
+//     away and pass (the form uploads the ID copy BEFORE the questions, so a missing copy is real);
 //   - once per application per kind, ever (notification_log, migration 20261011).
 // The email carries the reference and a link only — never the client's name or ID number.
 
@@ -12,8 +13,8 @@ import { allowedFrom, type IdvMode } from "./states.ts";
 
 export type Kind = "ready" | "attention";
 
-/** How long a record must stay in a state before its email goes (the job runs every 5 minutes). */
-export const SETTLE_MS = 10 * 60 * 1000;
+/** How long a record must stay in a state before its email goes (the job runs every minute). */
+export const SETTLE_MS: Record<Kind, number> = { ready: 0, attention: 10 * 60 * 1000 };
 /** Emails per run: a backlog drains over the next runs instead of bursting. */
 export const MAX_PER_RUN = 20;
 
@@ -72,7 +73,7 @@ export function plan(cands: Candidate[], pending: Pending[], mode: IdvMode, now:
     if (!entry) { start.push({ ref: c.ref, kind: want.kind }); continue; }
     if (entry.sent_at) continue;
     const since = new Date(entry.first_seen_at).getTime();
-    if (!Number.isFinite(since) || now.getTime() - since < SETTLE_MS) continue;
+    if (!Number.isFinite(since) || now.getTime() - since < SETTLE_MS[want.kind]) continue;
     const emails = (c.recipient_emails ?? []).filter((e) => typeof e === "string" && e.includes("@"));
     if (!emails.length) { noRecipient.push(c.ref); continue; }
     due.push({ ref: c.ref, kind: want.kind, reason: want.reason, ids: c.recipient_ids ?? [], emails, since });

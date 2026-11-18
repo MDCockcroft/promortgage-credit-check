@@ -11,8 +11,8 @@
 -- ============================================================
 
 select cron.schedule(
-  'notify-every-5-min',              -- emails owners about applications that became ready or need attention
-  '*/5 * * * *',
+  'notify-every-minute',             -- emails owners about applications that became ready or need attention
+  '* * * * *',
   $$
   select net.http_post(
     url     := 'https://mxakigcvckhmyppoiuds.supabase.co/functions/v1/mm-maintenance',
@@ -30,5 +30,5 @@ select cron.schedule(
 --   -- what has been sent, and what is waiting out its 10 minutes:
 --   select ref, kind, first_seen_at, sent_at, note from notification_log
 --    where note is null order by first_seen_at desc limit 20;
--- Switch off (keeps everything else): select cron.unschedule('notify-every-5-min');
+-- Switch off (keeps everything else): select cron.unschedule('notify-every-minute');
 -- ------------------------------------------------------------
