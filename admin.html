@@ -118,6 +118,13 @@
   #regBody td.c-wrap { white-space: normal; min-width: 190px; } /* on a narrow window the list scrolls sideways before a name is squeezed */
   #regBody td.ref { color: var(--ink-muted); } /* a lookup code, not something read: the name leads */
   #regBody td.score-cell, #regBody td:last-child { text-align: right; }
+  /* a consultant's list has no "Assigned to" column: on a wide window the spare width goes into
+     wider, still equal, gutters rather than all into Client */
+  @media (min-width: 1100px) {
+    #regTable.roomy th, #regTable.roomy td { padding-left: 28px; padding-right: 28px; }
+    #regTable.roomy th:first-child, #regTable.roomy td:first-child { padding-left: var(--s4); }
+    #regTable.roomy th:last-child, #regTable.roomy td:last-child { padding-right: var(--s4); }
+  }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.num { text-align: right; }
   td.score-cell { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
@@ -1130,6 +1137,7 @@
       : loose + ' applications have no active consultant: they are unassigned, or their consultant has left. Only administrators can see them.';
     $('staffFailBox').hidden = !(adminView() && staffFailed);
     $('thConsultant').hidden = !adminView();
+    $('regTable').classList.toggle('roomy', !adminView()); /* one column fewer: wider gutters */
 
     var body = $('regBody');
     body.textContent = '';
