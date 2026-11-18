@@ -855,7 +855,23 @@
   }
 
   /* ================= formatting ================= */
-  function fullName(r) { return String((r.firstNames || '') + ' ' + (r.surname || '')).trim() || r.ref; }
+  /* How a client's name reads on screen. Clients type "TIAAN STRAUSS" or "gerhardus Jakobus Nel"; the
+     list shows both the same way. Display only: the record keeps what the client typed (the
+     application-form PDF shows it), and nothing sent to MortgageMAX passes through here. A word is changed only
+     when it is all capitals or all small letters - "McDonald" or "van Wyk" typed with care is left. */
+  var NAME_PARTICLES = ['van', 'der', 'den', 'de', 'du', 'le', 'la', 'von', 'ter', 'te', 'ten'];
+  function tidyNamePart(text, isSurname) {
+    return String(text || '').trim().split(/\s+/).filter(Boolean).map(function (word) {
+      var lower = word.toLowerCase(), upper = word.toUpperCase();
+      if (word !== lower && word !== upper) return word;
+      if (isSurname && NAME_PARTICLES.indexOf(lower) !== -1) return lower;
+      /* a capital after the start, a hyphen or an apostrophe: Mpandle-Mabona, O'Brien */
+      return lower.replace(/(^|[-'\u2019])([^\s-'\u2019])/g, function (m, sep, ch) { return sep + ch.toUpperCase(); });
+    }).join(' ');
+  }
+  function fullName(r) {
+    return (tidyNamePart(r.firstNames, false) + ' ' + tidyNamePart(r.surname, true)).trim() || r.ref;
+  }
   function rand(n) {
     return 'R ' + Number(n || 0).toLocaleString('en-ZA').replace(/,/g, ' ');
   }
