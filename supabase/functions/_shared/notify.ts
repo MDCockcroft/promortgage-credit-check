@@ -4,8 +4,8 @@
 //   - one email when it NEEDS ATTENTION because of something on the client's side;
 //   - never for something staff did themselves (they are looking at the record already);
 //   - "ready" goes at once (the next run); "needs attention" only after the record has sat in that
-//     state for 10 minutes, because a client who fails the identity questions may try again straight
-//     away and pass (the form uploads the ID copy BEFORE the questions, so a missing copy is real);
+//     state for 5 minutes, because a client who fails the identity questions may start a second round
+//     straight away (from then the record is idv_in_progress and the clock is dropped) (the form uploads the ID copy BEFORE the questions, so a missing copy is real);
 //   - once per application per kind, ever (notification_log, migration 20261011).
 // The email carries the reference and a link only — never the client's name or ID number.
 
@@ -14,7 +14,7 @@ import { allowedFrom, type IdvMode } from "./states.ts";
 export type Kind = "ready" | "attention";
 
 /** How long a record must stay in a state before its email goes (the job runs every minute). */
-export const SETTLE_MS: Record<Kind, number> = { ready: 0, attention: 10 * 60 * 1000 };
+export const SETTLE_MS: Record<Kind, number> = { ready: 0, attention: 5 * 60 * 1000 };
 /** Emails per run: a backlog drains over the next runs instead of bursting. */
 export const MAX_PER_RUN = 20;
 
