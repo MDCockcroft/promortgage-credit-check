@@ -54,6 +54,8 @@ begin
      or not has_function_privilege('service_role', 'public.notification_candidates()', 'execute') then
     raise exception 'T31 FAIL: notification objects are reachable from the browser';
   end if;
+  -- 7. The id type travels with the candidate (20261012).
+  if (select id_type from notification_candidates() where ref = 'PM-N2') <> 'said' then raise exception 'T31 FAIL: id_type missing'; end if;
   raise notice 'T31 ok: notification candidates, recipients, 30-day window, cascade, server-only';
 end $$;
 rollback;

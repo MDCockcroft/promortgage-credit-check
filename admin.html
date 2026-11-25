@@ -78,6 +78,8 @@
   }
   .stats dd small { font-size: var(--fs-small); font-family: var(--font-body); font-weight: 400; color: var(--ink-muted); }
   .stats > div.tile-attention { border-left: 4px solid var(--gold-deep); }
+  /* a passport holder's application: its own colour, so it is never taken for work waiting to be done */
+  .chip-passport { color: #1d4f91; background: #e7eff9; }
 
   .controls { display: flex; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s4); }
   .controls .field { margin: 0; flex: 1 1 220px; }
@@ -594,7 +596,6 @@
           <th scope="col">Client</th>
           <th scope="col" class="fit" id="thConsultant" hidden>Assigned to</th>
           <th scope="col" class="fit">Submitted</th>
-          <th scope="col" class="fit num">Gross income</th>
           <th scope="col" class="fit num">Score</th>
           <th scope="col" class="fit">Status</th>
           <th scope="col" class="fit"><span class="sr-only">Actions</span></th>
@@ -724,7 +725,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261118-1"></script>
+<script src="assets/store.js?v=20261125-1"></script>
 <script>
 (function () {
   'use strict';
@@ -902,7 +903,10 @@
   function needsIdCopy(r) {
     return !r.idDocument && r.status !== 'check_in_flight' && PMStore.bucketOf(r.status, sysCfg.idvMode, false) === 'ready';
   }
+  /* A passport holder's application: complete as it stands, because no credit check exists for it. */
+  function isPassportApp(r) { return !!r && r.idType === 'passport' && r.status === 'manual_required'; }
   function bucketFor(r) {
+    if (isPassportApp(r)) return 'passport';
     if (!isStalled(r) && needsIdCopy(r)) return 'attention';
     return PMStore.bucketOf(r.status, sysCfg.idvMode, isStalled(r));
   }
@@ -915,6 +919,7 @@
       var ps = plainStatus(r);
       return el('p', { className: 'next-step', id: 'dlgStatusHint' }, [el('strong', { text: ps.head }), ps.detail ? ' ' + ps.detail : '']);
     }
+    if (isPassportApp(r)) return el('p', { className: 'small', id: 'dlgStatusHint', text: 'A passport holder completed the application form. Nothing more happens in this system: no credit check exists for a passport.' });
     var t = !isStalled(r) && needsIdCopy(r)
       ? 'The client’s ID copy is not on this record. Attach it below, then run the credit check.'
       : PMStore.hintFor(r.status, bucketFor(r), isStalled(r));
@@ -943,7 +948,7 @@
         : { head: 'The credit report is ready.', detail: 'See below, and open the credit report PDF.' };
       case 'check_failed': return { head: 'The credit check did not complete.', detail: 'Run it again. If it keeps failing, ask your administrator.' };
       case 'manual_required': return r.idType === 'passport'
-        ? { head: 'No credit check is possible.', detail: 'Passport applicants are not covered by Experian. Handle this application outside the system.' }
+        ? { head: 'Passport application: complete.', detail: 'No online credit check exists for a passport. The client\u2019s details below are ready for their home loan application.' }
         : { head: 'This application needs your administrator.', detail: 'Something stopped the automatic process; your administrator can see why.' };
       case 'config_error': return { head: 'A system problem stopped this application.', detail: 'Nothing is wrong with the client’s form. Tell your administrator.' };
       case 'consent_withdrawn': return { head: 'The client withdrew consent.', detail: 'No credit check can be run on this application.' };
@@ -956,6 +961,7 @@
     var s = statusInfo(status);
     if (rec && isStalled(rec)) return el('span', { className: 'chip chip-attention', text: s.label + ' — stalled' });
     if (rec && needsIdCopy(rec)) return el('span', { className: 'chip chip-attention', text: 'ID copy missing' });
+    if (isPassportApp(rec)) return el('span', { className: 'chip chip-passport', text: 'Passport application \u00b7 no credit check' });
     return el('span', { className: 'chip ' + s.chip, text: s.label });
   }
   /* Mirrors the server's recovery windows (states.ts): an unanswered identity round after 6 min,
@@ -1085,7 +1091,7 @@
 
   function renderStats(all) {
     /* same buckets as the list and the filter — each record counts once */
-    var c = { waiting: 0, ready: 0, report: 0, attention: 0, closed: 0 };
+    var c = { waiting: 0, ready: 0, report: 0, attention: 0, passport: 0, closed: 0 };
     all.forEach(function (r) { c[bucketFor(r)]++; });
     var tiles = [
       ['Total submissions', all.length],
@@ -1094,6 +1100,7 @@
       ['Report ready', c.report, 'via MortgageMAX'],
       ['Needs attention', c.attention, null, c.attention ? 'tile-attention' : null]
     ];
+    if (c.passport) tiles.push(['Passport applications', c.passport, 'no credit check']);
     var dl = $('stats');
     dl.textContent = '';
     tiles.forEach(function (t) {
@@ -1112,7 +1119,7 @@
       console.error('load failed:', err);
       var body = $('regBody');
       body.textContent = '';
-      body.appendChild(el('tr', null, el('td', { colspan: 8 },
+      body.appendChild(el('tr', null, el('td', { colspan: 7 },
         el('em', { text: 'Could not load submissions: ' + ((err && err.message) || 'unknown error') }))));
     });
   }
@@ -1149,7 +1156,6 @@
         el('td', { className: 'c-wrap' }, el('strong', { text: name })),
         adminView() ? el('td', { className: r.consultantId ? null : 'small', text: consultantLabel(r.consultantId) }) : null,
         el('td', { text: fmtDate(r.createdAt) }),
-        el('td', { className: 'num', text: rand(r.grossIncome) }),
         el('td', { className: 'score-cell' }, scoreCell(r.reportSummary)),
         el('td', null, bucketChipEl(r)),
         el('td', null, el('button', { type: 'button', className: 'btn btn-ghost btn-sm', 'data-view': r.ref,
@@ -1157,7 +1163,7 @@
       ]));
     });
     if (all.length && !rows.length) {
-      body.appendChild(el('tr', null, el('td', { colspan: adminView() ? 8 : 7 },
+      body.appendChild(el('tr', null, el('td', { colspan: adminView() ? 7 : 6 },
         el('em', { text: 'No submissions match the current search or filter.' }))));
     }
   }
@@ -1294,37 +1300,16 @@
     if (hint) f.appendChild(hint);
     if (adminView()) f.appendChild(consultantSection(r));
 
-    var personal = [];
-    if (r.idType === 'passport') {
-      personal.push(['Passport', r.passportNumber, 'mono'], ['Date of birth', r.dateOfBirth]);
-    } else {
-      personal.push(['SA ID number', r.idNumber, 'mono']);
-      var derived = PMStore.saIdDerive(r.idNumber);
-      if (derived) personal.push(['Derived', 'Born ' + derived.dob + ' · ' + derived.gender + ' · ' + derived.citizen]);
-    }
-    personal.push(['Email', r.email], ['Cell', r.cell, 'mono']);
-    if (r.homePhone) personal.push(['Home phone', r.homePhone, 'mono']);
-    if (r.workPhone) personal.push(['Work phone', r.workPhone, 'mono']);
-    f.appendChild(h3('Personal'));
-    f.appendChild(kv(personal));
-
-    f.appendChild(h3('Address'));
-    f.appendChild(kv([
-      ['Street', r.street], ['Suburb', r.suburb], ['City', r.city],
-      ['Province', r.province], ['Postal code', r.postalCode, 'mono']
-    ]));
-
-    f.appendChild(h3('Employment & household'));
-    f.appendChild(kv([
-      ['Employment', r.employmentStatus], ['Marital status', r.maritalStatus],
-      r.referral ? ['Link received from', r.referral] : null
-    ]));
-
-    f.appendChild(h3('Income & commitments (monthly)'));
-    f.appendChild(kv([
-      ['Gross income', rand(r.grossIncome)], ['Deductions', rand(r.totalDeductions)],
-      ['Expenses', rand(r.monthlyExpenses)], ['Rent / bond', rand(r.housingPayment)]
-    ]));
+    /* What the client completed: the same layout the application-form PDF prints (store.js). */
+    PMStore.applicationSections(r).forEach(function (sec, i) {
+      var rows = sec.rows.slice();
+      if (i === 0 && r.idType !== 'passport') {
+        var derived = PMStore.saIdDerive(r.idNumber);
+        if (derived) rows.splice(1, 0, ['Derived', 'Born ' + derived.dob + ' \u00b7 ' + derived.gender + ' \u00b7 ' + derived.citizen]);
+      }
+      f.appendChild(h3(sec.title));
+      f.appendChild(kv(rows));
+    });
     f.appendChild(formDownloadRow());
     f.appendChild(idCopySection(r));
 
@@ -2525,7 +2510,7 @@
       return el('div', { className: 'callout callout-demo' }, [
         el('span', { className: 'callout-tag', text: 'No credit check' }),
         el('p', { text: 'This applicant gave a passport number. Experian supports South African ID numbers only, so MortgageMAX runs no credit check for foreign nationals. ' +
-          'Handle the application manually, outside this system.' })
+          'The details they completed are on this record and in the application form PDF, for their home loan application.' })
       ]);
     }
     if (r.status === 'manual_required') {
@@ -2581,7 +2566,7 @@
       case 'idv_in_progress': return 'The client is answering identity questions.';
       case 'manual_required':
         return r && r.idType === 'passport'
-          ? 'No credit check for this applicant: Experian supports South African ID numbers only. Handle the application manually.'
+          ? 'No credit check for this applicant: Experian supports South African ID numbers only. Their details are on this record for the home loan application.'
           : 'This record needs manual handling; the automated check cannot run. The audit trail says why.';
       case 'config_error': return 'A system configuration problem is blocking this record. Once the credentials are fixed, use “Clear system error” above.';
     }

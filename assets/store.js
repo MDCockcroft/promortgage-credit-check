@@ -151,7 +151,8 @@
     'manual_verified_at, manual_verification_id, ' +
     'check_started_at, check_request_id, check_attempt, check_requested_by, check_error_code, ' +
     'check_error_text, group_id, bureau_enquiry_id, report_json, report_summary, ' +
-    'affordability_json, report_ready_at, pdf_status, pdf_attempts, report_pdf_path, mm_env';
+    'affordability_json, report_ready_at, pdf_status, pdf_attempts, report_pdf_path, mm_env, ' +
+    'application_details'; /* migration 20261012 - apply it BEFORE pushing a page that asks for this */
 
   /* Ownership columns (migration 20260930). Until it is applied the columns do not exist and the
      database answers 42703: read without them from then on, so this page works either side of it. */
@@ -276,6 +277,63 @@
     return rec;
   }
 
+  /* ---------- what the client completed, section by section ----------
+     One layout for the dashboard's View and the application-form PDF, so the two can never differ.
+     → [{title, rows: [[label, value, cssClass?]]}]. An application made on the form of 25 Nov 2026
+     (page 1 of Pro Mortgage's home loan application) carries `details`; an older one has the short
+     form's answers instead and keeps its own layout. Empty optional answers are left out. */
+  function applicationSections(rec, opts) {
+    rec = rec || {};
+    var d = rec.details;
+    function filled(rows) {
+      return rows.filter(function (r) { return r && r[1] != null && String(r[1]).trim() !== ''; });
+    }
+    function rands(n) { return 'R ' + (Number(n) || 0).toLocaleString('en-ZA').replace(/[\u00a0\u202f,]/g, ' '); }
+    var who = [];
+    if (opts && opts.withName) who.push(['Full name', ((rec.firstNames || '') + ' ' + (rec.surname || '')).trim()]);
+    if (rec.idType === 'passport') who.push(['Passport number', rec.passportNumber, 'mono'], ['Date of birth', rec.dateOfBirth]);
+    else who.push(['SA ID number', rec.idNumber, 'mono']);
+    who.push(['Email', rec.email], ['Cellphone', rec.cell, 'mono']);
+    if (!d) {
+      return [
+        { title: 'Personal particulars', rows: filled(who.concat([['Home phone', rec.homePhone, 'mono'], ['Work phone', rec.workPhone, 'mono']])) },
+        { title: 'Residential address', rows: filled([['Street', rec.street], ['Suburb', rec.suburb], ['City', rec.city],
+          ['Province', rec.province], ['Postal code', rec.postalCode, 'mono']]) },
+        { title: 'Employment and household', rows: filled([['Employment', rec.employmentStatus], ['Marital status', rec.maritalStatus],
+          ['Link received from', rec.referral]]) },
+        { title: 'Income and commitments (monthly)', rows: [['Gross income', rands(rec.grossIncome)], ['Deductions', rands(rec.totalDeductions)],
+          ['Expenses', rands(rec.monthlyExpenses)], ['Rent or bond', rands(rec.housingPayment)]] }
+      ];
+    }
+    var prev = [d.prevEmployedYears ? d.prevEmployedYears + ' years' : '', d.prevEmployedMonths ? d.prevEmployedMonths + ' months' : '']
+      .filter(Boolean).join(' ');
+    return [
+      { title: 'Personal and contact details', rows: filled(who.concat([
+        ['Gender', d.gender], ['Residency status', d.residencyStatus], ['Marital status', rec.maritalStatus],
+        ['Country of marriage', d.countryOfMarriage]])) },
+      { title: 'Residential details', rows: filled([
+        ['Residential status', d.residentialStatus], ['Occupied since', d.occupiedSince],
+        ['Physical address', rec.street], ['Suburb', rec.suburb], ['City', rec.city], ['Postal code', rec.postalCode, 'mono'],
+        ['Province', rec.province], ['Country', d.country], ['Nationality', d.nationality],
+        ['Country of birth', d.countryOfBirth], ['City of birth', d.cityOfBirth],
+        ['Ethnic group', d.ethnicGroup], ['Home language', d.homeLanguage]]) },
+      { title: 'Tax and other details', rows: filled([
+        ['Tax obligation outside of RSA', d.taxOutsideRsa], ['Foreign tax number', d.foreignTaxNumber, 'mono'],
+        ['SARS tax number', d.sarsTaxNumber, 'mono'], ['First-time home buyer', d.firstTimeBuyer],
+        ['Work tel number', rec.workPhone, 'mono'], ['Tertiary qualification', d.tertiaryQualification],
+        ['Highest level', d.qualificationLevel],
+        ['Related to or associated with a public official in a position of authority', d.publicOfficial]]) },
+      { title: 'Employment details', rows: filled([
+        ['Occupational status', rec.employmentStatus], ['Occupation', d.occupation], ['Start date', d.employmentStartDate],
+        ['Employer name', d.employerName], ['Employer landline', d.employerLandline, 'mono'],
+        ['Employer physical address', d.employerStreet], ['Suburb', d.employerSuburb], ['City', d.employerCity],
+        ['Postal code', d.employerPostalCode, 'mono'], ['Province', d.employerProvince], ['Country', d.employerCountry],
+        ['Previous period employed', prev], ['Previous employer', d.previousEmployer],
+        ['Occupational level', d.occupationalLevel], ['Source of income', d.sourceOfIncome],
+        ['Salary frequency', d.salaryFrequency]]) }
+    ];
+  }
+
   /* ---------- live-mode row mapping (snake_case -> camelCase) ----------
      Rows from all() carry only LIST_COLUMNS; every other field falls back to its empty value. */
   function ts(v) { return v ? Date.parse(v) : null; }
@@ -293,6 +351,7 @@
       province: r.province, postalCode: r.postal_code,
       employmentStatus: r.employment_status, maritalStatus: r.marital_status,
       referral: r.referral || '',
+      details: r.application_details || null,
       grossIncome: Number(r.gross_income) || 0,
       totalDeductions: Number(r.total_deductions) || 0,
       monthlyExpenses: Number(r.monthly_expenses) || 0,
@@ -411,25 +470,11 @@
     pair('Consultant', opts.consultant || '-');
     gap();
 
-    heading('Personal particulars');
-    pair('Full name', ((rec.firstNames || '') + ' ' + (rec.surname || '')).trim());
-    if (rec.idType === 'passport') { pair('Passport number', rec.passportNumber); pair('Date of birth', rec.dateOfBirth); }
-    else pair('SA ID number', rec.idNumber);
-    pair('Email', rec.email); pair('Cellphone', rec.cell);
-    if (rec.homePhone) pair('Home phone', rec.homePhone);
-    if (rec.workPhone) pair('Work phone', rec.workPhone);
-    gap();
-    heading('Residential address');
-    pair('Street', rec.street); pair('Suburb', rec.suburb); pair('City', rec.city); pair('Province', rec.province); pair('Postal code', rec.postalCode);
-    gap();
-    heading('Employment and household');
-    pair('Employment', rec.employmentStatus); pair('Marital status', rec.maritalStatus);
-    if (rec.referral) pair('Link received from', rec.referral);
-    gap();
-    heading('Income and commitments (monthly)');
-    pair('Gross income', money(rec.grossIncome)); pair('Deductions', money(rec.totalDeductions));
-    pair('Expenses', money(rec.monthlyExpenses)); pair('Rent or bond', money(rec.housingPayment));
-    gap();
+    applicationSections(rec, { withName: true }).forEach(function (sec) {
+      heading(sec.title);
+      sec.rows.forEach(function (r) { pair(r[0], r[1]); });
+      gap();
+    });
 
     heading('Consent');
     pair('Consent given', rec.consentConfirmedAt ? when(rec.consentConfirmedAt) + ' (declaration accepted on the online form)' : '-');
@@ -546,6 +591,9 @@
     { key: 'ready',     label: 'Ready to run',      chip: 'chip-confirmed' },
     { key: 'report',    label: 'Report ready',      chip: 'chip-ready' },
     { key: 'attention', label: 'Needs attention',   chip: 'chip-attention' },
+    /* complete as it stands: a passport holder's application, for which no credit check exists
+       (the dashboard decides this from the id type - bucketOf sees only the status) */
+    { key: 'passport',  label: 'Passport application', chip: 'chip-passport' },
     { key: 'closed',    label: 'Closed',            chip: 'chip-muted' }
   ];
   /* Exactly one bucket per record. Order matters: a stalled record or one a consultant must decide
@@ -737,6 +785,7 @@
     CONSENT_FORM: CONSENT_FORM,
     IDENTITY_CONFIRMATION: IDENTITY_CONFIRMATION,
     buildFormPdf: buildFormPdf,
+    applicationSections: applicationSections,
     BUCKETS: BUCKETS,
     bucketOf: bucketOf,
     bucketInfo: bucketInfo,
@@ -1421,9 +1470,19 @@
           idNumber: id('880412052308'), email: 'thandiwe.n@example.com', cell: '0824417702',
           street: '14 Jacaranda Ave', suburb: 'Waterkloof', city: 'Pretoria',
           province: 'Gauteng', postalCode: '0181',
-          employmentStatus: 'Full-time employed', maritalStatus: 'Married out of community',
-          referral: 'Estate agency: Pam Golding Properties, Waterkloof (Sarah Botha)',
-          grossIncome: 52000, totalDeductions: 11400, monthlyExpenses: 18500, housingPayment: 9800,
+          employmentStatus: 'Full-time Employee', maritalStatus: 'Married ANC', workPhone: '0123456789',
+          details: {
+            gender: 'Female', residencyStatus: 'SA Citizen', countryOfMarriage: 'South Africa',
+            residentialStatus: 'Owner', occupiedSince: '03/2019', country: 'South Africa', nationality: 'South African',
+            countryOfBirth: 'South Africa', cityOfBirth: 'Durban', ethnicGroup: 'African', homeLanguage: 'isiZulu',
+            taxOutsideRsa: 'No', sarsTaxNumber: '0123456789', firstTimeBuyer: 'No', tertiaryQualification: 'Yes',
+            qualificationLevel: 'BCom Honours', publicOfficial: 'No',
+            occupation: 'Financial analyst', employmentStartDate: '06/2017', employerName: 'Example Holdings',
+            employerLandline: '0125550100', employerStreet: '200 Example Road', employerSuburb: 'Brooklyn',
+            employerCity: 'Pretoria', employerPostalCode: '0181', employerProvince: 'Gauteng', employerCountry: 'South Africa',
+            prevEmployedYears: '4', prevEmployedMonths: '2', previousEmployer: 'Sample & Co',
+            occupationalLevel: 'Management', sourceOfIncome: 'Salary', salaryFrequency: 'Monthly'
+          },
           _age: 3 * 864e5, _status: 'report_ready', _consultant: DEMO_ME
         },
         {

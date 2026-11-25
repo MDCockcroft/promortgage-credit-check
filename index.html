@@ -83,6 +83,29 @@
     gap: var(--s3);
   }
   legend .secnum { color: var(--gold-deep); font-weight: 800; }
+  /* --- one section at a time (25 Nov 2026): without script every section simply shows --- */
+  form.stepped fieldset { display: none; }
+  form.stepped fieldset.step-on { display: block; }
+  .stepbar { margin: 0 0 var(--s5); }
+  .stepbar-count { margin: 0 0 var(--s2); font-size: var(--fs-small); font-weight: 600; color: var(--ink-muted); letter-spacing: .04em; text-transform: uppercase; }
+  .stepbar-track { height: 6px; background: var(--border-hairline); border-radius: 999px; overflow: hidden; }
+  .stepbar-track span { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 999px; transition: width var(--t-med) var(--ease); }
+  .form-actions { display: flex; gap: var(--s3); flex-wrap: wrap; }
+  .form-actions #backBtn { margin-right: auto; }
+  .steps li.locked a { opacity: .45; cursor: default; }
+  .steps li.done .n::after { content: " \2713"; color: var(--gold); }
+  details.more { margin-bottom: var(--s4); border: 1px solid var(--border-hairline); border-radius: var(--r-s); padding: var(--s3) var(--s4); }
+  details.more summary { cursor: pointer; font-weight: 600; font-size: var(--fs-small); }
+  details.more[open] summary { margin-bottom: var(--s4); }
+  /* --- page 1 of the home loan application (25 Nov 2026): tick-box groups and small helpers --- */
+  .group-label { display: block; font-size: var(--fs-small); font-weight: 600; margin-bottom: var(--s2); }
+  .radio-row.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s2) var(--s4); }
+  .radio-row label { min-height: 32px; }
+  .radio-row:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 6px; }
+  .field.invalid .radio-row { outline: 1.5px solid var(--error); outline-offset: 6px; border-radius: var(--r-s); }
+  .period-row { display: flex; gap: var(--s5); flex-wrap: wrap; }
+  .period-row label { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 400; font-size: var(--fs-body); margin: 0; }
+  .field .period-row input[type="text"] { width: 5ch; min-width: 64px; text-align: center; }
   .grid-2 { display: grid; grid-template-columns: 1fr; gap: 0 var(--s4); }
   @media (min-width: 560px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
 
@@ -295,10 +318,10 @@
     </div>
     <nav aria-label="Form sections">
       <ol class="steps" id="stepNav">
-        <li data-sec="sec-personal"><a href="#sec-personal"><span class="n" aria-hidden="true">01</span>Personal particulars</a></li>
-        <li data-sec="sec-address"><a href="#sec-address"><span class="n" aria-hidden="true">02</span>Residential address</a></li>
-        <li data-sec="sec-employment"><a href="#sec-employment"><span class="n" aria-hidden="true">03</span>Employment &amp; household</a></li>
-        <li data-sec="sec-financial"><a href="#sec-financial"><span class="n" aria-hidden="true">04</span>Income &amp; commitments</a></li>
+        <li data-sec="sec-personal"><a href="#sec-personal"><span class="n" aria-hidden="true">01</span>Personal &amp; contact details</a></li>
+        <li data-sec="sec-address"><a href="#sec-address"><span class="n" aria-hidden="true">02</span>Residential details</a></li>
+        <li data-sec="sec-other"><a href="#sec-other"><span class="n" aria-hidden="true">03</span>Tax &amp; other details</a></li>
+        <li data-sec="sec-employment"><a href="#sec-employment"><span class="n" aria-hidden="true">04</span>Employment details</a></li>
         <li data-sec="sec-consent"><a href="#sec-consent"><span class="n" aria-hidden="true">05</span>Consent &amp; declaration</a></li>
       </ol>
     </nav>
@@ -320,16 +343,21 @@
         <header class="doc-head rise">
           <p class="doc-meta">Pro Mortgage SA</p>
           <h1 id="formHead" tabindex="-1">Credit check authorisation</h1>
-          <p class="lede">This form authorises Pro Mortgage SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It takes about four minutes. Fields marked <span class="req">*</span> are required.</p>
+          <p class="lede">This form authorises Pro Mortgage SA, through MortgageMAX, to obtain your consumer credit report from Experian as the first step of your home-loan pre-qualification. It is five short steps and takes about ten minutes. Fields marked <span class="req">*</span> are required.</p>
         </header>
 
         <form id="ccForm" novalidate>
 
+          <div class="stepbar" id="stepBar" hidden>
+            <p class="stepbar-count" id="stepCount" aria-live="polite"></p>
+            <div class="stepbar-track" aria-hidden="true"><span id="stepFill"></span></div>
+          </div>
+
           <fieldset id="sec-personal" class="rise">
-            <legend><span class="secnum" aria-hidden="true">1</span>Personal particulars</legend>
+            <legend><span class="secnum" aria-hidden="true">1</span>Personal &amp; contact details</legend>
             <div class="grid-2">
               <div class="field">
-                <label for="firstNames">Full first names <span class="req" aria-hidden="true">*</span></label>
+                <label for="firstNames">First name(s) <span class="req" aria-hidden="true">*</span></label>
                 <input id="firstNames" name="firstNames" type="text" autocomplete="given-name" required>
                 <span class="err" id="firstNames-err"></span>
               </div>
@@ -339,14 +367,26 @@
                 <span class="err" id="surname-err"></span>
               </div>
             </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="email">Email address <span class="req" aria-hidden="true">*</span></label>
+                <input id="email" name="email" type="email" autocomplete="email" required>
+                <span class="err" id="email-err"></span>
+              </div>
+              <div class="field">
+                <label for="cell">Cellphone no. <span class="req" aria-hidden="true">*</span> <span class="hint">Your consultant may contact you on this number.</span></label>
+                <input id="cell" name="cell" type="tel" inputmode="numeric" autocomplete="tel" placeholder="0821234567" required>
+                <span class="err" id="cell-err"></span>
+              </div>
+            </div>
 
             <div class="field">
               <span id="idTypeLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">Identification type</span>
               <div class="radio-row" role="radiogroup" aria-labelledby="idTypeLabel">
                 <label><input type="radio" name="idType" value="said" checked> South African ID</label>
-                <label id="passportOpt"><input type="radio" name="idType" value="passport"> Passport</label>
+                <label id="passportOpt"><input type="radio" name="idType" value="passport"> Passport <span class="hint" style="display:inline">(I have no SA ID number)</span></label>
               </div>
-              <span class="hint" id="passportHint" hidden>Passport holders: please contact your consultant directly.</span>
+              <span class="hint" id="passportHint" hidden>An online credit check needs a South African ID number. Please complete the form anyway: your consultant will take your home loan application further with you.</span>
             </div>
 
             <div class="field" id="saidField">
@@ -373,11 +413,11 @@
             </div>
 
             <div class="field" id="idCopyBlock">
-              <span id="idCopyLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)">A copy of your ID <span class="req" aria-hidden="true">*</span></span>
-              <p class="idcopy-intro" id="idCopyIntro">Add a clear photo or scan of your ID document or driver&rsquo;s licence &mdash; on a phone you can take the photo here. A credit check cannot be run without a copy of your ID. JPG, PNG or PDF, up to 10&nbsp;MB each.</p>
+              <span id="idCopyLabel" style="display:block;font-size:var(--fs-small);font-weight:600;margin-bottom:var(--s1)"><span id="idCopyWhat">A copy of your ID</span> <span class="req" aria-hidden="true">*</span></span>
+              <p class="idcopy-intro" id="idCopyIntro">Add a clear photo or scan of your ID document, passport or driver&rsquo;s licence &mdash; on a phone you can take the photo here. Your application cannot go ahead without it. JPG, PNG or PDF, up to 10&nbsp;MB each.</p>
               <div class="grid-2">
                 <div class="field">
-                  <label for="idFront">Front of your ID <span class="req" aria-hidden="true">*</span></label>
+                  <label for="idFront"><span id="idFrontWhat">Front of your ID</span> <span class="req" aria-hidden="true">*</span></label>
                   <input id="idFront" name="idFront" type="file" aria-required="true" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" aria-describedby="idCopyIntro">
                   <span class="err" id="idFront-err"></span>
                   <div class="doc-preview" id="idFront-preview" hidden></div>
@@ -391,37 +431,63 @@
               </div>
             </div>
 
-            <div class="grid-2">
-              <div class="field">
-                <label for="email">Email address <span class="req" aria-hidden="true">*</span></label>
-                <input id="email" name="email" type="email" autocomplete="email" required>
-                <span class="err" id="email-err"></span>
+
+            <div class="field">
+              <span class="group-label" id="gender-lbl">Gender <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row" id="gender" role="radiogroup" aria-labelledby="gender-lbl" tabindex="-1">
+                <label><input type="radio" name="gender" value="Male"> Male</label>
+                <label><input type="radio" name="gender" value="Female"> Female</label>
               </div>
-              <div class="field">
-                <label for="cell">Cellphone number <span class="req" aria-hidden="true">*</span>
-                  <span class="hint">Your consultant may contact you on this number.</span></label>
-                <input id="cell" name="cell" type="tel" inputmode="numeric" autocomplete="tel" placeholder="0821234567" required>
-                <span class="err" id="cell-err"></span>
+              <span class="err" id="gender-err"></span>
+            </div>
+            <div class="field">
+              <span class="group-label" id="residencyStatus-lbl">Residency status <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row choices" id="residencyStatus" role="radiogroup" aria-labelledby="residencyStatus-lbl" tabindex="-1">
+                <label><input type="radio" name="residencyStatus" value="SA Citizen"> SA Citizen</label>
+                <label><input type="radio" name="residencyStatus" value="Permanent Resident"> Permanent Resident</label>
+                <label><input type="radio" name="residencyStatus" value="Temporary Resident"> Temporary Resident</label>
+                <label><input type="radio" name="residencyStatus" value="Foreign National"> Foreign National</label>
               </div>
+              <span class="err" id="residencyStatus-err"></span>
+            </div>
+            <div class="field">
+              <label for="maritalStatus">Marital status <span class="req" aria-hidden="true">*</span></label>
+              <select id="maritalStatus" name="maritalStatus">
+                  <option value="">Select&hellip;</option><option>Single</option><option>Married ANC</option><option>Married COP</option><option>Engaged</option><option>Divorced</option><option>Widowed</option><option>Other</option>
+              </select>
+              <span class="err" id="maritalStatus-err"></span>
             </div>
             <div class="grid-2">
-              <div class="field">
-                <label for="homePhone">Home phone <span class="hint">optional</span></label>
-                <input id="homePhone" name="homePhone" type="tel" inputmode="numeric" autocomplete="tel-national">
-              </div>
-              <div class="field">
-                <label for="workPhone">Work phone <span class="hint">optional</span></label>
-                <input id="workPhone" name="workPhone" type="tel" inputmode="numeric">
+              <div class="field" id="countryOfMarriageField" hidden>
+                <label for="countryOfMarriage">Country of marriage <span class="req" aria-hidden="true">*</span></label>
+                <select id="countryOfMarriage" name="countryOfMarriage" class="country-list">
+                  <option value="">Select&hellip;</option>
+                </select>
+                <span class="err" id="countryOfMarriage-err"></span>
               </div>
             </div>
           </fieldset>
 
           <fieldset id="sec-address" class="rise">
-            <legend><span class="secnum" aria-hidden="true">2</span>Residential address</legend>
+            <legend><span class="secnum" aria-hidden="true">2</span>Residential details</legend>
             <div class="field">
-              <label for="street">Street address <span class="req" aria-hidden="true">*</span></label>
-              <input id="street" name="street" type="text" autocomplete="address-line1" required>
-              <span class="err" id="street-err"></span>
+              <label for="residentialStatus">Residential status <span class="req" aria-hidden="true">*</span></label>
+              <select id="residentialStatus" name="residentialStatus">
+                  <option value="">Select&hellip;</option><option>Tenant</option><option>Living with Parents</option><option>Owner</option><option>Boarder</option><option>Other</option>
+              </select>
+              <span class="err" id="residentialStatus-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="occupiedSince">Occupied since <span class="req" aria-hidden="true">*</span> <span class="hint">Month and year, for example 03/2019</span></label>
+                <input id="occupiedSince" name="occupiedSince" type="text" inputmode="numeric" maxlength="7" placeholder="MM/YYYY" autocomplete="off">
+                <span class="err" id="occupiedSince-err"></span>
+              </div>
+              <div class="field">
+                <label for="street">Physical address <span class="req" aria-hidden="true">*</span></label>
+                <input id="street" name="street" type="text" autocomplete="address-line1" required>
+                <span class="err" id="street-err"></span>
+              </div>
             </div>
             <div class="grid-2">
               <div class="field">
@@ -430,97 +496,251 @@
                 <span class="err" id="suburb-err"></span>
               </div>
               <div class="field">
-                <label for="city">City / town <span class="req" aria-hidden="true">*</span></label>
+                <label for="city">City <span class="req" aria-hidden="true">*</span></label>
                 <input id="city" name="city" type="text" autocomplete="address-level2" required>
                 <span class="err" id="city-err"></span>
               </div>
             </div>
             <div class="grid-2">
               <div class="field">
-                <label for="province">Province <span class="req" aria-hidden="true">*</span></label>
-                <select id="province" name="province" required>
-                  <option value="">Select&hellip;</option>
-                  <option>Eastern Cape</option><option>Free State</option><option>Gauteng</option>
-                  <option>KwaZulu-Natal</option><option>Limpopo</option><option>Mpumalanga</option>
-                  <option>Northern Cape</option><option>North West</option><option>Western Cape</option>
-                </select>
-                <span class="err" id="province-err"></span>
-              </div>
-              <div class="field">
                 <label for="postalCode">Postal code <span class="req" aria-hidden="true">*</span></label>
                 <input id="postalCode" name="postalCode" type="text" inputmode="numeric" maxlength="4" autocomplete="postal-code" required>
                 <span class="err" id="postalCode-err"></span>
               </div>
+              <div class="field">
+                <label for="province">Province <span class="req" aria-hidden="true">*</span></label>
+                <select id="province" name="province" required>
+                  <option value="">Select&hellip;</option><option>Gauteng</option><option>Western Cape</option><option>KwaZulu-Natal</option><option>Eastern Cape</option><option>Free State</option><option>Limpopo</option><option>Mpumalanga</option><option>North West</option><option>Northern Cape</option>
+                </select>
+                <span class="err" id="province-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="country">Country <span class="req" aria-hidden="true">*</span></label>
+                <select id="country" name="country" class="country-list">
+                  <option value="">Select&hellip;</option>
+                </select>
+                <span class="err" id="country-err"></span>
+              </div>
+              <div class="field">
+                <label for="nationality">Nationality <span class="req" aria-hidden="true">*</span></label>
+                <input id="nationality" name="nationality" type="text" autocomplete="off">
+                <span class="err" id="nationality-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="countryOfBirth">Country of birth <span class="req" aria-hidden="true">*</span></label>
+                <select id="countryOfBirth" name="countryOfBirth" class="country-list">
+                  <option value="">Select&hellip;</option>
+                </select>
+                <span class="err" id="countryOfBirth-err"></span>
+              </div>
+              <div class="field">
+                <label for="cityOfBirth">City of birth <span class="req" aria-hidden="true">*</span></label>
+                <input id="cityOfBirth" name="cityOfBirth" type="text" autocomplete="off">
+                <span class="err" id="cityOfBirth-err"></span>
+              </div>
+            </div>
+            <div class="field">
+              <span class="group-label" id="ethnicGroup-lbl">Ethnic group <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row choices" id="ethnicGroup" role="radiogroup" aria-labelledby="ethnicGroup-lbl" tabindex="-1">
+                <label><input type="radio" name="ethnicGroup" value="Asian"> Asian</label>
+                <label><input type="radio" name="ethnicGroup" value="African"> African</label>
+                <label><input type="radio" name="ethnicGroup" value="Coloured"> Coloured</label>
+                <label><input type="radio" name="ethnicGroup" value="White"> White</label>
+              </div>
+              <span class="err" id="ethnicGroup-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="homeLanguage">Home language <span class="req" aria-hidden="true">*</span></label>
+                <select id="homeLanguage" name="homeLanguage">
+                  <option value="">Select&hellip;</option><option>English</option><option>Afrikaans</option><option>isiZulu</option><option>isiXhosa</option><option>Sepedi</option><option>Setswana</option><option>Sesotho</option><option>Xitsonga</option><option>siSwati</option><option>Tshivenda</option><option>isiNdebele</option><option>Other</option>
+                </select>
+                <span class="err" id="homeLanguage-err"></span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-other" class="rise">
+            <legend><span class="secnum" aria-hidden="true">3</span>Tax &amp; other details</legend>
+            <div class="field">
+              <span class="group-label" id="taxOutsideRsa-lbl">Tax obligation outside of RSA? <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row" id="taxOutsideRsa" role="radiogroup" aria-labelledby="taxOutsideRsa-lbl" tabindex="-1">
+                <label><input type="radio" name="taxOutsideRsa" value="Yes"> Yes</label>
+                <label><input type="radio" name="taxOutsideRsa" value="No"> No</label>
+              </div>
+              <span class="err" id="taxOutsideRsa-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field" id="foreignTaxNumberField" hidden>
+                <label for="foreignTaxNumber">Foreign tax number <span class="req" aria-hidden="true">*</span></label>
+                <input id="foreignTaxNumber" name="foreignTaxNumber" type="text" autocomplete="off">
+                <span class="err" id="foreignTaxNumber-err"></span>
+              </div>
+              <div class="field">
+                <label for="sarsTaxNumber">SARS tax number <span class="hint">optional</span></label>
+                <input id="sarsTaxNumber" name="sarsTaxNumber" type="text" inputmode="numeric" maxlength="10" autocomplete="off">
+                <span class="err" id="sarsTaxNumber-err"></span>
+              </div>
+            </div>
+            <div class="field">
+              <span class="group-label" id="firstTimeBuyer-lbl">Are you a first-time home buyer? <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row" id="firstTimeBuyer" role="radiogroup" aria-labelledby="firstTimeBuyer-lbl" tabindex="-1">
+                <label><input type="radio" name="firstTimeBuyer" value="Yes"> Yes</label>
+                <label><input type="radio" name="firstTimeBuyer" value="No"> No</label>
+              </div>
+              <span class="err" id="firstTimeBuyer-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="workPhone">Work tel number <span class="hint">optional</span></label>
+                <input id="workPhone" name="workPhone" type="tel" inputmode="numeric">
+                <span class="err" id="workPhone-err"></span>
+              </div>
+            </div>
+            <div class="field">
+              <span class="group-label" id="tertiaryQualification-lbl">Do you have a tertiary qualification? <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row" id="tertiaryQualification" role="radiogroup" aria-labelledby="tertiaryQualification-lbl" tabindex="-1">
+                <label><input type="radio" name="tertiaryQualification" value="Yes"> Yes</label>
+                <label><input type="radio" name="tertiaryQualification" value="No"> No</label>
+              </div>
+              <span class="err" id="tertiaryQualification-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field" id="qualificationLevelField" hidden>
+                <label for="qualificationLevel">If yes, what is the highest level? <span class="req" aria-hidden="true">*</span></label>
+                <select id="qualificationLevel" name="qualificationLevel">
+                  <option value="">Select&hellip;</option><option>Certificate</option><option>Diploma</option><option>Bachelor&rsquo;s degree</option><option>Honours degree</option><option>Master&rsquo;s degree</option><option>Doctorate</option><option>Other</option>
+                </select>
+                <span class="err" id="qualificationLevel-err"></span>
+              </div>
+            </div>
+            <div class="field">
+              <span class="group-label" id="publicOfficial-lbl">Are you related to or associated with a public official in a position of authority? <span class="req" aria-hidden="true">*</span></span>
+              <div class="radio-row" id="publicOfficial" role="radiogroup" aria-labelledby="publicOfficial-lbl" tabindex="-1">
+                <label><input type="radio" name="publicOfficial" value="Yes"> Yes</label>
+                <label><input type="radio" name="publicOfficial" value="No"> No</label>
+              </div>
+              <span class="err" id="publicOfficial-err"></span>
             </div>
           </fieldset>
 
           <fieldset id="sec-employment" class="rise">
-            <legend><span class="secnum" aria-hidden="true">3</span>Employment &amp; household</legend>
+            <legend><span class="secnum" aria-hidden="true">4</span>Employment details</legend>
+            <div class="field">
+              <label for="occupationalStatus">Occupational status <span class="req" aria-hidden="true">*</span></label>
+              <select id="occupationalStatus" name="occupationalStatus">
+                  <option value="">Select&hellip;</option><option>Full-time Employee</option><option>Self-employed (Professional)</option><option>Self-employed (Non-professional)</option><option>Contract Worker</option><option>Part-time Employee</option><option>Temp Employed</option><option>Home Executive</option><option>Unemployed</option>
+              </select>
+              <span class="err" id="occupationalStatus-err"></span>
+            </div>
+            <div id="employerBlock">
             <div class="grid-2">
               <div class="field">
-                <label for="employmentStatus">Employment status <span class="req" aria-hidden="true">*</span></label>
-                <select id="employmentStatus" name="employmentStatus" required>
-                  <option value="">Select&hellip;</option>
-                  <option>Full-time employed</option><option>Contract</option><option>Self-employed</option>
-                  <option>Retired</option><option>Student</option><option>Temporary</option><option>Unemployed</option>
-                </select>
-                <span class="err" id="employmentStatus-err"></span>
+                <label for="occupation">Occupation <span class="req" aria-hidden="true">*</span></label>
+                <input id="occupation" name="occupation" type="text" autocomplete="organization-title">
+                <span class="err" id="occupation-err"></span>
               </div>
               <div class="field">
-                <label for="maritalStatus">Marital status <span class="req" aria-hidden="true">*</span></label>
-                <select id="maritalStatus" name="maritalStatus" required>
-                  <option value="">Select&hellip;</option>
-                  <option>Single</option><option>Married in community of property</option>
-                  <option>Married out of community</option><option>Divorced</option>
-                  <option>Widowed</option><option>Life partner</option>
-                </select>
-                <span class="err" id="maritalStatus-err"></span>
+                <label for="employmentStartDate">Start date <span class="req" aria-hidden="true">*</span> <span class="hint">Month and year, for example 03/2019</span></label>
+                <input id="employmentStartDate" name="employmentStartDate" type="text" inputmode="numeric" maxlength="7" placeholder="MM/YYYY" autocomplete="off">
+                <span class="err" id="employmentStartDate-err"></span>
               </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="employerName">Employer name <span class="req" aria-hidden="true">*</span></label>
+                <input id="employerName" name="employerName" type="text" autocomplete="organization">
+                <span class="err" id="employerName-err"></span>
+              </div>
+              <div class="field">
+                <label for="employerLandline">Employer landline <span class="hint">optional</span></label>
+                <input id="employerLandline" name="employerLandline" type="tel" inputmode="numeric">
+                <span class="err" id="employerLandline-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="employerStreet">Employer physical address <span class="req" aria-hidden="true">*</span></label>
+                <input id="employerStreet" name="employerStreet" type="text" autocomplete="off">
+                <span class="err" id="employerStreet-err"></span>
+              </div>
+              <div class="field">
+                <label for="employerSuburb">Suburb <span class="req" aria-hidden="true">*</span></label>
+                <input id="employerSuburb" name="employerSuburb" type="text" autocomplete="off">
+                <span class="err" id="employerSuburb-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="employerCity">City <span class="req" aria-hidden="true">*</span></label>
+                <input id="employerCity" name="employerCity" type="text" autocomplete="off">
+                <span class="err" id="employerCity-err"></span>
+              </div>
+              <div class="field">
+                <label for="employerPostalCode">Postal code <span class="req" aria-hidden="true">*</span></label>
+                <input id="employerPostalCode" name="employerPostalCode" type="text" inputmode="numeric" maxlength="4" autocomplete="off">
+                <span class="err" id="employerPostalCode-err"></span>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="employerProvince">Province <span class="req" aria-hidden="true">*</span></label>
+                <select id="employerProvince" name="employerProvince">
+                  <option value="">Select&hellip;</option><option>Gauteng</option><option>Western Cape</option><option>KwaZulu-Natal</option><option>Eastern Cape</option><option>Free State</option><option>Limpopo</option><option>Mpumalanga</option><option>North West</option><option>Northern Cape</option>
+                </select>
+                <span class="err" id="employerProvince-err"></span>
+              </div>
+              <div class="field">
+                <label for="employerCountry">Country <span class="req" aria-hidden="true">*</span></label>
+                <select id="employerCountry" name="employerCountry" class="country-list">
+                  <option value="">Select&hellip;</option>
+                </select>
+                <span class="err" id="employerCountry-err"></span>
+              </div>
+            </div>
+            <details class="more">
+              <summary>Add previous employment <span class="hint" style="display:inline">optional</span></summary>
+            <div class="field">
+              <span class="group-label" id="prevEmployed-lbl">Previous period employed <span class="hint" style="display:inline">optional</span></span>
+              <div class="period-row" role="group" aria-labelledby="prevEmployed-lbl">
+                <label><input id="prevEmployedYears" name="prevEmployedYears" type="text" inputmode="numeric" maxlength="2" autocomplete="off"> Years</label>
+                <label><input id="prevEmployedMonths" name="prevEmployedMonths" type="text" inputmode="numeric" maxlength="2" autocomplete="off"> Months</label>
+              </div>
+              <span class="err" id="prevEmployedYears-err"></span>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="previousEmployer">Who is your previous employer? <span class="hint">optional</span></label>
+                <input id="previousEmployer" name="previousEmployer" type="text" autocomplete="off">
+                <span class="err" id="previousEmployer-err"></span>
+              </div>
+            </div>
+            </details>
+            <div class="field">
+              <label for="occupationalLevel">Occupational level <span class="req" aria-hidden="true">*</span></label>
+              <select id="occupationalLevel" name="occupationalLevel">
+                  <option value="">Select&hellip;</option><option>Skilled Worker</option><option>Management</option><option>Junior Position</option><option>Supervisor</option><option>Senior Management</option><option>Semi-skilled Worker</option><option>Unskilled Worker</option>
+              </select>
+              <span class="err" id="occupationalLevel-err"></span>
             </div>
             <div class="field">
-              <label for="referral">Who did you receive the link from? <span class="hint">optional</span></label>
-              <select id="referral" name="referral">
-                <option value="">Select&hellip;</option>
-                <option>Pro Mortgage consultant</option><option>Estate agency</option>
-                <option>Other</option>
+              <label for="salaryFrequency">Salary frequency <span class="req" aria-hidden="true">*</span></label>
+              <select id="salaryFrequency" name="salaryFrequency">
+                  <option value="">Select&hellip;</option><option>Monthly</option><option>Weekly</option><option>Bi-weekly</option><option>Daily</option><option>Other</option>
               </select>
-              <span class="err" id="referral-err"></span>
+              <span class="err" id="salaryFrequency-err"></span>
             </div>
-            <div class="field" id="referralNameField" hidden>
-              <label for="referralName" id="referralNameLabel">Consultant&rsquo;s name <span class="req" aria-hidden="true">*</span></label>
-              <input id="referralName" name="referralName" type="text" autocomplete="off" maxlength="80">
-              <span class="err" id="referralName-err"></span>
             </div>
-          </fieldset>
-
-          <fieldset id="sec-financial" class="rise">
-            <legend><span class="secnum" aria-hidden="true">4</span>Income &amp; commitments</legend>
-            <p class="small">Monthly amounts, before rounding. Estimates are fine &mdash; your consultant confirms these with you later.</p>
-            <div class="grid-2">
-              <div class="field">
-                <label for="grossIncome">Gross monthly income <span class="req" aria-hidden="true">*</span></label>
-                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
-                  <input id="grossIncome" name="grossIncome" type="text" inputmode="numeric" required></div>
-                <span class="err" id="grossIncome-err"></span>
-              </div>
-              <div class="field">
-                <label for="totalDeductions">Total salary deductions <span class="hint">optional</span></label>
-                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
-                  <input id="totalDeductions" name="totalDeductions" type="text" inputmode="numeric"></div>
-              </div>
-            </div>
-            <div class="grid-2">
-              <div class="field">
-                <label for="monthlyExpenses">Total monthly expenses <span class="req" aria-hidden="true">*</span></label>
-                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
-                  <input id="monthlyExpenses" name="monthlyExpenses" type="text" inputmode="numeric" required></div>
-                <span class="err" id="monthlyExpenses-err"></span>
-              </div>
-              <div class="field">
-                <label for="housingPayment">Current rent or bond payment <span class="hint">optional</span></label>
-                <div class="currency-wrap"><span class="rand" aria-hidden="true">R</span>
-                  <input id="housingPayment" name="housingPayment" type="text" inputmode="numeric"></div>
-              </div>
+            <div class="field">
+              <label for="sourceOfIncome">Source of income <span class="req" aria-hidden="true">*</span></label>
+              <select id="sourceOfIncome" name="sourceOfIncome">
+                  <option value="">Select&hellip;</option><option>Salary</option><option>Investments</option><option>Pension Policy</option><option>Retirement Annuity</option><option>Government Grant</option><option>Inheritance</option><option>Donation / Gift</option><option>Other</option>
+              </select>
+              <span class="err" id="sourceOfIncome-err"></span>
             </div>
           </fieldset>
 
@@ -557,8 +777,10 @@
             </div>
           </fieldset>
 
-          <div class="form-actions rise">
-            <button class="btn btn-primary" id="submitBtn" type="submit" disabled aria-describedby="submitHint">Submit my application</button>
+          <div class="form-actions">
+            <button class="btn btn-ghost" id="backBtn" type="button" hidden>Back</button>
+            <button class="btn btn-primary" id="nextBtn" type="button">Next</button>
+            <button class="btn btn-primary" id="submitBtn" type="submit" disabled aria-describedby="submitHint" hidden>Submit my application</button>
           </div>
           <p class="small" id="submitHint">You can submit once the consent wording above has loaded.</p>
           <div class="callout callout-error err-summary" id="errSummary" role="alert" hidden></div>
@@ -630,7 +852,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261118-1"></script>
+<script src="assets/store.js?v=20261125-1"></script>
 <script>
 (function () {
   'use strict';
@@ -667,8 +889,13 @@
     if (target) target.focus();
   }
 
-  /* --- ID type toggle (passport behind PMStore.allowPassport, BUILD-PLAN D11) --- */
-  var allowPassport = PMStore.allowPassport === true;
+  /* --- ID type toggle ---
+     The form is page 1 of the home loan application, not only the credit-check consent (Michael,
+     25 Nov 2026): a temporary resident or foreign national without an SA ID number completes it
+     with a passport. No identity questions and no online credit check follow for them - the server
+     routes a passport to the consultant (register.ts), and the dashboard says so. Whether an
+     automated check may ever run on a passport is the server's ALLOW_PASSPORT, not this page. */
+  var allowPassport = true;
   var saidField = document.getElementById('saidField');
   var passportFields = document.getElementById('passportFields');
   function idType() {
@@ -678,6 +905,13 @@
     var isSaid = idType() === 'said';
     saidField.hidden = !isSaid;
     passportFields.hidden = isSaid;
+    document.getElementById('passportHint').hidden = isSaid;
+    document.getElementById('idCopyWhat').textContent = isSaid ? 'A copy of your ID' : 'A copy of your passport';
+    document.getElementById('idFrontWhat').textContent = isSaid ? 'Front of your ID' : 'The photo page of your passport';
+  }
+  function chooseIdType(kind) {
+    var r = form.querySelector('input[name="idType"][value="' + kind + '"]');
+    if (r && !r.checked) { r.checked = true; syncIdType(); }
   }
   if (!allowPassport) {
     var passportOpt = document.getElementById('passportOpt');
@@ -691,40 +925,100 @@
   });
   syncIdType();
 
-  /* --- "Who did you receive the link from?" (Michael, 5 Nov): every answer must be named — the
-     consultant, the estate agency, or where else the link came from; the detail travels with the
-     answer as one value ("Estate agency: Pam Golding", "Other: Pro Mortgage website"). --- */
-  var REFERRAL_NAMED = {
-    'Pro Mortgage consultant': 'Consultant\u2019s name',
-    'Estate agency': 'Estate agency and agent\u2019s name',
-    'Other': 'Where did you get the link?'
-  };
-  var REFERRAL_ERR = {
-    'Pro Mortgage consultant': 'Enter the name of the consultant who sent you the link.',
-    'Estate agency': 'Enter the name of the estate agency (and the agent) who sent you the link.',
-    'Other': 'Tell us where you got the link.'
-  };
-  var referralSel = document.getElementById('referral');
-  var referralNameField = document.getElementById('referralNameField');
-  var referralNameInput = document.getElementById('referralName');
-  function referralNameLabel() { return REFERRAL_NAMED[referralSel.value.trim()] || ''; }
-  function syncReferral() {
-    var label = referralNameLabel();
-    referralNameField.hidden = !label;
-    referralNameInput.required = !!label;
-    if (label) {
-      document.getElementById('referralNameLabel').firstChild.nodeValue = label + ' ';
+  /* --- page 1 of the home loan application (Kobus, 25 Nov 2026) ---
+     Tick-box groups are radio inputs sharing a name; the group's container carries the id the
+     validation and the error summary point at. */
+  /* A choice is either a picklist (long lists) or a tick-box group (two to four options). */
+  function rv(name) {
+    var sel = document.getElementById(name);
+    if (sel && sel.tagName === 'SELECT') return sel.value;
+    var el = document.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : '';
+  }
+  function onGroup(name, fn) {
+    var sel = document.getElementById(name);
+    if (sel && sel.tagName === 'SELECT') { sel.addEventListener('change', fn); return; }
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="' + name + '"]'), function (r) {
+      r.addEventListener('change', fn);
+    });
+  }
+  /* Country picklists: South Africa and its neighbours first, then the rest of the world. */
+  var COUNTRIES = ['South Africa', 'Botswana', 'Eswatini', 'Lesotho', 'Mozambique', 'Namibia', 'Zimbabwe',
+    'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
+    'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia',
+    'Bosnia and Herzegovina', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cabo Verde', 'Cambodia',
+    'Cameroon', 'Canada', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia', 'Comoros',
+    'Congo (Brazzaville)', 'Congo (DRC)', 'Costa Rica', 'Cote d\u2019Ivoire', 'Croatia', 'Cuba', 'Cyprus', 'Czechia',
+    'Denmark', 'Djibouti', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea',
+    'Estonia', 'Ethiopia', 'Fiji', 'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece',
+    'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras', 'Hungary', 'Iceland', 'India', 'Indonesia',
+    'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Jamaica', 'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kuwait',
+    'Kyrgyzstan', 'Laos', 'Latvia', 'Lebanon', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg',
+    'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Mauritania', 'Mauritius', 'Mexico', 'Moldova',
+    'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Myanmar', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua',
+    'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan', 'Palestine', 'Panama',
+    'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda',
+    'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia',
+    'Slovenia', 'Somalia', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden',
+    'Switzerland', 'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Trinidad and Tobago',
+    'Tunisia', 'Turkey', 'Turkmenistan', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States',
+    'Uruguay', 'Uzbekistan', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Other'];
+  Array.prototype.forEach.call(document.querySelectorAll('select.country-list'), function (sel) {
+    COUNTRIES.forEach(function (c) { var o = document.createElement('option'); o.textContent = c; sel.appendChild(o); });
+  });
+  /* Where most clients give the same answer, it is filled in for them and stays theirs to change. */
+  document.getElementById('country').value = 'South Africa';
+  document.getElementById('employerCountry').value = 'South Africa';
+  function fillIfEmpty(id, value) { var el = document.getElementById(id); if (el && !el.value) el.value = value; }
+  onGroup('residencyStatus', function () {
+    var res = rv('residencyStatus');
+    if (res === 'SA Citizen') { fillIfEmpty('nationality', 'South African'); fillIfEmpty('countryOfBirth', 'South Africa'); }
+    /* Someone without an SA ID number is shown the passport fields without having to look for them. */
+    if ((res === 'Temporary Resident' || res === 'Foreign National') && !document.getElementById('idNumber').value) chooseIdType('passport');
+  });
+  /* A field that only applies sometimes: shown when it does, emptied when it does not. */
+  function showWhen(fieldId, inputId, show) {
+    document.getElementById(fieldId).hidden = !show;
+    if (!show) { document.getElementById(inputId).value = ''; setErr(inputId, ''); }
+  }
+  function isMarried() { return /^Married/.test(rv('maritalStatus')); }
+  /* No employer to describe: the employer block is hidden and nothing in it is asked. */
+  function notWorking() { var st = rv('occupationalStatus'); return st === 'Unemployed' || st === 'Home Executive'; }
+  var EMPLOYER_TEXT = ['occupation', 'employmentStartDate', 'employerName', 'employerLandline', 'employerStreet',
+    'employerSuburb', 'employerCity', 'employerPostalCode', 'employerProvince', 'prevEmployedYears',
+    'prevEmployedMonths', 'previousEmployer', 'occupationalLevel', 'salaryFrequency'];
+  function syncConditional() {
+    showWhen('countryOfMarriageField', 'countryOfMarriage', isMarried());
+    showWhen('foreignTaxNumberField', 'foreignTaxNumber', rv('taxOutsideRsa') === 'Yes');
+    showWhen('qualificationLevelField', 'qualificationLevel', rv('tertiaryQualification') === 'Yes');
+    var off = notWorking();
+    document.getElementById('employerBlock').hidden = off;
+    if (off) {
+      EMPLOYER_TEXT.forEach(function (id) { document.getElementById(id).value = ''; setErr(id, ''); });
     } else {
-      referralNameInput.value = '';
-      setErr('referralName', '');
+      fillIfEmpty('employerCountry', 'South Africa');
     }
   }
-  function referralValue() {
-    var who = referralSel.value.trim(), name = referralNameInput.value.trim();
-    return who && referralNameLabel() && name ? who + ': ' + name : who;
+  ['maritalStatus', 'taxOutsideRsa', 'tertiaryQualification', 'occupationalStatus'].forEach(function (n) { onGroup(n, syncConditional); });
+  syncConditional();
+  /* Digits only where a number is expected; MM/YYYY typed as digits gets its slash. */
+  ['postalCode', 'employerPostalCode', 'sarsTaxNumber', 'prevEmployedYears', 'prevEmployedMonths'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', function () { el.value = el.value.replace(/\D/g, ''); });
+  });
+  ['occupiedSince', 'employmentStartDate'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', function () {
+      var d = el.value.replace(/\D/g, '').slice(0, 6);
+      el.value = d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
+    });
+  });
+  var MONTH_YEAR = /^(0[1-9]|1[0-2])\/(19|20)\d{2}$/;
+  function monthYearOk(val) {
+    if (!MONTH_YEAR.test(val)) return false;
+    var now = new Date(), m = Number(val.slice(0, 2)), y = Number(val.slice(3));
+    return y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1);
   }
-  referralSel.addEventListener('change', syncReferral);
-  syncReferral();
 
   /* --- SA ID live derivation --- */
   var idInput = document.getElementById('idNumber');
@@ -735,6 +1029,15 @@
     if (d) {
       derivedBox.hidden = false;
       derivedBox.textContent = 'Checks out: born ' + d.dob + ' · ' + d.gender + ' · ' + d.citizen;
+      if (!rv('residencyStatus')) {
+        var res = /permanent/i.test(d.citizen) ? 'Permanent Resident' : /citizen/i.test(d.citizen) ? 'SA Citizen' : '';
+        var rr = res && document.querySelector('input[name="residencyStatus"][value="' + res + '"]');
+        if (rr) { rr.checked = true; rr.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+      if (!rv('gender') && (d.gender === 'Male' || d.gender === 'Female')) {
+        var g = document.querySelector('input[name="gender"][value="' + d.gender + '"]');
+        if (g) g.checked = true;
+      }
     } else {
       derivedBox.hidden = true;
     }
@@ -914,16 +1217,6 @@
     });
   }
 
-  /* --- currency formatting on blur --- */
-  function parseAmount(v) { return Number(String(v).replace(/[^\d]/g, '')) || 0; }
-  ['grossIncome', 'totalDeductions', 'monthlyExpenses', 'housingPayment'].forEach(function (id) {
-    var el = document.getElementById(id);
-    el.addEventListener('blur', function () {
-      var n = parseAmount(el.value);
-      el.value = n ? n.toLocaleString('en-ZA').replace(/,/g, ' ') : '';
-    });
-  });
-
   /* --- consent wording (BUILD-PLAN D13) ---
      The declaration is MortgageMAX's text. When it is HTML it enters the page ONLY through
      this allow-list rebuild: parsed inertly by DOMParser, then re-created element by element
@@ -1003,7 +1296,7 @@
   /* The form cannot be submitted unless the consent wording is on screen. */
   function syncSubmit() {
     submitBtn.disabled = submitting || !consentsPresented;
-    submitHint.hidden = !!consentsPresented;
+    submitHint.hidden = !!consentsPresented || (typeof stepIndex === 'number' && stepIndex < STEPS.length - 1);
   }
   function loadConsents(fromRetry) {
     consentsPresented = null;
@@ -1067,33 +1360,70 @@
     }
     var v = function (id) { return document.getElementById(id).value.trim(); };
 
-    check('firstNames', v('firstNames') !== '', 'Enter your full first names.');
-    check('surname', v('surname') !== '', 'Enter your surname.');
+    var need = function (id, msg) { check(id, v(id) !== '', msg); };
+    var pick = function (name, msg) { check(name, rv(name) !== '', msg); };
+
+    /* 1. Personal & contact details */
+    need('firstNames', 'Enter your first name(s).');
+    need('surname', 'Enter your surname.');
+    check('email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email')), 'Enter a valid email address.');
+    check('cell', /^0[6-8][0-9]{8}$/.test(v('cell').replace(/\s/g, '')), 'Enter a valid SA cellphone number, e.g. 0821234567.');
     if (idType() === 'said') {
       check('idNumber', PMStore.validSaId(v('idNumber')), 'Enter a valid 13-digit South African ID number.');
       setErr('passportNumber', '');
       setErr('dateOfBirth', '');
     } else {
-      check('passportNumber', v('passportNumber') !== '', 'Enter your passport number.');
-      check('dateOfBirth', v('dateOfBirth') !== '', 'Enter your date of birth.');
+      need('passportNumber', 'Enter your passport number.');
+      need('dateOfBirth', 'Enter your date of birth.');
       setErr('idNumber', '');
     }
-    check('email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email')), 'Enter a valid email address.');
-    check('cell', /^0[6-8][0-9]{8}$/.test(v('cell').replace(/\s/g, '')), 'Enter a valid SA cellphone number, e.g. 0821234567.');
-    check('street', v('street') !== '', 'Enter your street address.');
-    check('suburb', v('suburb') !== '', 'Enter your suburb.');
-    check('city', v('city') !== '', 'Enter your city or town.');
-    check('province', v('province') !== '', 'Select your province.');
+    pick('gender', 'Select your gender.');
+    pick('residencyStatus', 'Select your residency status.');
+    pick('maritalStatus', 'Select your marital status.');
+    if (isMarried()) need('countryOfMarriage', 'Select the country you were married in.');
+
+    /* 2. Residential details */
+    pick('residentialStatus', 'Select your residential status.');
+    check('occupiedSince', monthYearOk(v('occupiedSince')), 'Enter the month and year you moved in, as MM/YYYY.');
+    need('street', 'Enter your physical address.');
+    need('suburb', 'Enter your suburb.');
+    need('city', 'Enter your city or town.');
     check('postalCode', /^\d{4}$/.test(v('postalCode')), 'Enter a 4-digit postal code.');
-    check('employmentStatus', v('employmentStatus') !== '', 'Select your employment status.');
-    check('maritalStatus', v('maritalStatus') !== '', 'Select your marital status.');
-    if (referralNameLabel()) {
-      check('referralName', v('referralName') !== '', REFERRAL_ERR[v('referral')]);
-    } else {
-      setErr('referralName', '');
+    need('province', 'Select your province.');
+    need('country', 'Select your country.');
+    need('nationality', 'Enter your nationality.');
+    need('countryOfBirth', 'Select your country of birth.');
+    need('cityOfBirth', 'Enter your city of birth.');
+    pick('ethnicGroup', 'Select your ethnic group.');
+    need('homeLanguage', 'Select your home language.');
+
+    /* 3. Tax & other details */
+    pick('taxOutsideRsa', 'Answer whether you have a tax obligation outside of RSA.');
+    if (rv('taxOutsideRsa') === 'Yes') need('foreignTaxNumber', 'Enter your foreign tax number.');
+    check('sarsTaxNumber', v('sarsTaxNumber') === '' || /^\d{10}$/.test(v('sarsTaxNumber')), 'A SARS tax number has 10 digits. Leave it empty if you do not have one.');
+    pick('firstTimeBuyer', 'Answer whether you are a first-time home buyer.');
+    pick('tertiaryQualification', 'Answer whether you have a tertiary qualification.');
+    if (rv('tertiaryQualification') === 'Yes') need('qualificationLevel', 'Select your highest qualification level.');
+    pick('publicOfficial', 'Answer the question about a public official.');
+
+    /* 4. Employment details (nothing about an employer is asked of someone who has none) */
+    pick('occupationalStatus', 'Select your occupational status.');
+    if (!notWorking()) {
+      need('occupation', 'Enter your occupation.');
+      check('employmentStartDate', monthYearOk(v('employmentStartDate')), 'Enter the month and year you started, as MM/YYYY.');
+      need('employerName', 'Enter your employer\u2019s name.');
+      need('employerStreet', 'Enter your employer\u2019s physical address.');
+      need('employerSuburb', 'Enter your employer\u2019s suburb.');
+      need('employerCity', 'Enter your employer\u2019s city.');
+      check('employerPostalCode', /^\d{4}$/.test(v('employerPostalCode')), 'Enter your employer\u2019s 4-digit postal code.');
+      need('employerProvince', 'Select your employer\u2019s province.');
+      need('employerCountry', 'Select your employer\u2019s country.');
+      check('prevEmployedYears', v('prevEmployedMonths') === '' || Number(v('prevEmployedMonths')) <= 11, 'Months must be 11 or fewer.');
+      pick('occupationalLevel', 'Select your occupational level.');
+      pick('salaryFrequency', 'Select your salary frequency.');
     }
-    check('grossIncome', parseAmount(v('grossIncome')) > 0, 'Enter your gross monthly income.');
-    check('monthlyExpenses', parseAmount(v('monthlyExpenses')) > 0, 'Enter your total monthly expenses.');
+    pick('sourceOfIncome', 'Select your source of income.');
+
     /* The front of the ID is required (page rule only: the upload itself follows the accepted
        application, so the server cannot demand it at submit - a record that still ends up without
        one shows as "Needs attention" in the register). A rejected file has already been dropped. */
@@ -1106,9 +1436,84 @@
     return problems;
   }
 
+  /* --- one section at a time ---
+     Five short steps instead of one long page. Next checks only the step on screen; Submit checks
+     everything and takes the client to the first step that still needs something. */
+  var STEPS = Array.prototype.map.call(form.querySelectorAll('fieldset[id]'), function (f) { return f.id; });
+  var stepIndex = 0, stepReached = 0;
+  var backBtn = document.getElementById('backBtn'), nextBtn = document.getElementById('nextBtn');
+  function stepOf(fieldId) {
+    var el = document.getElementById(fieldId), fs = el && el.closest('fieldset[id]');
+    var i = fs ? STEPS.indexOf(fs.id) : -1;
+    return i === -1 ? stepIndex : i;
+  }
+  function showStep(i, moveFocus) {
+    stepIndex = Math.max(0, Math.min(i, STEPS.length - 1));
+    stepReached = Math.max(stepReached, stepIndex);
+    var last = stepIndex === STEPS.length - 1;
+    STEPS.forEach(function (id, n) { document.getElementById(id).classList.toggle('step-on', n === stepIndex); });
+    Array.prototype.forEach.call(document.querySelectorAll('#stepNav li'), function (li) {
+      var n = STEPS.indexOf(li.dataset.sec);
+      li.classList.toggle('current', n === stepIndex);
+      li.classList.toggle('done', n < stepReached && n !== stepIndex);
+      li.classList.toggle('locked', n > stepReached);
+    });
+    document.getElementById('stepBar').hidden = false;
+    document.getElementById('stepCount').textContent = 'Step ' + (stepIndex + 1) + ' of ' + STEPS.length;
+    document.getElementById('stepFill').style.width = Math.round((stepIndex + 1) / STEPS.length * 100) + '%';
+    backBtn.hidden = stepIndex === 0;
+    nextBtn.hidden = last;
+    submitBtn.hidden = !last;
+    submitHint.hidden = !last || !!consentsPresented;
+    if (moveFocus) {
+      var legend = document.getElementById(STEPS[stepIndex]).querySelector('legend');
+      legend.setAttribute('tabindex', '-1');
+      document.getElementById('stepBar').scrollIntoView({ block: 'start' });
+      legend.focus({ preventScroll: true });
+    }
+  }
+  function summarise(problems) {
+    errSummary.hidden = false;
+    errSummary.removeAttribute('data-kind');
+    errSummary.innerHTML = '<span class="callout-tag">Please fix ' + problems.length +
+      (problems.length === 1 ? ' item' : ' items') + '</span><ul>' +
+      problems.map(function (p) { return '<li><a href="#' + p.id + '">' + p.msg + '</a></li>'; }).join('') + '</ul>';
+  }
+  function goNext() {
+    var all = validate();
+    var here = all.filter(function (p) { return stepOf(p.id) === stepIndex; });
+    /* later steps have not been filled in yet: they must not turn red before the client gets there */
+    all.forEach(function (p) { if (stepOf(p.id) > stepIndex) setErr(p.id, ''); });
+    if (here.length) { summarise(here); document.getElementById(here[0].id).focus(); return; }
+    errSummary.hidden = true;
+    showStep(stepIndex + 1, true);
+  }
+  nextBtn.addEventListener('click', goNext);
+  backBtn.addEventListener('click', function () { errSummary.hidden = true; showStep(stepIndex - 1, true); });
+  document.getElementById('stepNav').addEventListener('click', function (e) {
+    var li = e.target.closest('li[data-sec]');
+    if (!li) return;
+    e.preventDefault();
+    var n = STEPS.indexOf(li.dataset.sec);
+    if (n !== -1 && n <= stepReached) { errSummary.hidden = true; showStep(n, true); }
+  });
+  /* a link in the list of problems takes the client to that step, then to the field */
+  errSummary.addEventListener('click', function (e) {
+    var a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    e.preventDefault();
+    var id = a.getAttribute('href').slice(1);
+    showStep(stepOf(id), false);
+    var el = document.getElementById(id);
+    if (el) el.focus();
+  });
+  form.classList.add('stepped');
+  showStep(0, false);
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     if (submitting) return;
+    if (stepIndex < STEPS.length - 1) { goNext(); return; }
     if (!consentsPresented || PMStore.mode === 'error') {
       /* Guard for implicit (Enter-key) submission: never submit without the wording shown. */
       errSummary.hidden = false;
@@ -1120,6 +1525,7 @@
     errSummary.removeAttribute('data-kind');
     var problems = validate();
     if (problems.length) {
+      showStep(stepOf(problems[0].id), false);
       errSummary.hidden = false;
       errSummary.innerHTML = '<span class="callout-tag">Please fix ' + problems.length +
         (problems.length === 1 ? ' item' : ' items') + '</span><ul>' +
@@ -1144,15 +1550,29 @@
       passportNumber: kind === 'passport' ? v('passportNumber') : '',
       dateOfBirth: kind === 'passport' ? v('dateOfBirth') : '',
       email: v('email'), cell: v('cell').replace(/\s/g, ''),
-      homePhone: v('homePhone'), workPhone: v('workPhone'),
+      workPhone: v('workPhone'),
       street: v('street'), suburb: v('suburb'), city: v('city'),
       province: v('province'), postalCode: v('postalCode'),
-      employmentStatus: v('employmentStatus'), maritalStatus: v('maritalStatus'),
-      referral: referralValue(),
-      grossIncome: parseAmount(v('grossIncome')),
-      totalDeductions: parseAmount(v('totalDeductions')),
-      monthlyExpenses: parseAmount(v('monthlyExpenses')),
-      housingPayment: parseAmount(v('housingPayment')),
+      /* the two answers the record has always carried, now in page 1's own words */
+      employmentStatus: rv('occupationalStatus'), maritalStatus: rv('maritalStatus'),
+      /* everything else on page 1 of the home loan application, as one object */
+      details: {
+        gender: rv('gender'), residencyStatus: rv('residencyStatus'), countryOfMarriage: v('countryOfMarriage'),
+        residentialStatus: rv('residentialStatus'), occupiedSince: v('occupiedSince'), country: v('country'),
+        nationality: v('nationality'), countryOfBirth: v('countryOfBirth'), cityOfBirth: v('cityOfBirth'),
+        ethnicGroup: rv('ethnicGroup'), homeLanguage: v('homeLanguage'),
+        taxOutsideRsa: rv('taxOutsideRsa'), foreignTaxNumber: v('foreignTaxNumber'), sarsTaxNumber: v('sarsTaxNumber'),
+        firstTimeBuyer: rv('firstTimeBuyer'), tertiaryQualification: rv('tertiaryQualification'),
+        qualificationLevel: v('qualificationLevel'), publicOfficial: rv('publicOfficial'),
+        occupation: v('occupation'), employmentStartDate: v('employmentStartDate'),
+        employerName: v('employerName'), employerLandline: v('employerLandline'),
+        employerStreet: v('employerStreet'), employerSuburb: v('employerSuburb'), employerCity: v('employerCity'),
+        employerPostalCode: v('employerPostalCode'), employerProvince: v('employerProvince'),
+        employerCountry: notWorking() ? '' : v('employerCountry'),
+        prevEmployedYears: v('prevEmployedYears'), prevEmployedMonths: v('prevEmployedMonths'),
+        previousEmployer: v('previousEmployer'), occupationalLevel: rv('occupationalLevel'),
+        sourceOfIncome: rv('sourceOfIncome'), salaryFrequency: rv('salaryFrequency')
+      },
       consentUA: navigator.userAgent,
       consentAccepted: document.getElementById('consent').checked === true,
       consentsPresented: consentsPresented
@@ -1211,6 +1631,7 @@
     standard: 'Your consultant will request your credit report and contact you with the outcome.',
     idvPassed: 'Your identity has been verified. Your consultant will request your credit report and contact you with the outcome.',
     manual: 'Your consent has been recorded. A consultant will contact you to complete the credit check.',
+    passport: 'Your details have been sent to your consultant, who will contact you about the next steps of your home loan application.',
     idvUnavailable: 'We couldn’t generate identity questions for your ID number. Your consultant will contact you.',
     idvFailed: 'We couldn’t verify your identity online. Your consultant will contact you.',
     idvTimeout: 'Time’s up. Your consultant will contact you to finish verifying your identity.',
@@ -1225,9 +1646,10 @@
     document.getElementById('doneRef').textContent = currentRef || '';
     document.getElementById('doneMsg').textContent = msg;
     var note = document.getElementById('doneIdNote');
-    note.textContent = idCopyOutcome === 'saved' ? 'The copy of your ID was saved with your application.'
-      : idCopyOutcome === 'failed' ? 'We couldn\u2019t save the copy of your ID. Your consultant will ask you for it.'
-      : idCopyOutcome === 'unknown' ? 'We couldn\u2019t confirm that the copy of your ID was saved. Your consultant will check, and ask you for it if needed.' : '';
+    var doc = idType() === 'passport' ? 'passport' : 'ID';
+    note.textContent = idCopyOutcome === 'saved' ? 'The copy of your ' + doc + ' was saved with your application.'
+      : idCopyOutcome === 'failed' ? 'We couldn\u2019t save the copy of your ' + doc + '. Your consultant will ask you for it.'
+      : idCopyOutcome === 'unknown' ? 'We couldn\u2019t confirm that the copy of your ' + doc + ' was saved. Your consultant will check, and ask you for it if needed.' : '';
     note.hidden = !note.textContent;
     showPanel(donePanel);
   }
@@ -1275,7 +1697,7 @@
     PMStore.registerConsent(currentRef).then(function (res) {
       res = res || {};
       if (res.status === 'idv_waived') return showDone(DONE.standard);
-      if (res.status === 'manual_required') return showDone(res.reason === 'consent_stale' ? DONE.stale : DONE.manual);
+      if (res.status === 'manual_required') return showDone(res.reason === 'consent_stale' ? DONE.stale : res.reason === 'passport' ? DONE.passport : DONE.manual);
       if (res.status === 'consent_registered') {
         setWork('Step 3 · Verify your identity', 'Preparing your identity questions',
           'The credit bureau is preparing your identity questions. This can take up to 30 seconds…');
@@ -1579,20 +2001,6 @@
     });
   });
 
-  /* --- rail step highlight (progressive enhancement) --- */
-  if ('IntersectionObserver' in window) {
-    var items = document.querySelectorAll('#stepNav li');
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting) {
-          items.forEach(function (li) {
-            li.classList.toggle('current', li.dataset.sec === en.target.id);
-          });
-        }
-      });
-    }, { rootMargin: '-20% 0px -60% 0px' });
-    document.querySelectorAll('fieldset[id]').forEach(function (f) { io.observe(f); });
-  }
 })();
 </script>
 </body>

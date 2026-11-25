@@ -21,6 +21,7 @@ export const MAX_PER_RUN = 20;
 export interface Candidate {
   ref: string;
   status: string;
+  id_type?: string | null; // 'said' | 'passport' (migration 20261012; absent before it)
   has_id_copy: boolean;
   id_copy_source: string | null; // 'client' | 'staff' | null
   recipient_ids: string[] | null;
@@ -28,7 +29,7 @@ export interface Candidate {
   log: { kind: Kind; first_seen_at: string; sent_at: string | null }[] | null;
 }
 export interface Pending { ref: string; kind: Kind }
-export interface Send { ref: string; kind: Kind; reason: string; next: string; ids: string[]; emails: string[] }
+export interface Send { ref: string; kind: Kind; reason: string; next: string; tag?: "passport"; ids: string[]; emails: string[] }
 
 /** Why a client-side stop needs staff, and what to do about it: two plain sentences (the email's body). */
 const ATTENTION: Record<string, { reason: string; next: string }> = {
@@ -36,6 +37,10 @@ const ATTENTION: Record<string, { reason: string; next: string }> = {
   idv_unavailable: { reason: "The identity questions could not be asked.", next: "Open the application to verify the client's identity by hand." },
   manual_required: { reason: "The client's identity has to be verified by hand.", next: "Open the application to verify the client's identity." },
   config_error: { reason: "A system issue stopped this application.", next: "Open the application to see what happened." },
+};
+export const PASSPORT = {
+  reason: "A passport holder completed the application form.",
+  next: "No credit check exists for a passport, so nothing is waiting to be done. Their details are on the dashboard for the home loan application.",
 };
 export const NO_ID_REASON = "The client's ID copy is not on the record.";
 const NO_ID_NEXT = "Attach the ID copy to the application, then run the credit check.";
@@ -47,7 +52,9 @@ const READY_NEXT = "Open the application and run the credit check.";
  * bucketOf + admin.html needsIdCopy) minus everything staff cause themselves: a failed credit check,
  * a manual verification, an ID copy staff attached.
  */
-export function notifyKind(c: Pick<Candidate, "status" | "has_id_copy" | "id_copy_source">, mode: IdvMode): { kind: Kind; reason: string; next: string } | null {
+export function notifyKind(c: Pick<Candidate, "status" | "has_id_copy" | "id_copy_source" | "id_type">, mode: IdvMode): { kind: Kind; reason: string; next: string; tag?: "passport" } | null {
+  // A passport holder completed the form: there is no credit check to run, only an application to take further.
+  if (c.status === "manual_required" && c.id_type === "passport") return { kind: "attention", tag: "passport", ...PASSPORT };
   const stop = ATTENTION[c.status];
   if (stop) return { kind: "attention", ...stop };
   const runnable = allowedFrom(mode).filter((s) => s !== "check_failed");
@@ -78,7 +85,7 @@ export function plan(cands: Candidate[], pending: Pending[], mode: IdvMode, now:
     if (!Number.isFinite(since) || now.getTime() - since < SETTLE_MS[want.kind]) continue;
     const emails = (c.recipient_emails ?? []).filter((e) => typeof e === "string" && e.includes("@"));
     if (!emails.length) { noRecipient.push(c.ref); continue; }
-    due.push({ ref: c.ref, kind: want.kind, reason: want.reason, next: want.next, ids: c.recipient_ids ?? [], emails, since });
+    due.push({ ref: c.ref, kind: want.kind, reason: want.reason, next: want.next, tag: want.tag, ids: c.recipient_ids ?? [], emails, since });
   }
   const drop = pending.filter((p) => current.get(p.ref) !== p.kind);
   due.sort((a, b) => a.since - b.since);
@@ -94,6 +101,8 @@ const TAG: Record<Kind, { label: string; ink: string; tint: string }> = {
   ready: { label: "Ready to run", ink: "#1d6b43", tint: "#e9f3ed" },
   attention: { label: "Needs attention", ink: "#77600e", tint: "#faf3de" },
 };
+/** A passport application is complete as it stands: its own label and colour, as on the dashboard. */
+const TAG_PASSPORT = { label: "Passport application", ink: "#1d4f91", tint: "#e7eff9" };
 const FONT = "Arial,Helvetica,sans-serif";
 const MONO = "'SF Mono',Menlo,Consolas,'Courier New',monospace";
 
@@ -102,10 +111,11 @@ const MONO = "'SF Mono',Menlo,Consolas,'Courier New',monospace";
  * button. Tables and inline styles only (Outlook); it reads the same with images switched off, where
  * the logo's alt text shows in gold on the band. Never the client's name or ID number.
  */
-export function emailFor(s: Pick<Send, "ref" | "kind" | "reason"> & { next?: string }, dashboardUrl: string): { subject: string; text: string; html: string } {
+export function emailFor(s: Pick<Send, "ref" | "kind" | "reason"> & { next?: string; tag?: "passport" }, dashboardUrl: string): { subject: string; text: string; html: string } {
   // Michael's wording (25 Nov 2026): the same subject for every application, the reference in the body only.
-  const subject = s.kind === "ready" ? "Credit Check Ready To Run" : "Credit Check Requires Attention";
-  const tag = TAG[s.kind];
+  const passport = s.tag === "passport";
+  const subject = passport ? "Passport Application Received" : s.kind === "ready" ? "Credit Check Ready To Run" : "Credit Check Requires Attention";
+  const tag = passport ? TAG_PASSPORT : TAG[s.kind];
   const text = [
     `${tag.label}: application ${s.ref}`,
     "",

@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { type Candidate, emailFor, MAX_PER_RUN, NO_ID_REASON, notifyKind, plan, SETTLE_MS } from "./notify.ts";
+import { type Candidate, emailFor, MAX_PER_RUN, NO_ID_REASON, notifyKind, PASSPORT, plan, SETTLE_MS } from "./notify.ts";
 
 const NOW = new Date("2026-11-18T10:00:00Z");
 const ago = (min: number) => new Date(NOW.getTime() - min * 60_000).toISOString();
@@ -22,6 +22,19 @@ Deno.test("needs attention: client-side stops and a missing ID copy", () => {
   }
   const noId = notifyKind(cand({ has_id_copy: false, id_copy_source: null }), "required");
   assertEquals([noId?.kind, noId?.reason], ["attention", NO_ID_REASON]);
+});
+
+Deno.test("a passport application is announced in its own words, not as a failed identity check", () => {
+  const p = notifyKind(cand({ status: "manual_required", id_type: "passport" }), "required");
+  assertEquals([p?.kind, p?.reason, p?.tag], ["attention", PASSPORT.reason, "passport"]);
+  const mail = emailFor({ ref: "PM-PP1", ...p! }, "https://check.promortgagesa.co.za/admin.html");
+  assertEquals(mail.subject, "Passport Application Received");
+  assert(mail.html.includes("Passport application") && !mail.html.includes("Needs attention"));
+  // the tag survives the plan, so the sender uses it
+  const sent = plan([cand({ status: "manual_required", id_type: "passport", log: [{ kind: "attention", first_seen_at: ago(6), sent_at: null }] })], [], "required", NOW).send;
+  assertEquals(sent.map((x) => x.tag), ["passport"]);
+  // an SA ID that needs manual handling keeps the usual wording
+  assert(notifyKind(cand({ status: "manual_required", id_type: "said" }), "required")?.reason !== PASSPORT.reason);
 });
 
 Deno.test("nothing for what staff did themselves, or for states that need nobody", () => {

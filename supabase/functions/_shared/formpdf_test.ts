@@ -64,3 +64,48 @@ Deno.test("buildFormPdf: a long declaration flows onto more than one page; no wo
   assertMatch(bare, /^%PDF-1\.4\n/);
   assertEquals(bare.includes("was not recorded"), true);
 });
+
+// ---- page 1 of the home loan application (25 Nov 2026): one layout for the View and the PDF ----
+const page1 = {
+  ...rec, employmentStatus: "Full-time Employee", maritalStatus: "Married ANC", referral: "", grossIncome: 0,
+  details: {
+    gender: "Female", residencyStatus: "SA Citizen", countryOfMarriage: "South Africa", residentialStatus: "Owner",
+    occupiedSince: "03/2019", country: "South Africa", nationality: "South African", countryOfBirth: "South Africa",
+    cityOfBirth: "Durban", ethnicGroup: "African", homeLanguage: "isiZulu", taxOutsideRsa: "No", firstTimeBuyer: "Yes",
+    tertiaryQualification: "No", publicOfficial: "No", occupation: "Financial analyst", employmentStartDate: "06/2017",
+    employerName: "Example Holdings", employerStreet: "200 Example Road", employerSuburb: "Brooklyn", employerCity: "Pretoria",
+    employerPostalCode: "0181", employerProvince: "Gauteng", employerCountry: "South Africa", prevEmployedYears: "4",
+    occupationalLevel: "Management", sourceOfIncome: "Salary", salaryFrequency: "Monthly",
+  },
+};
+type Sections = { title: string; rows: [string, string, string?][] }[];
+const sections = (r: Record<string, unknown>, o?: Record<string, unknown>) =>
+  (loadStore() as unknown as { applicationSections: (r: Record<string, unknown>, o?: Record<string, unknown>) => Sections }).applicationSections(r, o);
+
+Deno.test("applicationSections: a page-1 application shows page 1's sections, without income", () => {
+  const secs = sections(page1);
+  assertEquals(secs.map((s) => s.title), ["Personal and contact details", "Residential details", "Tax and other details", "Employment details"]);
+  const all = Object.fromEntries(secs.flatMap((s) => s.rows.map((r) => [r[0], r[1]])));
+  assertEquals([all["Gender"], all["Ethnic group"], all["Occupational status"], all["Marital status"], all["Employer name"], all["Previous period employed"]],
+    ["Female", "African", "Full-time Employee", "Married ANC", "Example Holdings", "4 years"]);
+  // answers that were not given are left out, not shown as blanks
+  assertEquals(["SARS tax number", "Foreign tax number", "Highest level", "Employer landline", "Gross income"].filter((k) => k in all), []);
+  // the name is for the PDF only (the View shows it in its title)
+  assertEquals(sections(page1, { withName: true })[0].rows[0], ["Full name", "Thandi Zoë Mokoena–Smith"]);
+});
+
+Deno.test("applicationSections: an application from the short form keeps its own layout", () => {
+  const secs = sections(rec);
+  assertEquals(secs.map((s) => s.title), ["Personal particulars", "Residential address", "Employment and household", "Income and commitments (monthly)"]);
+  assertEquals(secs[3].rows[0][0], "Gross income");
+  assertMatch(String(secs[3].rows[0][1]), /^R 41.500$/);
+});
+
+Deno.test("buildFormPdf: a page-1 application prints its answers", () => {
+  const s = new TextDecoder("latin1").decode(loadStore().buildFormPdf(page1, { declarations: decls }));
+  assertMatch(s, /^%PDF-1\.4\n/);
+  for (const t of ["Employment details", "Example Holdings", "Ethnic group", "Financial analyst", "Married ANC"]) {
+    assertEquals(s.includes(t), true, t);
+  }
+  assertEquals(s.includes("Gross income"), false);
+});
