@@ -82,6 +82,12 @@ Deno.test("the email carries the reference and a link, and nothing about the per
   assertEquals(e.subject, "PM-7K2Q is ready for its credit check");
   assert(e.text.includes("PM-7K2Q") && e.text.includes("https://check.promortgagesa.co.za/admin.html"));
   assert(e.html.includes('href="https://check.promortgagesa.co.za/admin.html"'));
+  // the brand band: the logo beside the dashboard page, with the name behind it for when images are off
+  assert(e.html.includes('src="https://check.promortgagesa.co.za/assets/logo.png"') && e.html.includes('alt="PRO MORTGAGE"'));
+  assert(e.html.includes("Ready to run") && e.text.startsWith("Ready to run: application PM-7K2Q"));
+  // the next step, when given, is in both parts
+  const withNext = emailFor({ ref: "PM-1", kind: "attention", reason: "r", next: "Do this next." }, "https://x.test/admin.html");
+  assert(withNext.html.includes("Do this next.") && withNext.text.includes("Do this next.") && withNext.html.includes("Needs attention"));
   assertEquals(emailFor({ ref: "PM-7K2Q", kind: "attention", reason: "x" }, "u").subject, "PM-7K2Q needs your attention");
   // a reason is escaped in the HTML part
   assert(emailFor({ ref: "PM-1", kind: "attention", reason: "The client's <ID>" }, "u").html.includes("client&#39;s &lt;ID&gt;"));
