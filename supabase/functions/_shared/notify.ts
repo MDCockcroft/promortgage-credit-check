@@ -103,7 +103,8 @@ const MONO = "'SF Mono',Menlo,Consolas,'Courier New',monospace";
  * the logo's alt text shows in gold on the band. Never the client's name or ID number.
  */
 export function emailFor(s: Pick<Send, "ref" | "kind" | "reason"> & { next?: string }, dashboardUrl: string): { subject: string; text: string; html: string } {
-  const subject = s.kind === "ready" ? `${s.ref} is ready for its credit check` : `${s.ref} needs your attention`;
+  // Michael's wording (25 Nov 2026): the same subject for every application, the reference in the body only.
+  const subject = s.kind === "ready" ? "Credit Check Ready To Run" : "Credit Check Requires Attention";
   const tag = TAG[s.kind];
   const text = [
     `${tag.label}: application ${s.ref}`,
