@@ -725,7 +725,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261125-1"></script>
+<script src="assets/store.js?v=20261126-1"></script>
 <script>
 (function () {
   'use strict';
@@ -2879,6 +2879,11 @@
   $('clearBtn').addEventListener('click', function () {
     if (confirm('Remove ALL records from this browser?')) { PMStore.clearAll().then(render); }
   });
+  /* A demonstration link can ask for the samples itself (?demo=1&seed=1): loaded once, only when
+     this browser holds no records yet, so reopening the link never doubles them. */
+  if (PMStore.mode === 'demo' && new URLSearchParams(window.location.search).get('seed') === '1') {
+    PMStore.all().then(function (all) { if (!all.length) seed(); });
+  }
   /* search and filter work on the rows already loaded — no reload per keystroke */
   function renderFromCache() { if (lastAll) renderRows(lastAll); else render(); }
   $('search').addEventListener('input', renderFromCache);

@@ -852,7 +852,7 @@
 <!-- ?v= must change on EVERY release that touches assets/: Pages lets browsers cache them for
      10 minutes, and a new page running an old store.js breaks (27 Sep: blank register). -->
 <script src="assets/config.js?v=20260927-3"></script>
-<script src="assets/store.js?v=20261125-1"></script>
+<script src="assets/store.js?v=20261126-1"></script>
 <script>
 (function () {
   'use strict';
@@ -2001,6 +2001,38 @@
     });
   });
 
+
+  /* --- demonstration only (?demo=1&fill=1): the form opens with an invented client filled in, so
+     a presenter can walk through the steps without typing. Never outside demo mode. The ID copy is
+     left for the presenter to add: that step is worth showing, and a file cannot be pre-chosen. --- */
+  if (PMStore.mode === 'demo' && new URLSearchParams(window.location.search).get('fill') === '1') {
+    var demoSet = function (id, val) {
+      var el = document.getElementById(id);
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    var demoPick = function (name, val) {
+      var r = document.querySelector('input[name="' + name + '"][value="' + val + '"]');
+      if (r) { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }
+    };
+    demoSet('firstNames', 'Thandiwe Grace'); demoSet('surname', 'Nkosi');
+    demoSet('email', 'thandiwe.n@example.com'); demoSet('cell', '0824417702');
+    demoSet('idNumber', '8804120523086');          /* sets gender, residency, nationality, country of birth */
+    demoSet('maritalStatus', 'Married ANC'); demoSet('countryOfMarriage', 'South Africa');
+    demoSet('residentialStatus', 'Tenant'); demoSet('occupiedSince', '032019');
+    demoSet('street', '14 Jacaranda Avenue'); demoSet('suburb', 'Waterkloof'); demoSet('city', 'Pretoria');
+    demoSet('postalCode', '0181'); demoSet('province', 'Gauteng'); demoSet('cityOfBirth', 'Durban');
+    demoPick('ethnicGroup', 'African'); demoSet('homeLanguage', 'isiZulu');
+    demoPick('taxOutsideRsa', 'No'); demoSet('sarsTaxNumber', '0123456789'); demoPick('firstTimeBuyer', 'Yes');
+    demoSet('workPhone', '0125550100'); demoPick('tertiaryQualification', 'Yes'); demoSet('qualificationLevel', 'Honours degree');
+    demoPick('publicOfficial', 'No');
+    demoSet('occupationalStatus', 'Full-time Employee'); demoSet('occupation', 'Financial analyst');
+    demoSet('employmentStartDate', '062017'); demoSet('employerName', 'Example Holdings'); demoSet('employerLandline', '0125550100');
+    demoSet('employerStreet', '200 Example Road'); demoSet('employerSuburb', 'Brooklyn'); demoSet('employerCity', 'Pretoria');
+    demoSet('employerPostalCode', '0181'); demoSet('employerProvince', 'Gauteng');
+    demoSet('occupationalLevel', 'Management'); demoSet('salaryFrequency', 'Monthly'); demoSet('sourceOfIncome', 'Salary');
+  }
 })();
 </script>
 </body>

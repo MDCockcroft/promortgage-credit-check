@@ -1464,52 +1464,94 @@
       if (mode !== 'demo') return Promise.resolve();
       var now = Date.now();
       function id(first12) { return first12 + saIdCheckDigit(first12); }
+      /* One application for every group the dashboard shows, all on the page-1 form (25 Nov 2026),
+         so a demonstration has something to open in each. Invented people; .example addresses. */
+      function page1(over) {
+        var d = {
+          gender: 'Female', residencyStatus: 'SA Citizen', residentialStatus: 'Tenant', occupiedSince: '02/2022',
+          country: 'South Africa', nationality: 'South African', countryOfBirth: 'South Africa', cityOfBirth: 'Pretoria',
+          ethnicGroup: 'African', homeLanguage: 'English', taxOutsideRsa: 'No', firstTimeBuyer: 'Yes',
+          tertiaryQualification: 'No', publicOfficial: 'No',
+          occupation: 'Administrator', employmentStartDate: '01/2020', employerName: 'Example Trading',
+          employerStreet: '10 Sample Street', employerSuburb: 'Hatfield', employerCity: 'Pretoria',
+          employerPostalCode: '0083', employerProvince: 'Gauteng', employerCountry: 'South Africa',
+          occupationalLevel: 'Skilled Worker', sourceOfIncome: 'Salary', salaryFrequency: 'Monthly'
+        };
+        Object.keys(over || {}).forEach(function (k) { d[k] = over[k]; });
+        return d;
+      }
       var rows = [
         {
           firstNames: 'Thandiwe Grace', surname: 'Nkosi', idType: 'said',
           idNumber: id('880412052308'), email: 'thandiwe.n@example.com', cell: '0824417702',
-          street: '14 Jacaranda Ave', suburb: 'Waterkloof', city: 'Pretoria',
-          province: 'Gauteng', postalCode: '0181',
+          street: '14 Jacaranda Ave', suburb: 'Waterkloof', city: 'Pretoria', province: 'Gauteng', postalCode: '0181',
           employmentStatus: 'Full-time Employee', maritalStatus: 'Married ANC', workPhone: '0123456789',
-          details: {
-            gender: 'Female', residencyStatus: 'SA Citizen', countryOfMarriage: 'South Africa',
-            residentialStatus: 'Owner', occupiedSince: '03/2019', country: 'South Africa', nationality: 'South African',
-            countryOfBirth: 'South Africa', cityOfBirth: 'Durban', ethnicGroup: 'African', homeLanguage: 'isiZulu',
-            taxOutsideRsa: 'No', sarsTaxNumber: '0123456789', firstTimeBuyer: 'No', tertiaryQualification: 'Yes',
-            qualificationLevel: 'BCom Honours', publicOfficial: 'No',
-            occupation: 'Financial analyst', employmentStartDate: '06/2017', employerName: 'Example Holdings',
-            employerLandline: '0125550100', employerStreet: '200 Example Road', employerSuburb: 'Brooklyn',
-            employerCity: 'Pretoria', employerPostalCode: '0181', employerProvince: 'Gauteng', employerCountry: 'South Africa',
-            prevEmployedYears: '4', prevEmployedMonths: '2', previousEmployer: 'Sample & Co',
-            occupationalLevel: 'Management', sourceOfIncome: 'Salary', salaryFrequency: 'Monthly'
-          },
-          _age: 3 * 864e5, _status: 'report_ready', _consultant: DEMO_ME
+          details: page1({ countryOfMarriage: 'South Africa', residentialStatus: 'Owner', occupiedSince: '03/2019',
+            cityOfBirth: 'Durban', homeLanguage: 'isiZulu', sarsTaxNumber: '0123456789', firstTimeBuyer: 'No',
+            tertiaryQualification: 'Yes', qualificationLevel: 'Honours degree', occupation: 'Financial analyst',
+            employmentStartDate: '06/2017', employerName: 'Example Holdings', employerLandline: '0125550100',
+            employerStreet: '200 Example Road', employerSuburb: 'Brooklyn', employerPostalCode: '0181',
+            prevEmployedYears: '4', prevEmployedMonths: '2', previousEmployer: 'Sample & Co', occupationalLevel: 'Management' }),
+          _age: 3 * 864e5, _status: 'report_ready', _consultant: DEMO_ME, _idCopy: true
         },
         {
           firstNames: 'Pieter', surname: 'van der Merwe', idType: 'said',
           idNumber: id('790825583108'), email: 'pvdm@example.com', cell: '0731260988',
-          street: '203 Silver Oak Close', suburb: 'Faerie Glen', city: 'Pretoria',
-          province: 'Gauteng', postalCode: '0081',
-          employmentStatus: 'Self-employed', maritalStatus: 'Married in community of property',
-          referral: 'Pro Mortgage consultant: Elizabeth Cockcroft',
-          grossIncome: 88000, totalDeductions: 24100, monthlyExpenses: 31000, housingPayment: 15600,
-          _age: 1 * 864e5, _status: 'idv_waived', _consultant: 'demo-c2' /* a consultant who has left */
+          street: '203 Silver Oak Close', suburb: 'Faerie Glen', city: 'Pretoria', province: 'Gauteng', postalCode: '0081',
+          employmentStatus: 'Self-employed (Professional)', maritalStatus: 'Married COP',
+          details: page1({ gender: 'Male', countryOfMarriage: 'South Africa', residentialStatus: 'Owner', occupiedSince: '11/2015',
+            ethnicGroup: 'White', homeLanguage: 'Afrikaans', firstTimeBuyer: 'No', tertiaryQualification: 'Yes',
+            qualificationLevel: 'Bachelor’s degree', occupation: 'Architect', employmentStartDate: '04/2012',
+            employerName: 'Van der Merwe Architects', occupationalLevel: 'Senior Management' }),
+          _age: 5 * 36e5, _status: 'idv_waived', _consultant: DEMO_ME, _idCopy: true
         },
         {
           firstNames: 'Ayesha', surname: 'Patel', idType: 'said',
           idNumber: id('930217034009'), email: 'ayesha.patel@example.com', cell: '0615532247',
-          street: '7B Protea Street', suburb: 'Umhlanga Rocks', city: 'Durban',
-          province: 'KwaZulu-Natal', postalCode: '4320',
-          employmentStatus: 'Full-time employed', maritalStatus: 'Single',
-          referral: 'Other: Pro Mortgage website',
-          grossIncome: 41500, totalDeductions: 9300, monthlyExpenses: 14200, housingPayment: 8500,
-          _age: 2 * 36e5, _status: 'consent_confirmed'
+          street: '7B Protea Street', suburb: 'Umhlanga Rocks', city: 'Durban', province: 'KwaZulu-Natal', postalCode: '4320',
+          employmentStatus: 'Full-time Employee', maritalStatus: 'Single',
+          details: page1({ cityOfBirth: 'Durban', ethnicGroup: 'Asian', tertiaryQualification: 'Yes', qualificationLevel: 'Diploma',
+            occupation: 'Pharmacist assistant', employerName: 'Sample Pharmacy', employerCity: 'Durban',
+            employerSuburb: 'Umhlanga', employerPostalCode: '4319', employerProvince: 'KwaZulu-Natal' }),
+          _age: 40 * 6e4, _status: 'idv_waived', _consultant: 'demo-c1', _idCopy: true
+        },
+        {
+          firstNames: 'Lerato', surname: 'Mokoena', idType: 'said',
+          idNumber: id('910604082308'), email: 'lerato.m@example.com', cell: '0762203345',
+          street: '88 Acacia Road', suburb: 'Centurion Central', city: 'Centurion', province: 'Gauteng', postalCode: '0157',
+          employmentStatus: 'Contract Worker', maritalStatus: 'Engaged',
+          details: page1({ homeLanguage: 'Sesotho', residentialStatus: 'Living with Parents', occupiedSince: '06/1991',
+            occupation: 'Call centre agent', employerName: 'Example Contact Centre', occupationalLevel: 'Junior Position' }),
+          _age: 26 * 36e5, _status: 'idv_failed', _consultant: DEMO_ME, _idCopy: true
+        },
+        {
+          firstNames: 'Sipho', surname: 'Dlamini', idType: 'said',
+          idNumber: id('850913582308'), email: 'sipho.d@example.com', cell: '0834419021',
+          street: '5 Marula Crescent', suburb: 'Sonheuwel', city: 'Mbombela', province: 'Mpumalanga', postalCode: '1201',
+          employmentStatus: 'Full-time Employee', maritalStatus: 'Divorced',
+          details: page1({ gender: 'Male', homeLanguage: 'siSwati', cityOfBirth: 'Mbombela', firstTimeBuyer: 'No',
+            occupation: 'Diesel mechanic', employerName: 'Sample Motors', employerCity: 'Mbombela', employerSuburb: 'Riverside',
+            employerPostalCode: '1200', employerProvince: 'Mpumalanga', salaryFrequency: 'Weekly' }),
+          _age: 3 * 36e5, _status: 'idv_waived' /* no ID copy, nobody assigned: shows both prompts */
+        },
+        {
+          firstNames: 'Maria', surname: 'Fernandes', idType: 'passport', passportNumber: 'P4471902', dateOfBirth: '1988-09-14',
+          email: 'maria.fernandes@example.com', cell: '0715508834',
+          street: '21 Kloof Street', suburb: 'Gardens', city: 'Cape Town', province: 'Western Cape', postalCode: '8001',
+          employmentStatus: 'Full-time Employee', maritalStatus: 'Married ANC',
+          details: page1({ residencyStatus: 'Temporary Resident', countryOfMarriage: 'Portugal', nationality: 'Portuguese',
+            countryOfBirth: 'Portugal', cityOfBirth: 'Lisbon', ethnicGroup: 'White', homeLanguage: 'Other',
+            taxOutsideRsa: 'Yes', foreignTaxNumber: 'PT 208 441 990', tertiaryQualification: 'Yes',
+            qualificationLevel: 'Master’s degree', occupation: 'Software engineer', employerName: 'Example Software',
+            employerCity: 'Cape Town', employerSuburb: 'Woodstock', employerPostalCode: '7925',
+            employerProvince: 'Western Cape', occupationalLevel: 'Management' }),
+          _age: 20 * 36e5, _status: 'manual_required', _consultant: DEMO_ME, _idCopy: true
         }
       ];
       var list = readAll();
       rows.forEach(function (row) {
-        var status = row._status, age = row._age, owner = row._consultant || null;
-        delete row._status; delete row._age; delete row._consultant;
+        var status = row._status, age = row._age, owner = row._consultant || null, idCopy = row._idCopy;
+        delete row._status; delete row._age; delete row._consultant; delete row._idCopy;
         var rec = Object.assign({}, row, {
           ref: makeRef(), createdAt: now - age, status: 'consent_confirmed', consentConfirmedAt: now - age,
           idvAttempts: 0, demo: true,
@@ -1517,10 +1559,25 @@
           audit: [{ at: now - age, event: 'Form submitted by client (sample data)' },
             { at: now - age, event: 'Consent declaration accepted on the form (sample data)' }]
         });
-        if (status !== 'consent_confirmed') {
+        if (idCopy) {
+          rec.idDocument = { path: null, type: 'image/jpeg', bytes: 184320, sha256: null, uploadedBy: null,
+            uploadedAt: now - age + 1000, source: 'client' };
+        }
+        if (status === 'manual_required') {
+          /* a passport holder: nothing is registered, no questions, no credit check */
+          rec.status = 'manual_required';
+          rec.audit.push({ at: now - age + 3000, event: 'Passport applicant \u2014 routed to consultant (automated check supports SA ID numbers only)' });
+        } else if (status !== 'consent_confirmed') {
           rec.status = 'idv_waived';
           rec.consentRegisteredAt = now - age + 3000;
           rec.audit.push({ at: now - age + 3000, event: 'Consent registered with MortgageMax; identity questions waived by configuration' });
+        }
+        if (status === 'idv_failed') {
+          rec.status = 'idv_failed';
+          rec.idvAttempts = 2;
+          rec.idvResult = { passed: false };
+          rec.audit[rec.audit.length - 1] = { at: now - age + 3000, event: 'Consent registered with MortgageMax' };
+          rec.audit.push({ at: now - age + 8 * 60000, event: 'Identity questions failed (2 of 2 tries, sample data)' });
         }
         if (status === 'report_ready') {
           var rep = demoReport();
